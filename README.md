@@ -25,7 +25,7 @@ Objective-C 代码规范检查工具，支持增量检查、Xcode 集成和 Clau
 ### Via Homebrew (Recommended)
 
 ```bash
-# Install directly (no tap needed)
+# Install
 brew install pjocer/biliobjclint/biliobjclint
 
 # Update to latest version
@@ -65,10 +65,10 @@ biliobjclint --verbose
 
 ```bash
 # Run the installation script
-./scripts/install_xcode.sh /path/to/your/project.xcodeproj
+biliobjclint-xcode /path/to/your/project.xcodeproj
 
 # Or specify a target
-./scripts/install_xcode.sh /path/to/your/project.xcodeproj --target YourTarget
+biliobjclint-xcode /path/to/your/project.xcodeproj --target YourTarget
 ```
 
 This will:
@@ -80,10 +80,6 @@ This will:
 If you need OCLint's deep AST analysis:
 
 ```bash
-# Build from source
-./scripts/build_oclint.sh
-
-# Or install via Homebrew
 brew install oclint
 ```
 
@@ -158,46 +154,7 @@ See `config/default.yaml` for a complete example.
 
 ### OCLint Rules
 
-OCLint provides 70+ rules in categories:
-
-- **Basic**: Dead code, null checks, etc.
-- **Convention**: Switch/case, loops, etc.
-- **Empty**: Empty statement detection
-- **Naming**: Naming conventions
-- **Redundant**: Redundant code
-- **Size**: Cyclomatic complexity, method length, etc.
-- **Unused**: Unused code detection
-
-## Custom Rules
-
-### Python Rules (Recommended)
-
-Create a rule file in `custom_rules/python/`:
-
-```python
-from core.rule_engine import BaseRule
-
-class MyCustomRule(BaseRule):
-    identifier = "my_rule"
-    name = "My Custom Rule"
-    description = "Check for custom patterns"
-    default_severity = "warning"
-
-    def check(self, file_path, content, lines, changed_lines):
-        violations = []
-        for line_num, line in enumerate(lines, 1):
-            if not self.should_check_line(line_num, changed_lines):
-                continue
-            if "bad_pattern" in line:
-                violations.append(self.create_violation(
-                    file_path, line_num, 1, "Found bad pattern"
-                ))
-        return violations
-```
-
-### C++ Rules
-
-Create rule files in `custom_rules/cpp/` and rebuild OCLint.
+OCLint provides 70+ rules in categories: Basic, Convention, Empty, Naming, Redundant, Size, Unused.
 
 ## Command Line Options
 
@@ -215,39 +172,6 @@ Options:
   --no-oclint             Disable OCLint
   --no-python-rules       Disable Python rules
   --verbose, -v           Verbose output
-```
-
-## Project Structure
-
-```
-BiliObjCLint/
-├── Formula/
-│   └── biliobjclint.rb       # Homebrew formula
-├── oclint/                   # OCLint source code
-├── scripts/
-│   ├── biliobjclint.py       # Main entry point
-│   ├── claude_fixer.py       # Claude auto-fix module
-│   ├── xcode_integrator.py   # Xcode integration
-│   ├── release.sh            # Version release script
-│   ├── core/                 # Core modules
-│   │   ├── config.py         # Configuration
-│   │   ├── git_diff.py       # Incremental detection
-│   │   ├── oclint_runner.py  # OCLint wrapper
-│   │   ├── reporter.py       # Output formatting
-│   │   ├── rule_engine.py    # Rule engine
-│   │   └── logger.py         # Logging
-│   ├── rules/                # Built-in rules
-│   ├── lib/                  # Shell libraries
-│   ├── setup_env.sh          # Environment setup
-│   ├── install_xcode.sh      # Xcode installation
-│   └── build_oclint.sh       # OCLint build script
-├── custom_rules/
-│   ├── python/               # Python custom rules
-│   └── cpp/                  # C++ custom rules
-├── config/
-│   └── default.yaml          # Default configuration
-├── logs/                     # Log files
-└── test/                     # Test files
 ```
 
 ## FAQ
@@ -274,13 +198,7 @@ excluded:
 
 ### Q: OCLint build fails?
 
-Use the Homebrew pre-built version:
-
-```bash
-brew install oclint
-```
-
-Or use Python rules only:
+Use Python rules only:
 
 ```bash
 biliobjclint --no-oclint
@@ -297,39 +215,13 @@ claude_autofix:
   mode: "silent"
 ```
 
-## For Developers
+## Documentation
 
-### Release New Version
-
-Use the release script to publish new versions:
-
-```bash
-# Auto increment patch version (v1.0.0 -> v1.0.1)
-./scripts/release.sh
-
-# Auto increment minor version (v1.0.0 -> v1.1.0)
-./scripts/release.sh minor
-
-# Auto increment major version (v1.0.0 -> v2.0.0)
-./scripts/release.sh major
-
-# Specify exact version
-./scripts/release.sh v1.2.3
-```
-
-The script will:
-1. Create and push a git tag
-2. Calculate SHA256 of the release tarball
-3. Update the Homebrew Formula
-4. Commit and push changes
-
-### Version Guidelines
-
-| Change Type | Version Bump | Example |
-|-------------|--------------|---------|
-| Bug fixes | Patch | v1.0.0 → v1.0.1 |
-| New features (backward compatible) | Minor | v1.0.0 → v1.1.0 |
-| Breaking changes | Major | v1.0.0 → v2.0.0 |
+| Document | Description |
+|----------|-------------|
+| [Custom Rules](docs/CUSTOM_RULES.md) | How to create custom lint rules |
+| [Development](docs/DEVELOPMENT.md) | Project structure and development guide |
+| [Release](docs/RELEASE.md) | Version release workflow |
 
 ## Contributing
 
