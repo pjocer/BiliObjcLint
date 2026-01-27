@@ -423,10 +423,11 @@ class ClaudeFixer:
         prompt_file.close()
 
         # 使用 AppleScript 打开 Terminal 并执行 claude
+        # 需要添加 --allowedTools 参数允许读写文件
         script = f'''
         tell application "Terminal"
             activate
-            do script "cd '{self.project_root}' && claude -p \\"$(cat '{prompt_file.name}')\\" && rm -f '{prompt_file.name}'"
+            do script "cd '{self.project_root}' && claude -p \\"$(cat '{prompt_file.name}')\\" --allowedTools Read,Edit && rm -f '{prompt_file.name}'"
         end tell
         '''
 
