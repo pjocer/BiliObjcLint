@@ -406,17 +406,9 @@ class XcodeIntegrator:
             return False
 
         try:
-            # 备份原文件
-            pbxproj_path = self.xcodeproj_path / 'project.pbxproj'
-            backup_path = pbxproj_path.with_suffix('.pbxproj.backup')
-            shutil.copy2(pbxproj_path, backup_path)
-            self.logger.debug(f"Created backup: {backup_path}")
-
-            # 保存
             self.project.save()
             self.logger.info(f"Project saved successfully: {self.xcodeproj_path}")
             print(f"✓ 项目已保存: {self.xcodeproj_path}")
-            print(f"  备份文件: {backup_path}")
             return True
 
         except Exception as e:
