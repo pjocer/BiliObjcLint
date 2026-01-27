@@ -44,6 +44,9 @@ class Biliobjclint < Formula
 
       Configuration file will be created at:
         /path/to/project/.biliobjclint.yaml
+
+      To update to the latest version:
+        brew update && brew upgrade biliobjclint
     EOS
   end
 

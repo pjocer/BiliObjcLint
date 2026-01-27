@@ -179,7 +179,7 @@ Co-Authored-By: Claude (claude-4.5-opus) <noreply@anthropic.com>"
     echo "  brew update && brew upgrade biliobjclint"
     echo ""
     echo "Or install fresh:"
-    echo "  brew install pjocer/biliobjclint/biliobjclint"
+    echo "  brew tap pjocer/biliobjclint && brew install biliobjclint"
     echo ""
 }
 

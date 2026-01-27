@@ -125,7 +125,10 @@ install_biliobjclint() {
         error "Homebrew 未安装，请先安装 Homebrew: https://brew.sh"
     fi
 
-    brew install pjocer/biliobjclint/biliobjclint
+    # 通过 Homebrew tap 安装
+    info "添加 tap 并安装..."
+    brew tap pjocer/biliobjclint
+    brew install biliobjclint
 
     if check_biliobjclint_installed; then
         info "BiliObjCLint 安装成功"

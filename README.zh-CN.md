@@ -31,8 +31,9 @@
 ### 通过 Homebrew（推荐）
 
 ```bash
-# 安装
-brew install pjocer/biliobjclint/biliobjclint
+# 添加 tap 并安装
+brew tap pjocer/biliobjclint
+brew install biliobjclint
 
 # 更新到最新版本
 brew update && brew upgrade biliobjclint
@@ -109,7 +110,7 @@ cp $(brew --prefix)/share/biliobjclint/scripts/bootstrap.sh /path/to/your/projec
 6. 将新建的 Phase 拖动到**最顶部**（所有其他 Phase 之前）
 7. 粘贴以下脚本：
 ```bash
-"${SRCROOT}/scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "YourProject" -t "${TARGET_NAME}"
+"${SRCROOT}/scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "${PROJECT_NAME}" -t "${TARGET_NAME}"
 ```
 
 **bootstrap 脚本会自动：**

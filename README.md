@@ -31,8 +31,9 @@
 ### Via Homebrew (Recommended)
 
 ```bash
-# Install
-brew install pjocer/biliobjclint/biliobjclint
+# Add tap and install
+brew tap pjocer/biliobjclint
+brew install biliobjclint
 
 # Update to latest version
 brew update && brew upgrade biliobjclint
@@ -109,7 +110,7 @@ cp $(brew --prefix)/share/biliobjclint/scripts/bootstrap.sh /path/to/your/projec
 6. Drag the new phase to the **top** (before all other phases)
 7. Paste the following script:
 ```bash
-"${SRCROOT}/scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "YourProject" -t "${TARGET_NAME}"
+"${SRCROOT}/scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "${PROJECT_NAME}" -t "${TARGET_NAME}"
 ```
 
 **What the bootstrap script does:**
