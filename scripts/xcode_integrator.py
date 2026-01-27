@@ -487,7 +487,7 @@ class XcodeIntegrator:
             return False
 
         try:
-            self.project.save()
+            self.project.save(backup=False)
             self.logger.info(f"Project saved successfully: {self.xcodeproj_path}")
             print(f"✓ 项目已保存: {self.xcodeproj_path}")
             return True
