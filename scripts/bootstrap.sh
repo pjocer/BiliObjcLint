@@ -230,9 +230,12 @@ main() {
         2)
             # Needs update
             if [ "$AUTO_UPDATE" = true ]; then
-                warn "Lint Phase 需要更新"
+                warn "Lint Phase 需要更新，正在自动更新..."
                 echo "$check_result"
                 install_lint_phase
+                # 注意：更新会修改 project.pbxproj，首次会触发 Xcode "Build Canceled"
+                # 这是正常行为，重新编译即可
+                info "更新完成。如果 Xcode 提示 'Build Canceled'，请重新编译"
             else
                 warn "Lint Phase 需要更新（已禁用自动更新）"
                 echo "$check_result"
