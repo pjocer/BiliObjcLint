@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import Tuple, Optional, List, Dict
 
@@ -289,13 +290,20 @@ class ClaudeFixer:
         self.logger.debug(f"Prompt written to temp file: {prompt_file}")
 
         try:
-            self.logger.info(f"Executing Claude fix (timeout={self.timeout}s)...")
+            # 每次创建新的 session ID，避免与其他 Claude 会话冲突
+            session_id = str(uuid.uuid4())
+            self.logger.info(f"Executing Claude fix (timeout={self.timeout}s, session={session_id[:8]}...)...")
+
             # 使用 -p 非交互模式执行修复
+            # --session-id: 使用独立的会话 ID，避免冲突
+            # --no-session-persistence: 不保存会话到磁盘
             result = subprocess.run(
                 [
                     claude_path,
                     '-p', prompt,
-                    '--allowedTools', 'Read,Edit'
+                    '--allowedTools', 'Read,Edit',
+                    '--session-id', session_id,
+                    '--no-session-persistence'
                 ],
                 capture_output=True,
                 text=True,
