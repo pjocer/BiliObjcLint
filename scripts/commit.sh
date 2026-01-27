@@ -8,7 +8,7 @@
 #   ./scripts/commit.sh -m "commit message"
 #   ./scripts/commit.sh                      # 交互式输入 commit message
 #
-
+# 保持BILIOBJCLINT工程和BILIOBJCLINT Homebrew Tap工程在同一目录下
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
