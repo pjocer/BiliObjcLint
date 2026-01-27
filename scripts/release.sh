@@ -13,6 +13,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 FORMULA_FILE="$PROJECT_ROOT/Formula/biliobjclint.rb"
+VERSION_FILE="$PROJECT_ROOT/VERSION"
 REPO_URL="https://github.com/pjocer/BiliObjcLint"
 
 # Colors
@@ -82,6 +83,16 @@ calculate_sha256() {
     echo "$sha256"
 }
 
+# Update VERSION file
+update_version_file() {
+    local version=$1
+    local version_num=${version#v}  # Remove 'v' prefix
+
+    info "Updating VERSION file..."
+    echo "$version_num" > "$VERSION_FILE"
+    info "VERSION file updated to ${version_num}"
+}
+
 # Update Formula file
 update_formula() {
     local version=$1
@@ -145,12 +156,15 @@ main() {
     sha256=$(calculate_sha256 "$new_version")
     info "SHA256: $sha256"
 
+    # Update VERSION file
+    update_version_file "$new_version"
+
     # Update Formula
     update_formula "$new_version" "$sha256"
 
-    # Commit and push Formula update
-    info "Committing Formula update..."
-    git add "$FORMULA_FILE"
+    # Commit and push updates
+    info "Committing version updates..."
+    git add "$VERSION_FILE" "$FORMULA_FILE"
     git commit -m "Bump version to ${new_version}
 
 Co-Authored-By: Claude (claude-4.5-opus) <noreply@anthropic.com>"

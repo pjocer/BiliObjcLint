@@ -70,18 +70,44 @@ biliobjclint --verbose
 ### 2. Xcode 集成
 
 ```bash
-# 运行安装脚本
-biliobjclint-xcode /path/to/your/project.xcodeproj
+# 对于 .xcodeproj
+biliobjclint-xcode /path/to/App.xcodeproj
 
-# 或指定 Target
-biliobjclint-xcode /path/to/your/project.xcodeproj --target YourTarget
+# 对于 .xcworkspace（需指定项目名称）
+biliobjclint-xcode /path/to/App.xcworkspace -p MyProject
+
+# 指定 Target
+biliobjclint-xcode /path/to/App.xcworkspace -p MyProject -t MyTarget
+
+# 列出 workspace 中的所有项目
+biliobjclint-xcode /path/to/App.xcworkspace --list-projects
+
+# 列出所有 Target
+biliobjclint-xcode /path/to/App.xcodeproj --list-targets
 ```
 
 这将会：
 1. 在 Xcode 项目中添加 Build Phase 脚本
 2. 复制默认配置文件到项目根目录
 
-### 3. 安装 OCLint（可选）
+### 3. Bootstrap 脚本（自动安装）
+
+使用 bootstrap 脚本在 Xcode Build Phase 中自动安装和配置 BiliObjCLint：
+
+```bash
+# 复制 bootstrap.sh 到你的项目
+cp $(brew --prefix)/share/biliobjclint/scripts/bootstrap.sh /path/to/your/project/scripts/
+
+# 在 Xcode 中添加为第一个 Build Phase，内容为：
+"${SRCROOT}/scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "YourProject" -t "${TARGET_NAME}"
+```
+
+bootstrap 脚本会自动：
+1. 检查 BiliObjCLint 是否已安装，未安装则通过 Homebrew 安装
+2. 检查 Lint Phase 是否存在，不存在则安装
+3. 检查 Lint Phase 是否需要更新，自动更新到最新版本
+
+### 4. 安装 OCLint（可选）
 
 如果需要 OCLint 的深度 AST 分析：
 

@@ -70,18 +70,44 @@ biliobjclint --verbose
 ### 2. Xcode Integration
 
 ```bash
-# Run the installation script
-biliobjclint-xcode /path/to/your/project.xcodeproj
+# For .xcodeproj
+biliobjclint-xcode /path/to/App.xcodeproj
 
-# Or specify a target
-biliobjclint-xcode /path/to/your/project.xcodeproj --target YourTarget
+# For .xcworkspace (specify project name)
+biliobjclint-xcode /path/to/App.xcworkspace -p MyProject
+
+# Specify target
+biliobjclint-xcode /path/to/App.xcworkspace -p MyProject -t MyTarget
+
+# List available projects in workspace
+biliobjclint-xcode /path/to/App.xcworkspace --list-projects
+
+# List available targets
+biliobjclint-xcode /path/to/App.xcodeproj --list-targets
 ```
 
 This will:
 1. Add a Build Phase script to your Xcode project
 2. Copy the default configuration file to your project root
 
-### 3. Install OCLint (Optional)
+### 3. Bootstrap Script (Auto Install)
+
+Use the bootstrap script to automatically install and configure BiliObjCLint in your Xcode Build Phase:
+
+```bash
+# Copy bootstrap.sh to your project
+cp $(brew --prefix)/share/biliobjclint/scripts/bootstrap.sh /path/to/your/project/scripts/
+
+# Add as first Build Phase in Xcode with:
+"${SRCROOT}/scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "YourProject" -t "${TARGET_NAME}"
+```
+
+The bootstrap script will:
+1. Check if BiliObjCLint is installed, install via Homebrew if not
+2. Check if Lint Phase exists, install if not
+3. Check if Lint Phase needs update, update automatically
+
+### 4. Install OCLint (Optional)
 
 If you need OCLint's deep AST analysis:
 

@@ -8,10 +8,12 @@ Usage:
     python3 xcode_integrator.py <project_path> [options]
 
 Options:
+    --project, -p NAME      项目名称（用于 workspace 中指定项目）
     --target, -t NAME       Target 名称（默认：项目主 Target）
-    --scheme, -s NAME       Scheme 名称（用于从 workspace 定位项目）
     --remove                移除已添加的 Lint Phase
+    --list-projects         列出 workspace 中所有项目
     --list-targets          列出所有可用的 Targets
+    --check-update          检查已注入脚本是否需要更新
     --dry-run               仅显示将要进行的修改，不实际执行
     --help, -h              显示帮助
 """
@@ -33,10 +35,22 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from core.logger import get_logger
 
 
+def get_version() -> str:
+    """从 VERSION 文件读取版本号"""
+    version_file = Path(__file__).parent.parent / 'VERSION'
+    if version_file.exists():
+        return version_file.read_text().strip()
+    return "1.0.0"
+
+
+# 脚本版本号（动态读取）
+SCRIPT_VERSION = get_version()
+
 # Build Phase 脚本模板
 LINT_SCRIPT_TEMPLATE = '''#!/bin/bash
 
 # BiliObjCLint - Objective-C 代码规范检查
+# Version: {version}
 # 自动生成，请勿手动修改
 
 LINT_PATH="{lint_path}"
@@ -163,9 +177,10 @@ PHASE_NAME = "[BiliObjCLint] Code Style Check"
 class XcodeIntegrator:
     """Xcode 项目集成器"""
 
-    def __init__(self, project_path: str, lint_path: str):
+    def __init__(self, project_path: str, lint_path: str, project_name: Optional[str] = None):
         self.project_path = Path(project_path).resolve()
         self.lint_path = Path(lint_path).resolve()
+        self.project_name = project_name  # 用于 workspace 中指定项目
         self.xcodeproj_path: Optional[Path] = None
         self.project: Optional[XcodeProject] = None
         self.logger = get_logger("xcode")
@@ -173,6 +188,7 @@ class XcodeIntegrator:
         self.logger.info(f"XcodeIntegrator initialized")
         self.logger.debug(f"Project path: {self.project_path}")
         self.logger.debug(f"Lint path: {self.lint_path}")
+        self.logger.debug(f"Project name filter: {self.project_name}")
 
     def load_project(self) -> bool:
         """加载 Xcode 项目"""
@@ -181,10 +197,14 @@ class XcodeIntegrator:
         # 处理 .xcworkspace
         if self.project_path.suffix == '.xcworkspace':
             self.logger.debug("Detected .xcworkspace, searching for project...")
-            self.xcodeproj_path = self._find_project_in_workspace()
+            self.xcodeproj_path = self._find_project_in_workspace(self.project_name)
             if not self.xcodeproj_path:
                 self.logger.error("Cannot find project in workspace")
-                print(f"Error: 无法在 workspace 中找到项目", file=sys.stderr)
+                if self.project_name:
+                    print(f"Error: 在 workspace 中找不到项目 '{self.project_name}'", file=sys.stderr)
+                    print("使用 --list-projects 查看可用的项目")
+                else:
+                    print(f"Error: 无法在 workspace 中找到项目", file=sys.stderr)
                 return False
         elif self.project_path.suffix == '.xcodeproj':
             self.xcodeproj_path = self.project_path
@@ -215,34 +235,59 @@ class XcodeIntegrator:
             print(f"Error: 加载项目失败: {e}", file=sys.stderr)
             return False
 
-    def _find_project_in_workspace(self) -> Optional[Path]:
-        """从 workspace 中找到主项目"""
+    def _get_projects_in_workspace(self) -> List[Path]:
+        """获取 workspace 中所有项目"""
         contents_path = self.project_path / 'contents.xcworkspacedata'
         if not contents_path.exists():
-            return None
+            return []
 
+        projects = []
         try:
             tree = ET.parse(contents_path)
             root = tree.getroot()
 
-            # 查找所有 FileRef
             for file_ref in root.findall('.//FileRef'):
                 location = file_ref.get('location', '')
+                rel_path = None
                 if location.startswith('group:'):
-                    rel_path = location[6:]  # 去掉 'group:' 前缀
-                    full_path = self.project_path.parent / rel_path
-                    if full_path.suffix == '.xcodeproj' and full_path.exists():
-                        return full_path
+                    rel_path = location[6:]
                 elif location.startswith('container:'):
-                    rel_path = location[10:]  # 去掉 'container:' 前缀
+                    rel_path = location[10:]
+
+                if rel_path:
                     full_path = self.project_path.parent / rel_path
                     if full_path.suffix == '.xcodeproj' and full_path.exists():
-                        return full_path
+                        projects.append(full_path)
 
         except Exception as e:
             print(f"Warning: 解析 workspace 失败: {e}", file=sys.stderr)
 
-        return None
+        return projects
+
+    def list_projects(self) -> List[str]:
+        """列出 workspace 中所有项目名称"""
+        projects = self._get_projects_in_workspace()
+        return [p.stem for p in projects]
+
+    def _find_project_in_workspace(self, project_name: Optional[str] = None) -> Optional[Path]:
+        """从 workspace 中找到指定项目（或第一个项目）"""
+        projects = self._get_projects_in_workspace()
+
+        if not projects:
+            return None
+
+        if project_name:
+            # 按名称查找
+            for proj in projects:
+                if proj.stem == project_name:
+                    return proj
+            return None
+        else:
+            # 返回第一个非 Pods 项目
+            for proj in projects:
+                if proj.stem != 'Pods':
+                    return proj
+            return projects[0] if projects else None
 
     def _find_project_in_directory(self) -> Optional[Path]:
         """在目录中查找 .xcodeproj"""
@@ -302,6 +347,39 @@ class XcodeIntegrator:
                     return True
         return False
 
+    def get_lint_phase_version(self, target) -> Optional[str]:
+        """获取已注入 Lint Phase 的版本号"""
+        import re
+        build_phases = target.buildPhases
+        for phase_id in build_phases:
+            phase = self.project.objects[phase_id]
+            if phase.isa == 'PBXShellScriptBuildPhase':
+                if hasattr(phase, 'shellScript') and 'BiliObjCLint' in str(phase.shellScript):
+                    script = str(phase.shellScript)
+                    # 匹配 "# Version: x.x.x"
+                    match = re.search(r'# Version: (\d+\.\d+\.\d+)', script)
+                    if match:
+                        return match.group(1)
+                    # 旧版本没有版本号
+                    return "0.0.0"
+        return None
+
+    def check_update_needed(self, target) -> tuple:
+        """
+        检查是否需要更新
+        返回: (需要更新, 当前版本, 最新版本)
+        """
+        current_version = self.get_lint_phase_version(target)
+        if current_version is None:
+            return (False, None, SCRIPT_VERSION)  # 没有安装
+
+        # 简单版本比较
+        def version_tuple(v):
+            return tuple(map(int, v.split('.')))
+
+        needs_update = version_tuple(current_version) < version_tuple(SCRIPT_VERSION)
+        return (needs_update, current_version, SCRIPT_VERSION)
+
     def add_lint_phase(self, target, dry_run: bool = False, override: bool = False) -> bool:
         """添加 Lint Build Phase"""
         self.logger.info(f"Adding lint phase to target: {target.name}")
@@ -316,7 +394,10 @@ class XcodeIntegrator:
                 print(f"Target '{target.name}' 已存在 Lint Phase，跳过（使用 --override 强制覆盖）")
                 return True
 
-        script_content = LINT_SCRIPT_TEMPLATE.format(lint_path=str(self.lint_path))
+        script_content = LINT_SCRIPT_TEMPLATE.format(
+            version=SCRIPT_VERSION,
+            lint_path=str(self.lint_path)
+        )
         self.logger.debug(f"Generated script content ({len(script_content)} chars)")
 
         if dry_run:
@@ -465,14 +546,14 @@ def parse_args():
     )
 
     parser.add_argument(
-        '--target', '-t',
-        help='Target 名称（默认：主 Target）',
+        '--project', '-p',
+        help='项目名称（用于 workspace 中指定项目）',
         default=None
     )
 
     parser.add_argument(
-        '--scheme', '-s',
-        help='Scheme 名称（用于参考，暂未使用）',
+        '--target', '-t',
+        help='Target 名称（默认：主 Target）',
         default=None
     )
 
@@ -483,9 +564,21 @@ def parse_args():
     )
 
     parser.add_argument(
+        '--list-projects',
+        action='store_true',
+        help='列出 workspace 中所有项目'
+    )
+
+    parser.add_argument(
         '--list-targets',
         action='store_true',
         help='列出所有 Targets'
+    )
+
+    parser.add_argument(
+        '--check-update',
+        action='store_true',
+        help='检查已注入脚本是否需要更新'
     )
 
     parser.add_argument(
@@ -523,8 +616,22 @@ def main():
         lint_path = str(Path(__file__).parent.parent)
     logger.debug(f"Lint path: {lint_path}")
 
-    # 创建集成器
-    integrator = XcodeIntegrator(args.project_path, lint_path)
+    # 创建集成器（传入 project 参数用于 workspace）
+    integrator = XcodeIntegrator(args.project_path, lint_path, args.project)
+
+    # 如果是 workspace，先处理 --list-projects
+    if args.list_projects:
+        if Path(args.project_path).suffix != '.xcworkspace':
+            print("Error: --list-projects 仅适用于 .xcworkspace", file=sys.stderr)
+            sys.exit(1)
+        projects = integrator.list_projects()
+        logger.info(f"Listing {len(projects)} projects in workspace")
+        print(f"\nWorkspace: {args.project_path}")
+        print("可用的项目:")
+        for name in projects:
+            print(f"  - {name}")
+        logger.log_separator("Xcode Integration Session End")
+        sys.exit(0)
 
     # 加载项目
     if not integrator.load_project():
@@ -559,6 +666,19 @@ def main():
     logger.info(f"Selected target: {target.name}")
     print(f"Target: {target.name}")
     print()
+
+    # 检查更新
+    if args.check_update:
+        needs_update, current_ver, latest_ver = integrator.check_update_needed(target)
+        if current_ver is None:
+            print(f"Lint Phase 未安装")
+            sys.exit(1)
+        elif needs_update:
+            print(f"需要更新: {current_ver} -> {latest_ver}")
+            sys.exit(2)  # 返回 2 表示需要更新
+        else:
+            print(f"已是最新版本: {current_ver}")
+            sys.exit(0)
 
     # 执行操作
     if args.remove:
