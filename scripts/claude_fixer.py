@@ -93,8 +93,16 @@ class ClaudeFixer:
         """
         self.logger.info("Checking Claude CLI availability...")
 
+        # 调试日志
+        with open("/tmp/biliobjclint_debug.log", "a") as f:
+            f.write("check_claude_available: start\n")
+
         # 1. 查找 claude 路径
         claude_path = self._find_claude_path()
+
+        with open("/tmp/biliobjclint_debug.log", "a") as f:
+            f.write(f"check_claude_available: claude_path={claude_path}\n")
+
         if not claude_path:
             self.logger.error("Claude CLI not installed")
             return False, "Claude Code CLI 未安装\n请访问 https://claude.ai/code 安装"
@@ -103,26 +111,13 @@ class ClaudeFixer:
         self._claude_path = claude_path
         self.logger.debug(f"Using Claude CLI at: {claude_path}")
 
-        # 2. 快速验证能否工作（使用 --print 非交互模式）
-        try:
-            self.logger.debug("Verifying Claude CLI functionality...")
-            result = subprocess.run(
-                [claude_path, '-p', 'respond with only the word: ok'],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            if result.returncode == 0 and 'ok' in result.stdout.lower():
-                self.logger.info("Claude CLI is available and functional")
-                return True, None
-            self.logger.error(f"Claude CLI verification failed: {result.stderr}")
-            return False, f"Claude Code CLI 未正确配置\n{result.stderr}"
-        except subprocess.TimeoutExpired:
-            self.logger.error("Claude CLI verification timed out")
-            return False, "Claude Code CLI 响应超时"
-        except Exception as e:
-            self.logger.exception(f"Claude CLI verification error: {e}")
-            return False, f"Claude Code CLI 检测失败: {e}"
+        # 2. 跳过验证，直接认为可用（验证可能会卡住）
+        # 如果实际修复时失败，会在那时报错
+        with open("/tmp/biliobjclint_debug.log", "a") as f:
+            f.write("check_claude_available: skipping verification, assuming available\n")
+
+        self.logger.info("Claude CLI found, skipping verification")
+        return True, None
 
     def show_dialog(self, title: str, message: str, buttons: List[str],
                     default_button: str = None, icon: str = "caution") -> Optional[str]:
