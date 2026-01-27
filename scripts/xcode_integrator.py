@@ -112,16 +112,15 @@ LINT_EXIT=$?
 log_info "Lint exit code: $LINT_EXIT"
 
 # 如果有违规，调用 Claude 修复模块
-if [ -s "$VIOLATIONS_FILE" ] && [ $LINT_EXIT -ne 0 ]; then
+# claude_fixer.py 会根据配置文件中的 claude_autofix.trigger 决定是否显示对话框：
+#   - trigger: "any" → 任何违规都弹窗
+#   - trigger: "error" → 只有 error 级别违规才弹窗
+#   - trigger: "disable" → 禁用自动弹窗
+if [ -s "$VIOLATIONS_FILE" ]; then
     # 保存违规信息到固定位置
     VIOLATIONS_COPY="/tmp/biliobjclint_violations_$$.json"
     cp "$VIOLATIONS_FILE" "$VIOLATIONS_COPY"
     log_debug "Violations copied to: $VIOLATIONS_COPY"
-
-    # 获取违规统计
-    TOTAL=$(cat "$VIOLATIONS_FILE" | /usr/bin/python3 -c "import sys,json; print(json.load(sys.stdin).get('summary',{{}}).get('total',0))" 2>/dev/null || echo "0")
-    ERRORS=$(cat "$VIOLATIONS_FILE" | /usr/bin/python3 -c "import sys,json; print(json.load(sys.stdin).get('summary',{{}}).get('errors',0))" 2>/dev/null || echo "0")
-    log_info "Violations found: $TOTAL total, $ERRORS errors"
 
     # 在进入后台子进程前，先保存所有需要的变量值
     # 因为 Xcode 环境变量在后台子进程中可能不可用
@@ -131,33 +130,17 @@ if [ -s "$VIOLATIONS_FILE" ] && [ $LINT_EXIT -ne 0 ]; then
     _PROJECT_ROOT="${{SRCROOT}}"
     _VIOLATIONS_COPY="$VIOLATIONS_COPY"
 
-    log_info "Launching Claude fix dialog in background..."
+    log_info "Launching Claude fixer in background..."
 
-    # 使用 AppleScript 显示对话框（通过 osascript 在后台运行）
-    # 这会在用户的桌面环境中显示对话框，而不是在 Xcode 的沙盒中
+    # 在后台调用 claude_fixer.py，它会：
+    # 1. 根据 trigger 配置决定是否触发
+    # 2. 显示对话框询问用户
+    # 3. 执行修复（如果用户同意）
     (
-        RESPONSE=$(osascript -e "
-        display alert \\"BiliObjCLint 发现 $TOTAL 个代码问题\\" message \\"其中 $ERRORS 个错误。\\n\\n是否让 Claude 尝试自动修复？\\" as warning buttons {{\\"取消\\", \\"自动修复\\"}} default button \\"自动修复\\" cancel button \\"取消\\"
-        " 2>&1)
-
-        if echo "$RESPONSE" | grep -q "自动修复"; then
-            # 用户点击了自动修复，执行修复
-            osascript -e "display notification \\"Claude 正在修复代码...\\" with title \\"BiliObjCLint\\""
-
-            "$_PYTHON_BIN" "$_LINT_PATH/scripts/claude_fixer.py" \\
-                --violations "$_VIOLATIONS_COPY" \\
-                --config "$_CONFIG_PATH" \\
-                --project-root "$_PROJECT_ROOT" \\
-                --skip-dialog
-
-            FIX_EXIT=$?
-
-            if [ $FIX_EXIT -eq 0 ]; then
-                osascript -e "display notification \\"修复完成，请重新编译验证\\" with title \\"BiliObjCLint\\" sound name \\"Glass\\""
-            else
-                osascript -e "display alert \\"BiliObjCLint 修复失败\\" message \\"详情请查看日志：$_LINT_PATH/logs/\\" as critical buttons {{\\"确定\\"}} default button \\"确定\\""
-            fi
-        fi
+        "$_PYTHON_BIN" "$_LINT_PATH/scripts/claude_fixer.py" \\
+            --violations "$_VIOLATIONS_COPY" \\
+            --config "$_CONFIG_PATH" \\
+            --project-root "$_PROJECT_ROOT"
 
         rm -f "$_VIOLATIONS_COPY"
     ) &

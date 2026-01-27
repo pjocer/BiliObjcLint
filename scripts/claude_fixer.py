@@ -144,8 +144,11 @@ class ClaudeFixer:
 
         buttons_str = ', '.join(f'"{b}"' for b in buttons)
 
+        # 使用 Finder 作为宿主应用来显示对话框
+        # 这样可以确保对话框显示在前台，即使从后台进程调用
         script = f'''
-        tell application "System Events"
+        tell application "Finder"
+            activate
             display dialog "{message}" \\
                 buttons {{{buttons_str}}} \\
                 default button "{default_button}" \\
@@ -155,18 +158,21 @@ class ClaudeFixer:
         '''
 
         try:
+            self.logger.debug(f"Showing dialog: {title}")
             result = subprocess.run(
                 ['osascript', '-e', script],
                 capture_output=True,
                 text=True
             )
+            self.logger.debug(f"Dialog result: returncode={result.returncode}, stdout={result.stdout}, stderr={result.stderr}")
             if result.returncode == 0:
                 # 解析返回值，格式为 "button returned:按钮名"
                 output = result.stdout.strip()
                 if 'button returned:' in output:
                     return output.split('button returned:')[1].strip()
             return None
-        except Exception:
+        except Exception as e:
+            self.logger.exception(f"Dialog exception: {e}")
             return None
 
     def show_progress_notification(self, message: str) -> subprocess.Popen:
@@ -436,7 +442,10 @@ class ClaudeFixer:
             return 0
 
         # 检查是否应该触发
-        if not self.should_trigger(violations):
+        should = self.should_trigger(violations)
+        with open("/tmp/biliobjclint_debug.log", "a") as f:
+            f.write(f"should_trigger: {should}, trigger_mode={self.trigger}\n")
+        if not should:
             self.logger.info(f"Trigger condition not met (trigger={self.trigger})")
             return 0
 
@@ -469,6 +478,10 @@ class ClaudeFixer:
             message += f"\n（{warning_count} warnings）"
         message += "\n\n是否让 Claude 尝试自动修复？"
 
+        # 调试：记录即将显示对话框
+        with open("/tmp/biliobjclint_debug.log", "a") as f:
+            f.write(f"About to show dialog: {message}\n")
+
         self.logger.debug("Showing user confirmation dialog")
         clicked = self.show_dialog(
             "BiliObjCLint",
@@ -477,6 +490,10 @@ class ClaudeFixer:
             default_button="自动修复",
             icon="caution"
         )
+
+        # 调试：记录用户点击结果
+        with open("/tmp/biliobjclint_debug.log", "a") as f:
+            f.write(f"Dialog result: clicked={clicked}\n")
 
         if clicked != "自动修复":
             self.logger.info("User cancelled fix operation")
@@ -666,8 +683,20 @@ def parse_args() -> argparse.Namespace:
 
 def main():
     """主入口"""
+    # 调试：写入临时文件追踪执行
+    import datetime
+    debug_file = "/tmp/biliobjclint_debug.log"
+    with open(debug_file, "a") as f:
+        f.write(f"\n=== {datetime.datetime.now()} ===\n")
+        f.write(f"claude_fixer.py started\n")
+        f.write(f"sys.argv: {sys.argv}\n")
+
     args = parse_args()
     logger = get_logger("claude_fix")
+
+    # 调试：记录参数
+    with open(debug_file, "a") as f:
+        f.write(f"args: {vars(args)}\n")
 
     logger.info(f"Claude fixer started: project_root={args.project_root}")
     logger.debug(f"Arguments: {vars(args)}")
