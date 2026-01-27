@@ -251,7 +251,21 @@ biliobjclint --no-oclint
 ### Q: How to use Claude auto-fix?
 
 1. Install [Claude Code CLI](https://claude.ai/code)
-2. Configure in `.biliobjclint.yaml`:
+2. Configure Claude environment variables in `~/.zshrc` or `~/.bashrc`:
+
+```bash
+# Required: API endpoint and authentication
+export ANTHROPIC_BASE_URL=https://api.anthropic.com  # or your custom endpoint
+export ANTHROPIC_AUTH_TOKEN=your-api-key-here
+
+# Optional: Model and timeout settings
+export ANTHROPIC_MODEL=claude-4.5-opus
+export API_TIMEOUT_MS=600000
+```
+
+> **Important**: These environment variables must be configured in your shell config file (`.zshrc` or `.bashrc`), as Xcode Build Phase runs as a background process that doesn't inherit your terminal session environment.
+
+3. Configure in `.biliobjclint.yaml`:
 
 ```yaml
 claude_autofix:

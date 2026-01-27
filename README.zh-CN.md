@@ -251,7 +251,21 @@ biliobjclint --no-oclint
 ### Q: 如何使用 Claude 自动修复？
 
 1. 安装 [Claude Code CLI](https://claude.ai/code)
-2. 在 `.biliobjclint.yaml` 中配置：
+2. 在 `~/.zshrc` 或 `~/.bashrc` 中配置 Claude 环境变量：
+
+```bash
+# 必须：API 端点和认证信息
+export ANTHROPIC_BASE_URL=https://api.anthropic.com  # 或你的自定义端点
+export ANTHROPIC_AUTH_TOKEN=your-api-key-here
+
+# 可选：模型和超时设置
+export ANTHROPIC_MODEL=claude-4.5-opus
+export API_TIMEOUT_MS=600000
+```
+
+> **重要**：这些环境变量必须配置在 shell 配置文件（`.zshrc` 或 `.bashrc`）中，因为 Xcode Build Phase 作为后台进程运行，不会继承终端会话的环境变量。
+
+3. 在 `.biliobjclint.yaml` 中配置：
 
 ```yaml
 claude_autofix:
