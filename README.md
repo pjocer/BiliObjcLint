@@ -1,6 +1,12 @@
-# BiliObjCLint
+<p align="center">
+  <h1 align="center">BiliObjCLint</h1>
+  <p align="center">Objective-C Code Linting Tool with Xcode Integration and Claude AI Auto-fix</p>
+  <p align="center">
+    <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
+  </p>
+</p>
 
-Objective-C 代码规范检查工具，支持增量检查、Xcode 集成和 Claude AI 自动修复。
+---
 
 ## Features
 
@@ -75,7 +81,7 @@ This will:
 1. Add a Build Phase script to your Xcode project
 2. Copy the default configuration file to your project root
 
-### 3. Build OCLint (Optional)
+### 3. Install OCLint (Optional)
 
 If you need OCLint's deep AST analysis:
 
