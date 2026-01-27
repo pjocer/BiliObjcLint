@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.venv/
+
+# Build
+build/
+*.o
+*.a
+*.dylib
+
+# IDE
+.idea/
+.vscode/
+*.xcworkspace/
+*.xcuserdata/
+.DS_Store
+
+# OCLint build artifacts
+oclint/build/
+
+# Test outputs
+*.log
+logs/
+
+# Claude Code local settings
+.claude/
+
+# Temporary files
+*.tmp
+*.bak
+typescript

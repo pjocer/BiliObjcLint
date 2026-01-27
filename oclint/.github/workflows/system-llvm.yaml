@@ -1,0 +1,37 @@
+name: Build Using System LLVM
+on:
+  pull_request:
+  schedule:
+    - cron:  '0 15 * * 0'
+
+jobs:
+  build-on-linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-20.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+      - run: |
+          sudo apt-get -y install curl zlib1g-dev libzstd-dev libncurses-dev
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 16
+          sudo apt-get -y install libllvm16 llvm-16 llvm-16-dev llvm-16-runtime clang-16 clang-tools-16 libclang-common-16-dev libclang-16-dev libclang1-16 libomp-16-dev libmlir-16-dev
+      - run: |
+          cd oclint-scripts
+          ./build -no-ninja -llvm-root=/usr/lib/llvm-16
+          ./bundle -archive -llvm-root=/usr/lib/llvm-16
+  build-on-mac:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v2
+      - run: |
+          sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
+          brew update
+          brew install llvm@16
+      - run: |
+          cd oclint-scripts
+          ./build -no-ninja -llvm-root=/opt/homebrew/opt/llvm\@16
+          ./bundle -archive -llvm-root=/opt/homebrew/opt/llvm\@16

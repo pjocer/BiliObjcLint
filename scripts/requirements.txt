@@ -1,0 +1,4 @@
+docopt==0.6.2
+openstep-parser==2.0.3
+pbxproj==4.3.2
+PyYAML==6.0.3
