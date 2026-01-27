@@ -184,26 +184,34 @@ main() {
         exit 0
     fi
 
-    # Create and push tag
+    # Step 1: Update VERSION file first (so tag includes correct version)
+    update_version_file "$new_version"
+
+    # Step 2: Commit VERSION update
+    info "Committing VERSION update..."
+    git add "$VERSION_FILE"
+    git commit -m "Bump VERSION to ${new_version}
+
+Co-Authored-By: Claude (claude-4.5-opus) <noreply@anthropic.com>"
+    git push
+
+    # Step 3: Create and push tag (now tag includes correct VERSION)
     info "Creating tag $new_version ..."
     git tag "$new_version"
     git push origin "$new_version"
 
-    # Calculate SHA256
+    # Step 4: Calculate SHA256
     local sha256
     sha256=$(calculate_sha256 "$new_version")
     info "SHA256: $sha256"
 
-    # Update VERSION file
-    update_version_file "$new_version"
-
-    # Update Formula
+    # Step 5: Update Formula with new SHA256
     update_formula "$new_version" "$sha256"
 
-    # Commit and push updates
-    info "Committing version updates..."
-    git add "$VERSION_FILE" "$FORMULA_FILE"
-    git commit -m "Bump version to ${new_version}
+    # Step 6: Commit Formula update
+    info "Committing Formula update..."
+    git add "$FORMULA_FILE"
+    git commit -m "Update Formula for ${new_version}
 
 Co-Authored-By: Claude (claude-4.5-opus) <noreply@anthropic.com>"
     git push
