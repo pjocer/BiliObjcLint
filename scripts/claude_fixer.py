@@ -85,6 +85,64 @@ class ClaudeFixer:
         self.logger.warning("Claude CLI not found in any known path")
         return None
 
+    def _load_shell_env(self) -> Dict[str, str]:
+        """
+        从用户的 shell 配置文件读取环境变量
+
+        Xcode Build Phase 后台进程不会加载 .zshrc/.bashrc，
+        需要手动读取相关的 ANTHROPIC_* 等环境变量
+
+        Returns:
+            环境变量字典
+        """
+        env_vars = {}
+        home = os.path.expanduser("~")
+
+        # 要读取的配置文件列表
+        config_files = [
+            os.path.join(home, ".zshrc"),
+            os.path.join(home, ".bashrc"),
+            os.path.join(home, ".bash_profile"),
+            os.path.join(home, ".profile"),
+        ]
+
+        # 要提取的环境变量前缀
+        prefixes = ("ANTHROPIC_", "CLAUDE_", "API_TIMEOUT")
+
+        import re
+        export_pattern = re.compile(r'^export\s+([A-Z_][A-Z0-9_]*)=(.+)$')
+
+        for config_file in config_files:
+            if not os.path.isfile(config_file):
+                continue
+
+            try:
+                with open(config_file, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        # 跳过注释行
+                        if line.startswith('#'):
+                            continue
+
+                        match = export_pattern.match(line)
+                        if match:
+                            key, value = match.groups()
+                            # 只提取相关的环境变量
+                            if any(key.startswith(p) for p in prefixes):
+                                # 移除引号
+                                value = value.strip('"\'')
+                                env_vars[key] = value
+                                self.logger.debug(f"Loaded env from {config_file}: {key}={value[:20]}...")
+            except Exception as e:
+                self.logger.warning(f"Failed to read {config_file}: {e}")
+
+        if env_vars:
+            self.logger.info(f"Loaded {len(env_vars)} env vars from shell config")
+        else:
+            self.logger.warning("No ANTHROPIC_*/CLAUDE_* env vars found in shell config")
+
+        return env_vars
+
     def check_claude_available(self) -> Tuple[bool, Optional[str]]:
         """
         检测 Claude Code CLI 是否可用
@@ -294,6 +352,11 @@ class ClaudeFixer:
             session_id = str(uuid.uuid4())
             self.logger.info(f"Executing Claude fix (timeout={self.timeout}s, session={session_id[:8]}...)...")
 
+            # 构建环境变量，从用户的 shell 配置文件读取 ANTHROPIC_* 变量
+            # Xcode Build Phase 后台进程不会加载 .zshrc/.bashrc
+            env = os.environ.copy()
+            env.update(self._load_shell_env())
+
             # 使用 -p 非交互模式执行修复
             # --session-id: 使用独立的会话 ID，避免冲突
             # --no-session-persistence: 不保存会话到磁盘
@@ -308,7 +371,8 @@ class ClaudeFixer:
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
-                cwd=str(self.project_root)
+                cwd=str(self.project_root),
+                env=env
             )
 
             elapsed = time.time() - fix_start_time
