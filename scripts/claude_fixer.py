@@ -139,17 +139,14 @@ class ClaudeFixer:
 
         buttons_str = ', '.join(f'"{b}"' for b in buttons)
 
-        # 使用 Finder 作为宿主应用来显示对话框
-        # 这样可以确保对话框显示在前台，即使从后台进程调用
+        # 使用 osascript 自身的对话框（不依赖特定应用）
+        # 这是最可靠的方式，即使从后台进程调用也能工作
         script = f'''
-        tell application "Finder"
-            activate
-            display dialog "{message}" \\
-                buttons {{{buttons_str}}} \\
-                default button "{default_button}" \\
-                with title "{title}" \\
-                with icon {icon}
-        end tell
+        display dialog "{message}" \\
+            buttons {{{buttons_str}}} \\
+            default button "{default_button}" \\
+            with title "{title}" \\
+            with icon {icon}
         '''
 
         try:
