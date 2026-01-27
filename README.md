@@ -25,12 +25,11 @@ Objective-C 代码规范检查工具，支持增量检查、Xcode 集成和 Clau
 ### Via Homebrew (Recommended)
 
 ```bash
-# Add tap and install
-brew tap pjocer/biliobjclint
-brew install biliobjclint
-
-# Or install directly
+# Install directly (no tap needed)
 brew install pjocer/biliobjclint/biliobjclint
+
+# Update to latest version
+brew update && brew upgrade biliobjclint
 ```
 
 ### Manual Installation
@@ -222,11 +221,14 @@ Options:
 
 ```
 BiliObjCLint/
+├── Formula/
+│   └── biliobjclint.rb       # Homebrew formula
 ├── oclint/                   # OCLint source code
 ├── scripts/
 │   ├── biliobjclint.py       # Main entry point
 │   ├── claude_fixer.py       # Claude auto-fix module
 │   ├── xcode_integrator.py   # Xcode integration
+│   ├── release.sh            # Version release script
 │   ├── core/                 # Core modules
 │   │   ├── config.py         # Configuration
 │   │   ├── git_diff.py       # Incremental detection
@@ -294,6 +296,40 @@ claude_autofix:
   trigger: "any"
   mode: "silent"
 ```
+
+## For Developers
+
+### Release New Version
+
+Use the release script to publish new versions:
+
+```bash
+# Auto increment patch version (v1.0.0 -> v1.0.1)
+./scripts/release.sh
+
+# Auto increment minor version (v1.0.0 -> v1.1.0)
+./scripts/release.sh minor
+
+# Auto increment major version (v1.0.0 -> v2.0.0)
+./scripts/release.sh major
+
+# Specify exact version
+./scripts/release.sh v1.2.3
+```
+
+The script will:
+1. Create and push a git tag
+2. Calculate SHA256 of the release tarball
+3. Update the Homebrew Formula
+4. Commit and push changes
+
+### Version Guidelines
+
+| Change Type | Version Bump | Example |
+|-------------|--------------|---------|
+| Bug fixes | Patch | v1.0.0 → v1.0.1 |
+| New features (backward compatible) | Minor | v1.0.0 → v1.1.0 |
+| Breaking changes | Major | v1.0.0 → v2.0.0 |
 
 ## Contributing
 
