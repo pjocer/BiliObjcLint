@@ -427,7 +427,7 @@ class ClaudeFixer:
         script = f'''
         tell application "Terminal"
             activate
-            do script "cd '{self.project_root}' && claude -p \\"$(cat '{prompt_file.name}')\\" --allowedTools Read,Edit && rm -f '{prompt_file.name}'"
+            do script "echo '🔧 正在修复中，不要关闭本窗口...' && echo '' && cd '{self.project_root}' && claude -p \\"$(cat '{prompt_file.name}')\\" --allowedTools Read,Edit && rm -f '{prompt_file.name}' && echo '' && echo '✅ 修复完成！'"
         end tell
         '''
 
