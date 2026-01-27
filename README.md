@@ -25,7 +25,7 @@ Objective-C 代码规范检查工具，支持增量检查、Xcode 集成和 Clau
 ### Via Homebrew (Recommended)
 
 ```bash
-brew tap bilibili/tap
+brew tap pjocer/tap
 brew install biliobjclint
 ```
 
@@ -33,8 +33,8 @@ brew install biliobjclint
 
 ```bash
 # Clone the repository
-git clone https://github.com/bilibili/BiliObjCLint.git
-cd BiliObjCLint
+git clone https://github.com/pjocer/BiliObjcLint.git
+cd BiliObjcLint
 
 # Initialize Python virtual environment
 ./scripts/setup_env.sh
