@@ -139,18 +139,16 @@ class ClaudeFixer:
 
         buttons_str = ', '.join(f'"{b}"' for b in buttons)
 
-        # 使用 osascript 自身的对话框（不依赖特定应用）
-        # 这是最可靠的方式，即使从后台进程调用也能工作
-        script = f'''
-        display dialog "{message}" \\
-            buttons {{{buttons_str}}} \\
-            default button "{default_button}" \\
-            with title "{title}" \\
-            with icon {icon}
-        '''
+        # 处理消息中的换行符，使用 AppleScript 的 return 关键字
+        # AppleScript 不支持 \ 续行符，必须在单行中构建
+        escaped_message = message.replace('\n', '" & return & "')
+
+        # 构建单行 AppleScript 命令（AppleScript 不支持 \ 续行符）
+        script = f'display dialog "{escaped_message}" buttons {{{buttons_str}}} default button "{default_button}" with title "{title}" with icon {icon}'
 
         try:
             self.logger.debug(f"Showing dialog: {title}")
+            self.logger.debug(f"AppleScript: {script}")
             result = subprocess.run(
                 ['osascript', '-e', script],
                 capture_output=True,
