@@ -92,17 +92,27 @@ biliobjclint-xcode /path/to/App.xcodeproj --list-targets
 
 ### 3. Bootstrap 脚本（自动安装）
 
-使用 bootstrap 脚本在 Xcode Build Phase 中自动安装和配置 BiliObjCLint：
+使用 bootstrap 脚本自动安装和配置 BiliObjCLint：
 
+**第一步：复制 bootstrap.sh 到你的项目**
 ```bash
-# 复制 bootstrap.sh 到你的项目
+mkdir -p /path/to/your/project/scripts
 cp $(brew --prefix)/share/biliobjclint/scripts/bootstrap.sh /path/to/your/project/scripts/
+```
 
-# 在 Xcode 中添加为第一个 Build Phase，内容为：
+**第二步：在 Xcode 中添加 Build Phase**
+1. 用 Xcode 打开你的 `.xcworkspace` 或 `.xcodeproj`
+2. 在导航器中选择你的项目
+3. 选择要添加 Lint 的 Target
+4. 切换到 **Build Phases** 标签页
+5. 点击 **+** → **New Run Script Phase**
+6. 将新建的 Phase 拖动到**最顶部**（所有其他 Phase 之前）
+7. 粘贴以下脚本：
+```bash
 "${SRCROOT}/scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "YourProject" -t "${TARGET_NAME}"
 ```
 
-bootstrap 脚本会自动：
+**bootstrap 脚本会自动：**
 1. 检查 BiliObjCLint 是否已安装，未安装则通过 Homebrew 安装
 2. 检查 Lint Phase 是否存在，不存在则安装
 3. 检查 Lint Phase 是否需要更新，自动更新到最新版本

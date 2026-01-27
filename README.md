@@ -92,17 +92,27 @@ This will:
 
 ### 3. Bootstrap Script (Auto Install)
 
-Use the bootstrap script to automatically install and configure BiliObjCLint in your Xcode Build Phase:
+Use the bootstrap script to automatically install and configure BiliObjCLint:
 
+**Step 1: Copy bootstrap.sh to your project**
 ```bash
-# Copy bootstrap.sh to your project
+mkdir -p /path/to/your/project/scripts
 cp $(brew --prefix)/share/biliobjclint/scripts/bootstrap.sh /path/to/your/project/scripts/
+```
 
-# Add as first Build Phase in Xcode with:
+**Step 2: Add Build Phase in Xcode**
+1. Open your `.xcworkspace` or `.xcodeproj` in Xcode
+2. Select your project in the navigator
+3. Select the target you want to add linting to
+4. Go to **Build Phases** tab
+5. Click **+** → **New Run Script Phase**
+6. Drag the new phase to the **top** (before all other phases)
+7. Paste the following script:
+```bash
 "${SRCROOT}/scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "YourProject" -t "${TARGET_NAME}"
 ```
 
-The bootstrap script will:
+**What the bootstrap script does:**
 1. Check if BiliObjCLint is installed, install via Homebrew if not
 2. Check if Lint Phase exists, install if not
 3. Check if Lint Phase needs update, update automatically
