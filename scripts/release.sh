@@ -16,6 +16,10 @@ FORMULA_FILE="$PROJECT_ROOT/Formula/biliobjclint.rb"
 VERSION_FILE="$PROJECT_ROOT/VERSION"
 REPO_URL="https://github.com/pjocer/BiliObjcLint"
 
+# Homebrew tap repository (relative to PROJECT_ROOT)
+HOMEBREW_TAP_DIR="$PROJECT_ROOT/../homebrew-biliobjclint"
+HOMEBREW_TAP_FORMULA="$HOMEBREW_TAP_DIR/Formula/biliobjclint.rb"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -109,6 +113,40 @@ update_formula() {
     info "Formula updated to ${version}"
 }
 
+# Sync Formula to homebrew tap repository
+sync_homebrew_tap() {
+    local version=$1
+
+    if [ ! -d "$HOMEBREW_TAP_DIR" ]; then
+        warn "Homebrew tap directory not found: $HOMEBREW_TAP_DIR"
+        warn "Skipping homebrew tap sync. Please manually update the tap repository."
+        return 1
+    fi
+
+    info "Syncing Formula to homebrew tap repository..."
+
+    # Copy Formula file
+    cp "$FORMULA_FILE" "$HOMEBREW_TAP_FORMULA"
+
+    # Commit and push in tap repository
+    cd "$HOMEBREW_TAP_DIR"
+
+    if git diff --quiet "$HOMEBREW_TAP_FORMULA" 2>/dev/null; then
+        info "No changes in homebrew tap Formula"
+        cd "$PROJECT_ROOT"
+        return 0
+    fi
+
+    git add "$HOMEBREW_TAP_FORMULA"
+    git commit -m "Bump version to ${version}
+
+Co-Authored-By: Claude (claude-4.5-opus) <noreply@anthropic.com>"
+    git push
+
+    info "Homebrew tap synced successfully"
+    cd "$PROJECT_ROOT"
+}
+
 # Main
 main() {
     cd "$PROJECT_ROOT"
@@ -169,6 +207,9 @@ main() {
 
 Co-Authored-By: Claude (claude-4.5-opus) <noreply@anthropic.com>"
     git push
+
+    # Sync to homebrew tap repository
+    sync_homebrew_tap "$new_version"
 
     echo ""
     info "=========================================="
