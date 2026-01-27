@@ -309,8 +309,12 @@ class ClaudeFixer:
                 self.logger.debug(f"Claude stdout: {result.stdout[:500]}..." if len(result.stdout) > 500 else f"Claude stdout: {result.stdout}")
                 return True, "修复完成"
             else:
-                self.logger.error(f"Fix failed (exit code {result.returncode}): {result.stderr}")
-                return False, f"修复失败: {result.stderr}"
+                # 错误信息可能在 stdout 或 stderr 中
+                error_output = result.stderr.strip() or result.stdout.strip() or f"退出码 {result.returncode}"
+                self.logger.error(f"Fix failed (exit code {result.returncode})")
+                self.logger.error(f"stderr: {result.stderr}")
+                self.logger.error(f"stdout: {result.stdout}")
+                return False, f"修复失败: {error_output}"
 
         except subprocess.TimeoutExpired:
             elapsed = time.time() - fix_start_time
