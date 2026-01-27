@@ -11,7 +11,9 @@
 #   ./bootstrap.sh -w App.xcworkspace -p MyProject -t MyTarget
 #
 # 在 Xcode Build Phase 中使用:
-#   "${SRCROOT}/scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "ProjectName" -t "${TARGET_NAME}"
+#   "${SRCROOT}/scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "${PROJECT_FILE_PATH}" -t "${TARGET_NAME}"
+#
+# 注意: ${WORKSPACE_PATH} 是 workspace 完整路径，${PROJECT_FILE_PATH} 是 .xcodeproj 完整路径
 #
 
 set -e
@@ -94,18 +96,34 @@ if [ -z "$WORKSPACE" ] && [ -z "$PROJECT" ]; then
 fi
 
 # Determine the project/workspace path for biliobjclint-xcode
-if [ -n "$WORKSPACE" ]; then
+# 智能处理路径：
+# 1. 如果 WORKSPACE 是有效的 .xcworkspace 路径，使用它
+# 2. 如果 PROJECT 是有效的 .xcodeproj 路径，使用它
+# 3. 否则尝试从名称构建路径
+
+if [ -n "$WORKSPACE" ] && [[ "$WORKSPACE" == *.xcworkspace ]]; then
+    # WORKSPACE 是完整路径
     XCODE_PATH="$WORKSPACE"
     PROJECT_ARG=""
-    if [ -n "$PROJECT" ]; then
+    # 如果 PROJECT 是名称（不是路径），作为 -p 参数
+    if [ -n "$PROJECT" ] && [[ "$PROJECT" != *.xcodeproj ]]; then
         PROJECT_ARG="-p $PROJECT"
     fi
-else
+elif [ -n "$PROJECT" ] && [[ "$PROJECT" == *.xcodeproj ]]; then
+    # PROJECT 是完整的 .xcodeproj 路径
     XCODE_PATH="$PROJECT"
     PROJECT_ARG=""
+else
+    # 参数不是完整路径，报错
+    error "请提供完整路径。在 Xcode Build Phase 中使用: -w \"\${WORKSPACE_PATH}\" -p \"\${PROJECT_FILE_PATH}\" -t \"\${TARGET_NAME}\""
 fi
 
-info "Workspace/Project: $XCODE_PATH"
+# 验证路径存在
+if [ ! -e "$XCODE_PATH" ]; then
+    error "路径不存在: $XCODE_PATH"
+fi
+
+info "Xcode 项目: $XCODE_PATH"
 info "Target: $TARGET"
 
 # Step 1: Check if biliobjclint is installed
@@ -141,9 +159,17 @@ install_biliobjclint() {
 check_lint_phase_exists() {
     # Use biliobjclint-xcode --check-update to check
     # Exit code: 0 = exists and up to date, 1 = not exists, 2 = needs update
-    local result
-    result=$(biliobjclint-xcode "$XCODE_PATH" $PROJECT_ARG -t "$TARGET" --check-update 2>&1) || true
-    local exit_code=$?
+    # 如果不支持 --check-update（旧版本），返回 99 表示需要直接安装
+    local result exit_code
+
+    # 先检查 biliobjclint-xcode 是否支持 --check-update
+    if ! biliobjclint-xcode --help 2>&1 | grep -q "check-update"; then
+        warn "当前版本不支持 --check-update，将直接安装/更新"
+        return 99
+    fi
+
+    # Capture both output and exit code (use ; not || to preserve exit code)
+    result=$(biliobjclint-xcode "$XCODE_PATH" $PROJECT_ARG -t "$TARGET" --check-update 2>&1); exit_code=$?
 
     echo "$result"
     return $exit_code
@@ -152,7 +178,22 @@ check_lint_phase_exists() {
 # Step 4: Install or update lint phase
 install_lint_phase() {
     info "正在安装 Lint Build Phase..."
-    biliobjclint-xcode "$XCODE_PATH" $PROJECT_ARG -t "$TARGET" --override
+
+    # 检查是否支持 -p 参数（旧版本不支持）
+    local supports_project_arg=false
+    if biliobjclint-xcode --help 2>&1 | grep -q "\-\-project"; then
+        supports_project_arg=true
+    fi
+
+    if [ "$supports_project_arg" = true ] && [ -n "$PROJECT_ARG" ]; then
+        biliobjclint-xcode "$XCODE_PATH" $PROJECT_ARG -t "$TARGET" --override
+    else
+        if [ -n "$PROJECT_ARG" ]; then
+            warn "当前版本不支持 -p 参数，将直接使用项目路径"
+        fi
+        biliobjclint-xcode "$XCODE_PATH" -t "$TARGET" --override
+    fi
+
     info "Lint Build Phase 安装完成"
 }
 
@@ -168,9 +209,13 @@ main() {
     # Step 2: Check lint phase status
     info "检查 Lint Phase 状态..."
 
-    local check_result
+    local check_result check_exit
+
+    # Temporarily disable exit on error to capture the exit code
+    set +e
     check_result=$(check_lint_phase_exists)
-    local check_exit=$?
+    check_exit=$?
+    set -e
 
     case $check_exit in
         0)
@@ -192,6 +237,10 @@ main() {
                 warn "Lint Phase 需要更新（已禁用自动更新）"
                 echo "$check_result"
             fi
+            ;;
+        99)
+            # Old version without --check-update support, install directly
+            install_lint_phase
             ;;
         *)
             # Unknown error, try to install

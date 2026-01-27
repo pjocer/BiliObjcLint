@@ -110,8 +110,9 @@ cp $(brew --prefix)/share/biliobjclint/scripts/bootstrap.sh /path/to/your/projec
 6. Drag the new phase to the **top** (before all other phases)
 7. Paste the following script:
 ```bash
-"${SRCROOT}/scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "${PROJECT_NAME}" -t "${TARGET_NAME}"
+"${SRCROOT}/scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "${PROJECT_FILE_PATH}" -t "${TARGET_NAME}"
 ```
+> Note: `${WORKSPACE_PATH}` is the workspace full path, `${PROJECT_FILE_PATH}` is the .xcodeproj full path
 
 **What the bootstrap script does:**
 1. Check if BiliObjCLint is installed, install via Homebrew if not
