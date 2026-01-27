@@ -25,8 +25,12 @@ Objective-C 代码规范检查工具，支持增量检查、Xcode 集成和 Clau
 ### Via Homebrew (Recommended)
 
 ```bash
-brew tap pjocer/tap
+# Add tap and install
+brew tap pjocer/biliobjclint
 brew install biliobjclint
+
+# Or install directly
+brew install pjocer/biliobjclint/biliobjclint
 ```
 
 ### Manual Installation
