@@ -178,3 +178,18 @@ claude_autofix:
 
   # 修复超时时间（秒），仅对 silent 模式有效
   timeout: 120
+
+# ==================== 本地 Pod 检测配置 ====================
+local_pods:
+  # 是否启用本地 Pod 检测
+  enabled: true
+  # 是否对本地 Pod 进行增量检测
+  # - true: 只检查本地 Pod 的 git 变更（推荐）
+  # - false: 全量检查本地 Pod 的所有文件
+  incremental: true
+  # 本地 Pod 的包含模式（空表示所有）
+  included_pods: []
+  # 本地 Pod 的排除模式
+  excluded_pods:
+    - "*Test*"
+    - "*Mock*"
