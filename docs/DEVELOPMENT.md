@@ -11,12 +11,16 @@ BiliObjCLint/
 ├── oclint/                   # OCLint 源码（BSD 3-Clause）
 ├── scripts/
 │   ├── biliobjclint.py       # 主入口
-│   ├── claude_fixer.py       # Claude AI 自动修复模块
 │   ├── xcode_integrator.py   # Xcode 集成工具
-│   ├── release.sh            # 版本发布脚本
-│   ├── setup_env.sh          # 环境初始化脚本
-│   ├── install_xcode.sh      # Xcode 安装脚本
-│   ├── build_oclint.sh       # OCLint 编译脚本
+│   ├── bin/                  # 可执行脚本
+│   │   ├── biliobjclint.sh   # biliobjclint 命令入口
+│   │   ├── biliobjclint-xcode.sh  # Xcode 集成命令入口
+│   │   ├── bootstrap.sh      # Bootstrap 脚本（自动安装/更新）
+│   │   └── setup_env.sh      # 环境初始化脚本
+│   ├── claude/               # Claude AI 自动修复模块
+│   │   ├── fixer.py          # 修复器主逻辑
+│   │   ├── http_server.py    # HTTP 服务器（处理浏览器请求）
+│   │   └── html_report.py    # HTML 报告生成
 │   ├── core/                 # 核心模块
 │   │   ├── config.py         # 配置管理
 │   │   ├── git_diff.py       # Git 增量检测
@@ -29,6 +33,9 @@ BiliObjCLint/
 │   │   ├── memory_rules.py   # 内存管理规则
 │   │   ├── style_rules.py    # 代码风格规则
 │   │   └── security_rules.py # 安全规则
+│   ├── others/               # 辅助脚本
+│   │   ├── release.sh        # 版本发布脚本
+│   │   └── commit.sh         # 提交脚本
 │   └── lib/
 │       └── logging.sh        # Shell 日志库
 ├── custom_rules/
@@ -38,7 +45,7 @@ BiliObjCLint/
 │   └── default.yaml          # 默认配置模板
 ├── docs/                     # 开发文档
 ├── logs/                     # 运行日志（gitignore）
-└── test/                     # 测试文件
+└── VERSION                   # 版本号文件
 ```
 
 ## 开发环境设置
@@ -74,13 +81,27 @@ Python 规则引擎，负责：
 - 执行规则检查
 - 收集违规结果
 
-### claude_fixer.py
+### claude/ 模块
 
-Claude AI 自动修复模块，负责：
+Claude AI 自动修复模块，包含以下文件：
+
+**fixer.py** - 修复器主逻辑：
 - 检测 Claude Code CLI 可用性
-- 显示 macOS 对话框
+- 根据配置决定是否触发修复
 - 构建修复 prompt
 - 调用 Claude 执行修复
+- 支持 silent（静默）和 terminal 模式
+
+**http_server.py** - HTTP 服务器：
+- 处理浏览器的修复请求（fix/cancel/ignore）
+- 支持单个修复和批量"修复全部"
+- 异步任务处理和状态轮询
+
+**html_report.py** - HTML 报告生成：
+- 生成交互式违规报告页面
+- 支持代码预览和高亮
+- 支持在 Xcode 中打开文件
+- "修复全部"按钮（v1.1.8+）
 
 ### reporter.py
 

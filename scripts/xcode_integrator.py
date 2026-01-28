@@ -14,6 +14,7 @@ Options:
     --list-projects         列出 workspace 中所有项目
     --list-targets          列出所有可用的 Targets
     --check-update          检查已注入脚本是否需要更新
+    --bootstrap             复制 bootstrap.sh 并注入 Package Manager Build Phase
     --dry-run               仅显示将要进行的修改，不实际执行
     --help, -h              显示帮助
 """
@@ -21,6 +22,7 @@ import argparse
 import os
 import sys
 import shutil
+import stat
 from pathlib import Path
 from typing import Optional, List
 import xml.etree.ElementTree as ET
@@ -155,6 +157,15 @@ exit $LINT_EXIT
 '''
 
 PHASE_NAME = "[BiliObjCLint] Code Style Check"
+BOOTSTRAP_PHASE_NAME = "[BiliObjcLint] Package Manager"
+
+# Bootstrap Build Phase 脚本模板
+BOOTSTRAP_SCRIPT_TEMPLATE = '''#!/bin/bash
+# [BiliObjcLint] Package Manager
+# 自动安装和更新 BiliObjCLint
+
+"{scripts_path}/bootstrap.sh" -w "${{WORKSPACE_PATH}}" -p "${{PROJECT_FILE_PATH}}" -t "${{TARGET_NAME}}"
+'''
 
 
 class XcodeIntegrator:
@@ -516,6 +527,164 @@ class XcodeIntegrator:
             print(f"Error: 复制配置文件失败: {e}", file=sys.stderr)
             return False
 
+    def copy_bootstrap_script(self, target_scripts_dir: Path, dry_run: bool = False) -> bool:
+        """复制 bootstrap.sh 到目标 scripts 目录"""
+        self.logger.info(f"Copying bootstrap.sh to: {target_scripts_dir}")
+
+        # 源文件位置
+        source_bootstrap = self.lint_path / "scripts" / "bin" / "bootstrap.sh"
+        target_bootstrap = target_scripts_dir / "bootstrap.sh"
+
+        self.logger.debug(f"Source: {source_bootstrap}")
+        self.logger.debug(f"Target: {target_bootstrap}")
+
+        if not source_bootstrap.exists():
+            self.logger.error(f"Source bootstrap.sh not found: {source_bootstrap}")
+            print(f"Error: 源文件不存在: {source_bootstrap}", file=sys.stderr)
+            return False
+
+        if dry_run:
+            self.logger.info(f"[DRY RUN] Would copy bootstrap.sh to: {target_bootstrap}")
+            print(f"[DRY RUN] 将复制 bootstrap.sh 到: {target_bootstrap}")
+            return True
+
+        try:
+            # 创建目录
+            target_scripts_dir.mkdir(parents=True, exist_ok=True)
+
+            # 复制文件
+            shutil.copy2(source_bootstrap, target_bootstrap)
+
+            # 设置执行权限
+            target_bootstrap.chmod(
+                target_bootstrap.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+            )
+
+            self.logger.info(f"Successfully copied bootstrap.sh to: {target_bootstrap}")
+            print(f"✓ 已复制 bootstrap.sh 到: {target_bootstrap}")
+            return True
+
+        except Exception as e:
+            self.logger.exception(f"Failed to copy bootstrap.sh: {e}")
+            print(f"Error: 复制 bootstrap.sh 失败: {e}", file=sys.stderr)
+            return False
+
+    def get_project_srcroot(self) -> Optional[Path]:
+        """获取项目的 SRCROOT（即 .xcodeproj 的父目录）"""
+        if not self.xcodeproj_path:
+            return None
+        return self.xcodeproj_path.parent
+
+    def has_bootstrap_phase(self, target) -> bool:
+        """检查是否已存在 Bootstrap Phase"""
+        build_phases = target.buildPhases
+        for phase_id in build_phases:
+            phase = self.project.objects[phase_id]
+            if phase.isa == 'PBXShellScriptBuildPhase':
+                if hasattr(phase, 'name') and phase.name == BOOTSTRAP_PHASE_NAME:
+                    return True
+                # 也检查脚本内容
+                if hasattr(phase, 'shellScript') and 'Package Manager' in str(phase.shellScript):
+                    return True
+        return False
+
+    def add_bootstrap_phase(self, target, relative_scripts_path: str, dry_run: bool = False) -> bool:
+        """添加 Bootstrap Build Phase"""
+        self.logger.info(f"Adding bootstrap phase to target: {target.name}")
+
+        if self.has_bootstrap_phase(target):
+            self.logger.info(f"Target '{target.name}' already has bootstrap phase")
+            print(f"Target '{target.name}' 已存在 Bootstrap Phase")
+            return True
+
+        # 生成脚本内容
+        scripts_path = "${SRCROOT}/" + relative_scripts_path
+        script_content = BOOTSTRAP_SCRIPT_TEMPLATE.format(scripts_path=scripts_path)
+
+        self.logger.debug(f"Scripts path in Build Phase: {scripts_path}")
+        self.logger.debug(f"Generated script content ({len(script_content)} chars)")
+
+        if dry_run:
+            self.logger.info(f"[DRY RUN] Would add bootstrap phase to target '{target.name}'")
+            print(f"[DRY RUN] 将为 Target '{target.name}' 添加 Bootstrap Phase:")
+            print(f"  名称: {BOOTSTRAP_PHASE_NAME}")
+            print(f"  脚本路径: {scripts_path}/bootstrap.sh")
+            return True
+
+        try:
+            # 使用 pbxproj 的 add_run_script 方法
+            self.project.add_run_script(
+                script=script_content,
+                target_name=target.name,
+                insert_before_compile=True  # 在 Compile Sources 之前插入
+            )
+
+            # 找到刚添加的 phase 并设置名称
+            for phase_id in target.buildPhases:
+                phase = self.project.objects[phase_id]
+                if phase.isa == 'PBXShellScriptBuildPhase':
+                    if hasattr(phase, 'shellScript') and 'Package Manager' in str(phase.shellScript):
+                        if not hasattr(phase, 'name') or not phase.name:
+                            phase.name = BOOTSTRAP_PHASE_NAME
+                        break
+
+            self.logger.info(f"Successfully added bootstrap phase to target '{target.name}'")
+            print(f"✓ 已为 Target '{target.name}' 添加 Bootstrap Phase")
+            return True
+
+        except Exception as e:
+            self.logger.exception(f"Failed to add bootstrap phase: {e}")
+            print(f"Error: 添加 Bootstrap Phase 失败: {e}", file=sys.stderr)
+            return False
+
+    def do_bootstrap(self, target_name: Optional[str], dry_run: bool = False) -> bool:
+        """执行 bootstrap 操作：复制脚本并注入 Build Phase"""
+        self.logger.info("Executing bootstrap operation")
+
+        # 1. 确定 scripts 目录位置（输入路径的同级目录）
+        scripts_dir = self.project_path.parent / "scripts"
+        self.logger.debug(f"Target scripts directory: {scripts_dir}")
+
+        # 2. 复制 bootstrap.sh
+        if not self.copy_bootstrap_script(scripts_dir, dry_run):
+            return False
+
+        # 3. 获取 target
+        target = self.get_target(target_name)
+        if not target:
+            if target_name:
+                self.logger.error(f"Target '{target_name}' not found")
+                print(f"Error: Target '{target_name}' 不存在", file=sys.stderr)
+                print("使用 --list-targets 查看可用的 Targets")
+            else:
+                self.logger.error("No available target found")
+                print("Error: 未找到可用的 Target", file=sys.stderr)
+            return False
+
+        self.logger.info(f"Selected target: {target.name}")
+        print(f"Target: {target.name}")
+
+        # 4. 获取 SRCROOT 并计算相对路径
+        srcroot = self.get_project_srcroot()
+        if not srcroot:
+            self.logger.error("Cannot determine SRCROOT")
+            print("Error: 无法确定 SRCROOT", file=sys.stderr)
+            return False
+
+        relative_path = os.path.relpath(scripts_dir, srcroot)
+        self.logger.debug(f"SRCROOT: {srcroot}")
+        self.logger.debug(f"Relative path from SRCROOT to scripts: {relative_path}")
+        print(f"SRCROOT: {srcroot}")
+        print(f"Scripts 相对路径: {relative_path}")
+        print()
+
+        # 5. 添加 Bootstrap Build Phase
+        if not self.add_bootstrap_phase(target, relative_path, dry_run):
+            return False
+
+        # 6. 保存项目
+        return self.save(dry_run)
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -562,6 +731,12 @@ def parse_args():
         '--check-update',
         action='store_true',
         help='检查已注入脚本是否需要更新'
+    )
+
+    parser.add_argument(
+        '--bootstrap',
+        action='store_true',
+        help='复制 bootstrap.sh 并注入 Package Manager Build Phase'
     )
 
     parser.add_argument(
@@ -649,6 +824,14 @@ def main():
     logger.info(f"Selected target: {target.name}")
     print(f"Target: {target.name}")
     print()
+
+    # Bootstrap 模式
+    if args.bootstrap:
+        logger.info("Executing bootstrap mode")
+        success = integrator.do_bootstrap(args.target, args.dry_run)
+        logger.info(f"Bootstrap completed: success={success}")
+        logger.log_separator("Xcode Integration Session End")
+        sys.exit(0 if success else 1)
 
     # 检查更新
     if args.check_update:

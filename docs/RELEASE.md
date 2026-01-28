@@ -79,3 +79,35 @@ Formula 文件位于 `Formula/biliobjclint.rb`，包含：
 ```bash
 brew update && brew upgrade biliobjclint
 ```
+
+## 版本历史
+
+### v1.1.9 (即将发布)
+
+**新功能：**
+- 新增 `--bootstrap` 模式：自动复制 bootstrap.sh 并注入 Package Manager Build Phase
+- 自动计算从 SRCROOT 到 scripts 目录的相对路径，解决多项目 workspace 的路径问题
+
+### v1.1.8
+
+**新功能：**
+- HTML 报告新增「🔧 修复全部」按钮，支持批量修复所有违规
+- 异步执行修复，带进度轮询
+
+**优化：**
+- 禁用 Claude 思考模式（`MAX_THINKING_TOKENS=0`），提升修复速度
+- 添加 `--dangerously-skip-permissions` 跳过权限确认
+
+### v1.1.7
+
+**新功能：**
+- 支持 Claude AI 自动修复功能
+- HTML 交互式报告界面
+- 支持在 Xcode 中打开文件
+
+### v1.0.x
+
+- 初始版本
+- Python 规则引擎
+- OCLint 集成
+- Xcode Build Phase 集成

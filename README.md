@@ -91,7 +91,29 @@ This will:
 1. Add a Build Phase script to your Xcode project
 2. Copy the default configuration file to your project root
 
-### 3. Bootstrap Script (Auto Install)
+### 3. Auto Bootstrap Mode (Recommended for Multi-Project Workspaces)
+
+Automatically copy bootstrap.sh and inject Package Manager Build Phase with correct relative paths:
+
+```bash
+# For workspace (recommended for complex project structures)
+biliobjclint-xcode /path/to/App.xcworkspace -p MyProject -t MyTarget --bootstrap
+
+# For xcodeproj
+biliobjclint-xcode /path/to/App.xcodeproj -t MyTarget --bootstrap
+
+# Preview changes without applying
+biliobjclint-xcode /path/to/App.xcworkspace -p MyProject -t MyTarget --bootstrap --dry-run
+```
+
+This will:
+1. Copy `bootstrap.sh` to `./scripts/` directory (same level as workspace/xcodeproj)
+2. Calculate correct relative path from SRCROOT to scripts directory
+3. Add `[BiliObjcLint] Package Manager` Build Phase with auto-calculated paths
+
+This is especially useful for workspaces where SRCROOT differs from the workspace root directory.
+
+### 4. Bootstrap Script (Manual Setup)
 
 Use the bootstrap script to automatically install and configure BiliObjCLint:
 
@@ -119,7 +141,7 @@ cp $(brew --prefix)/share/biliobjclint/scripts/bin/bootstrap.sh /path/to/your/pr
 2. Check if Lint Phase exists, install if not
 3. Check if Lint Phase needs update, update automatically
 
-### 4. Install OCLint (Optional)
+### 5. Install OCLint (Optional)
 
 If you need OCLint's deep AST analysis:
 
@@ -204,6 +226,8 @@ OCLint provides 70+ rules in categories: Basic, Convention, Empty, Naming, Redun
 
 ## Command Line Options
 
+### biliobjclint
+
 ```
 biliobjclint [options]
 
@@ -218,6 +242,23 @@ Options:
   --no-oclint             Disable OCLint
   --no-python-rules       Disable Python rules
   --verbose, -v           Verbose output
+```
+
+### biliobjclint-xcode
+
+```
+biliobjclint-xcode <project_path> [options]
+
+Options:
+  --project, -p NAME      Project name (for workspace)
+  --target, -t NAME       Target name (default: main target)
+  --remove                Remove Lint Phase
+  --bootstrap             Copy bootstrap.sh and inject Package Manager Build Phase
+  --check-update          Check if injected script needs update
+  --list-projects         List all projects in workspace
+  --list-targets          List all available targets
+  --dry-run               Show changes without applying
+  --override              Force override existing Lint Phase
 ```
 
 ## FAQ

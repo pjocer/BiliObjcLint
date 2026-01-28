@@ -15,6 +15,7 @@
 #   --remove             移除已添加的 Lint Phase
 #   --override           强制覆盖已存在的 Lint Phase
 #   --check-update       检查已注入脚本是否需要更新
+#   --bootstrap          自动复制 bootstrap.sh 并注入 Package Manager Build Phase
 #   --list-projects      列出 workspace 中所有项目
 #   --list-targets       列出所有可用的 Targets
 #   --dry-run            仅显示将要进行的修改，不实际执行
@@ -73,6 +74,7 @@ show_help() {
     echo "  --remove            移除已添加的 Lint Phase"
     echo "  --override          强制覆盖已存在的 Lint Phase"
     echo "  --check-update      检查已注入脚本是否需要更新"
+    echo "  --bootstrap         自动复制 bootstrap.sh 并注入 Package Manager Build Phase"
     echo "  --list-projects     列出 workspace 中所有项目"
     echo "  --list-targets      列出所有可用的 Targets"
     echo "  --dry-run           仅显示将要进行的修改，不实际执行"
@@ -210,6 +212,10 @@ while [[ $# -gt 0 ]]; do
             ACTION="check-update"
             shift
             ;;
+        --bootstrap)
+            ACTION="bootstrap"
+            shift
+            ;;
         --list-projects)
             ACTION="list-projects"
             shift
@@ -287,6 +293,8 @@ if [ "$ACTION" = "remove" ]; then
     CMD_ARGS+=("--remove")
 elif [ "$ACTION" = "check-update" ]; then
     CMD_ARGS+=("--check-update")
+elif [ "$ACTION" = "bootstrap" ]; then
+    CMD_ARGS+=("--bootstrap")
 elif [ "$ACTION" = "list-projects" ]; then
     CMD_ARGS+=("--list-projects")
 elif [ "$ACTION" = "list-targets" ]; then

@@ -91,7 +91,29 @@ biliobjclint-xcode /path/to/App.xcodeproj --list-targets
 1. 在 Xcode 项目中添加 Build Phase 脚本
 2. 复制默认配置文件到项目根目录
 
-### 3. Bootstrap 脚本（自动安装）
+### 3. 自动 Bootstrap 模式（推荐用于多项目 Workspace）
+
+自动复制 bootstrap.sh 并注入 Package Manager Build Phase，自动计算正确的相对路径：
+
+```bash
+# 对于 workspace（推荐用于复杂项目结构）
+biliobjclint-xcode /path/to/App.xcworkspace -p MyProject -t MyTarget --bootstrap
+
+# 对于 xcodeproj
+biliobjclint-xcode /path/to/App.xcodeproj -t MyTarget --bootstrap
+
+# 预览修改，不实际应用
+biliobjclint-xcode /path/to/App.xcworkspace -p MyProject -t MyTarget --bootstrap --dry-run
+```
+
+这将会：
+1. 复制 `bootstrap.sh` 到 `./scripts/` 目录（与 workspace/xcodeproj 同级）
+2. 自动计算从 SRCROOT 到 scripts 目录的相对路径
+3. 添加 `[BiliObjcLint] Package Manager` Build Phase，使用自动计算的路径
+
+这对于 SRCROOT 与 workspace 根目录不同的工作空间特别有用。
+
+### 4. Bootstrap 脚本（手动配置）
 
 使用 bootstrap 脚本自动安装和配置 BiliObjCLint：
 
@@ -119,7 +141,7 @@ cp $(brew --prefix)/share/biliobjclint/scripts/bin/bootstrap.sh /path/to/your/pr
 2. 检查 Lint Phase 是否存在，不存在则安装
 3. 检查 Lint Phase 是否需要更新，自动更新到最新版本
 
-### 4. 安装 OCLint（可选）
+### 5. 安装 OCLint（可选）
 
 如果需要 OCLint 的深度 AST 分析：
 
@@ -204,6 +226,8 @@ OCLint 提供 70+ 规则，涵盖：Basic、Convention、Empty、Naming、Redund
 
 ## 命令行选项
 
+### biliobjclint
+
 ```
 biliobjclint [options]
 
@@ -218,6 +242,23 @@ biliobjclint [options]
   --no-oclint             禁用 OCLint
   --no-python-rules       禁用 Python 规则
   --verbose, -v           详细输出
+```
+
+### biliobjclint-xcode
+
+```
+biliobjclint-xcode <项目路径> [选项]
+
+选项:
+  --project, -p NAME      项目名称（用于 workspace）
+  --target, -t NAME       Target 名称（默认：主 Target）
+  --remove                移除 Lint Phase
+  --bootstrap             复制 bootstrap.sh 并注入 Package Manager Build Phase
+  --check-update          检查已注入脚本是否需要更新
+  --list-projects         列出 workspace 中所有项目
+  --list-targets          列出所有可用的 Targets
+  --dry-run               仅显示将要进行的修改
+  --override              强制覆盖已存在的 Lint Phase
 ```
 
 ## 常见问题
