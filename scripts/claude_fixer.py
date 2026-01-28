@@ -409,8 +409,8 @@ class ClaudeFixer:
         at_keywords = r'(@interface|@implementation|@end|@protocol|@property|@synthesize|@dynamic|@class|@public|@private|@protected|@package|@selector|@encode|@try|@catch|@finally|@throw|@synchronized|@autoreleasepool|@optional|@required|@import|@available)'
         code = re.sub(at_keywords, r'<span class="hl-at-keyword">\1</span>', code)
 
-        # 属性关键字
-        prop_keywords = r'\b(nonatomic|atomic|strong|weak|copy|assign|retain|readonly|readwrite|getter|setter|nullable|nonnull|class)\b'
+        # 属性关键字 (注意：不包含 class，因为会与 HTML class= 属性冲突)
+        prop_keywords = r'\b(nonatomic|atomic|strong|weak|copy|assign|retain|readonly|readwrite|getter|setter|nullable|nonnull)\b'
         code = re.sub(prop_keywords, r'<span class="hl-prop">\1</span>', code)
 
         # 字符串 (简单处理，不处理转义)
@@ -1356,109 +1356,139 @@ class ClaudeFixer:
             log_claude_fix_end(False, error_msg, time.time() - self.start_time)
             return 1
 
-        # 启动本地服务器并显示 HTML 报告
-        html_report_path = None
-        server = None
-        server_port = None
-        user_action = None
+        # 先显示对话框
+        dialog_result = self.show_dialog(
+            "BiliObjCLint",
+            f"发现 {len(violations)} 个代码问题\n（{error_count} errors, {warning_count} warnings）\n\n是否让 Claude 尝试自动修复？",
+            ["取消", "查看详情", "自动修复"],
+            icon="caution"
+        )
 
-        try:
-            # 找到可用端口并启动服务器
-            server_port = self._find_available_port()
-            server = self._start_action_server(server_port)
+        with open("/tmp/biliobjclint_debug.log", "a") as f:
+            f.write(f"Initial dialog result: {dialog_result}\n")
 
-            self.logger.info(f"Started action server on port {server_port}")
+        if dialog_result == "取消":
+            self.logger.info("User cancelled from dialog")
+            log_claude_fix_end(False, "User cancelled", time.time() - self.start_time)
+            return 0
 
-            # 生成带按钮的 HTML 报告
-            html_report_path = self.generate_html_report(violations, port=server_port)
+        # 用户选择直接修复
+        if dialog_result == "自动修复":
+            user_action = 'fix'
+        # 用户选择查看详情
+        elif dialog_result == "查看详情":
+            # 启动本地服务器并显示 HTML 报告
+            html_report_path = None
+            server = None
+            server_port = None
 
-            # 调试日志
-            with open("/tmp/biliobjclint_debug.log", "a") as f:
-                f.write(f"Opening HTML report with interactive buttons, port={server_port}\n")
+            try:
+                # 找到可用端口并启动服务器
+                server_port = self._find_available_port()
+                server = self._start_action_server(server_port)
 
-            # 在浏览器中打开报告
-            self.open_html_report(html_report_path)
+                self.logger.info(f"Started action server on port {server_port}")
 
-            # 等待用户操作（超时 5 分钟）
-            self.logger.info("Waiting for user action in browser...")
-            user_action = self._wait_for_user_action(server, timeout=300)
+                # 生成带按钮的 HTML 报告
+                html_report_path = self.generate_html_report(violations, port=server_port)
 
-            # 调试：记录用户操作结果
-            with open("/tmp/biliobjclint_debug.log", "a") as f:
-                f.write(f"User action: {user_action}\n")
+                # 调试日志
+                with open("/tmp/biliobjclint_debug.log", "a") as f:
+                    f.write(f"Opening HTML report with interactive buttons, port={server_port}\n")
+
+                # 在浏览器中打开报告
+                self.open_html_report(html_report_path)
+
+                # 等待用户操作（超时 5 分钟）
+                self.logger.info("Waiting for user action in browser...")
+                user_action = self._wait_for_user_action(server, timeout=300)
+
+                # 调试：记录用户操作结果
+                with open("/tmp/biliobjclint_debug.log", "a") as f:
+                    f.write(f"User action from HTML: {user_action}\n")
+
+            finally:
+                # 关闭服务器
+                if server:
+                    self._shutdown_server(server)
+                # 清理临时文件
+                if html_report_path and os.path.exists(html_report_path):
+                    try:
+                        os.remove(html_report_path)
+                    except Exception:
+                        pass
 
             if user_action == 'cancel' or user_action is None:
-                self.logger.info("User cancelled or timed out")
+                self.logger.info("User cancelled or timed out from HTML")
                 log_claude_fix_end(False, "User cancelled", time.time() - self.start_time)
                 return 0
+        else:
+            # 未知结果
+            self.logger.info(f"Unknown dialog result: {dialog_result}")
+            return 0
 
-            # user_action == 'fix'
-            self.logger.info(f"User confirmed fix, mode={self.mode}")
+        # user_action == 'fix'
+        self.logger.info(f"User confirmed fix, mode={self.mode}")
 
-            # 根据模式执行修复
-            if self.mode == 'silent':
-                # 显示进度通知
-                self.show_progress_notification("Claude 正在修复代码问题...")
+        # 根据模式执行修复
+        if self.mode == 'silent':
+            # 显示进度通知
+            self.show_progress_notification("Claude 正在修复代码问题...")
 
-                # 执行修复
-                success, result_msg = self.fix_violations_silent(violations)
+            # 执行修复
+            success, result_msg = self.fix_violations_silent(violations)
 
-                # 显示结果
-                if success:
-                    self.logger.info("Fix completed successfully")
-                    self.show_dialog(
-                        "BiliObjCLint",
-                        f"Claude 已完成修复！\n\n请重新编译以验证修复结果",
-                        ["确定"],
-                        icon="note"
-                    )
-                    log_claude_fix_end(True, "Fix completed", time.time() - self.start_time)
-                else:
-                    self.logger.error(f"Fix failed: {result_msg}")
-                    self.show_dialog(
-                        "BiliObjCLint",
-                        f"修复过程中出现问题\n\n{result_msg}",
-                        ["确定"],
-                        icon="stop"
-                    )
-                    log_claude_fix_end(False, result_msg, time.time() - self.start_time)
-                    return 1
+            # 显示结果
+            if success:
+                self.logger.info("Fix completed successfully")
+                self.show_dialog(
+                    "BiliObjCLint",
+                    f"Claude 已完成修复！\n\n请重新编译以验证修复结果",
+                    ["确定"],
+                    icon="note"
+                )
+                log_claude_fix_end(True, "Fix completed", time.time() - self.start_time)
+            else:
+                self.logger.error(f"Fix failed: {result_msg}")
+                self.show_dialog(
+                    "BiliObjCLint",
+                    f"修复过程中出现问题\n\n{result_msg}",
+                    ["确定"],
+                    icon="stop"
+                )
+                log_claude_fix_end(False, result_msg, time.time() - self.start_time)
+                return 1
 
-            elif self.mode == 'terminal':
-                success, result_msg = self.fix_violations_terminal(violations)
-                self.logger.info(f"Terminal mode result: success={success}, msg={result_msg}")
-                if not success:
-                    self.show_dialog(
-                        "BiliObjCLint",
-                        result_msg,
-                        ["确定"],
-                        icon="stop"
-                    )
-                    log_claude_fix_end(False, result_msg, time.time() - self.start_time)
-                    return 1
-                log_claude_fix_end(True, "Terminal opened", time.time() - self.start_time)
-
-            elif self.mode == 'vscode':
-                success, result_msg = self.fix_violations_vscode(violations)
-                self.logger.info(f"VSCode mode result: success={success}, msg={result_msg}")
+        elif self.mode == 'terminal':
+            success, result_msg = self.fix_violations_terminal(violations)
+            self.logger.info(f"Terminal mode result: success={success}, msg={result_msg}")
+            if not success:
                 self.show_dialog(
                     "BiliObjCLint",
                     result_msg,
                     ["确定"],
-                    icon="note" if success else "stop"
+                    icon="stop"
                 )
-                if not success:
-                    log_claude_fix_end(False, result_msg, time.time() - self.start_time)
-                    return 1
-                log_claude_fix_end(True, "VSCode opened", time.time() - self.start_time)
+                log_claude_fix_end(False, result_msg, time.time() - self.start_time)
+                return 1
+            log_claude_fix_end(True, "Terminal opened", time.time() - self.start_time)
 
-            self.logger.log_separator("Claude Fix Session End")
-            return 0
+        elif self.mode == 'vscode':
+            success, result_msg = self.fix_violations_vscode(violations)
+            self.logger.info(f"VSCode mode result: success={success}, msg={result_msg}")
+            self.show_dialog(
+                "BiliObjCLint",
+                result_msg,
+                ["确定"],
+                icon="note" if success else "stop"
+            )
+            if not success:
+                log_claude_fix_end(False, result_msg, time.time() - self.start_time)
+                return 1
+            log_claude_fix_end(True, "VSCode opened", time.time() - self.start_time)
 
-        finally:
-            # 关闭服务器并清理临时文件
-            self._shutdown_server(server)
-            self.cleanup_temp_files(html_report_path)
+        self.logger.log_separator("Claude Fix Session End")
+        return 0
 
     def run_silent_fix(self, violations: List[Dict]) -> int:
         """
