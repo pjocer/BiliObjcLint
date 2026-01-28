@@ -127,6 +127,21 @@ python_rules:
     enabled: true
     severity: error
 
+  insecure_random:
+    enabled: true
+    severity: warning
+
+  # ---------- 文件规范 ----------
+  file_header:
+    enabled: false  # 默认关闭，需要配置模板后启用
+    severity: warning
+    params:
+      required_patterns: []
+      # 示例配置:
+      # required_patterns:
+      #   - "Copyright"
+      #   - "Created by"
+
 # ==================== 自定义规则 ====================
 custom_rules:
   # Python 自定义规则
@@ -144,3 +159,35 @@ severity_mapping:
   priority1: error    # P1 → 红色错误，中断编译
   priority2: warning  # P2 → 黄色警告
   priority3: warning  # P3 → 黄色警告
+
+# ==================== Claude 自动修复配置 ====================
+claude_autofix:
+  # 触发模式
+  # - any: 任何违规时都弹窗询问
+  # - error: 仅当存在 error 级别违规时弹窗
+  # - disable: 禁用自动弹窗（可通过命令行手动触发）
+  trigger: "any"
+
+  # 执行模式
+  # - silent: 静默修复（后台执行，显示进度和结果弹窗）
+  # - terminal: 打开 Terminal.app 与 Claude 交互
+  # - vscode: 在 VSCode 中打开项目，将 prompt 复制到剪贴板
+  mode: "silent"
+
+  # 修复超时时间（秒），仅对 silent 模式有效
+  timeout: 120
+
+# ==================== 本地 Pod 检测配置 ====================
+local_pods:
+  # 是否启用本地 Pod 检测
+  enabled: true
+  # 是否对本地 Pod 进行增量检测
+  # - true: 只检查本地 Pod 的 git 变更（推荐）
+  # - false: 全量检查本地 Pod 的所有文件
+  incremental: true
+  # 本地 Pod 的包含模式（空表示所有）
+  included_pods: []
+  # 本地 Pod 的排除模式
+  excluded_pods:
+    - "*Test*"
+    - "*Mock*"
