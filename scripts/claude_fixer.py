@@ -400,26 +400,29 @@ class ClaudeFixer:
         """
         import re
 
-        # 先转义 HTML
-        code = self._escape_html(code)
-
-        # 使用占位符保护字符串和注释，避免后续正则匹配到它们
-        # 占位符格式: \x00TYPE_INDEX\x00
+        # 使用占位符保护字符串和注释
+        # 重要：必须在 HTML 转义之前提取，因为转义后 " 变成 &quot; 会破坏正则匹配
         placeholders = []
 
-        def save_match(match, match_type):
+        def save_and_escape(match, match_type):
+            """保存匹配内容并转义 HTML"""
             idx = len(placeholders)
-            placeholders.append((match_type, match.group(0)))
+            # 对提取的内容进行 HTML 转义
+            escaped_content = self._escape_html(match.group(0))
+            placeholders.append((match_type, escaped_content))
             return f'\x00{match_type}_{idx}\x00'
 
         # 1. 先提取注释（优先级最高，避免字符串匹配到注释内容）
-        code = re.sub(r'(//.*?)$', lambda m: save_match(m, 'COMMENT'), code)
+        code = re.sub(r'//.*?$', lambda m: save_and_escape(m, 'COMMENT'), code)
 
-        # 2. 提取字符串
-        code = re.sub(r'(@&quot;[^&]*&quot;)', lambda m: save_match(m, 'STRING'), code)  # ObjC 字符串 @"..."
-        code = re.sub(r'(&quot;(?:[^&\\]|\\.)*&quot;)', lambda m: save_match(m, 'STRING'), code)  # C 字符串 "..."
+        # 2. 提取字符串（在 HTML 转义之前，使用原始引号匹配）
+        code = re.sub(r'@"[^"]*"', lambda m: save_and_escape(m, 'STRING'), code)  # ObjC 字符串 @"..."
+        code = re.sub(r'"(?:[^"\\]|\\.)*"', lambda m: save_and_escape(m, 'STRING'), code)  # C 字符串 "..."
 
-        # 3. 现在处理关键字等，不会匹配到字符串和注释
+        # 3. 现在对剩余代码进行 HTML 转义
+        code = self._escape_html(code)
+
+        # 4. 处理关键字等，不会匹配到字符串和注释（它们已被占位符替代）
         # 关键字
         keywords = r'\b(if|else|for|while|do|switch|case|default|break|continue|return|goto|typedef|struct|enum|union|sizeof|static|extern|const|volatile|inline|register|auto|signed|unsigned|void|char|short|int|long|float|double|bool|BOOL|YES|NO|nil|NULL|self|super|id|Class|SEL|IMP|instancetype|NS_ASSUME_NONNULL_BEGIN|NS_ASSUME_NONNULL_END)\b'
         code = re.sub(keywords, r'<span class="hl-keyword">\1</span>', code)
@@ -438,13 +441,13 @@ class ClaudeFixer:
         # 预处理指令
         code = re.sub(r'^(\s*)(#\w+)', r'\1<span class="hl-preprocessor">\2</span>', code)
 
-        # 4. 恢复字符串和注释，并添加高亮
-        for i, (match_type, content) in enumerate(placeholders):
+        # 5. 恢复字符串和注释，并添加高亮
+        for i, (match_type, escaped_content) in enumerate(placeholders):
             placeholder = f'\x00{match_type}_{i}\x00'
             if match_type == 'COMMENT':
-                code = code.replace(placeholder, f'<span class="hl-comment">{content}</span>')
+                code = code.replace(placeholder, f'<span class="hl-comment">{escaped_content}</span>')
             elif match_type == 'STRING':
-                code = code.replace(placeholder, f'<span class="hl-string">{content}</span>')
+                code = code.replace(placeholder, f'<span class="hl-string">{escaped_content}</span>')
 
         return code
 
