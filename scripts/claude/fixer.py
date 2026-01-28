@@ -30,7 +30,8 @@ from claude.http_server import (
     wait_for_user_action,
     shutdown_server,
     set_ignore_cache,
-    set_fixer_instance
+    set_fixer_instance,
+    set_all_violations
 )
 
 logger = get_logger("claude_fix")
@@ -239,6 +240,8 @@ class ClaudeFixer:
             # 构建环境变量，从用户的 shell 配置文件读取 ANTHROPIC_* 变量
             env = os.environ.copy()
             env.update(self._load_shell_env())
+            # 禁用 thinking 模式以加速响应
+            env['MAX_THINKING_TOKENS'] = '0'
 
             # 使用 -p 非交互模式执行修复
             result = subprocess.run(
@@ -247,7 +250,8 @@ class ClaudeFixer:
                     '-p', prompt,
                     '--allowedTools', 'Read,Edit',
                     '--session-id', session_id,
-                    '--no-session-persistence'
+                    '--no-session-persistence',
+                    '--dangerously-skip-permissions'  # 跳过权限检查以加速
                 ],
                 capture_output=True,
                 text=True,
@@ -441,6 +445,7 @@ class ClaudeFixer:
         ignore_cache = IgnoreCache(project_root=str(self.project_root))
         set_ignore_cache(ignore_cache)
         set_fixer_instance(self)
+        set_all_violations(violations)  # 供"修复全部"功能使用
 
         try:
             # 找到可用端口并启动服务器

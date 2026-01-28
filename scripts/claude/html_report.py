@@ -378,7 +378,7 @@ HTML_STYLES = '''
         text-align: center;
         margin-top: 30px;
     }
-    .btn-done, .btn-download {
+    .btn-done, .btn-download, .btn-fix-all {
         padding: 14px 40px;
         font-size: 16px;
         font-weight: 600;
@@ -405,7 +405,25 @@ HTML_STYLES = '''
         transform: translateY(-1px);
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }
-    .btn-done:disabled, .btn-download:disabled {
+    .btn-fix-all {
+        background: #FF9800;
+    }
+    .btn-fix-all:hover {
+        background: #F57C00;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .btn-fix-all[data-state="fixing"] {
+        background: #FFA726;
+        cursor: wait;
+    }
+    .btn-fix-all[data-state="completed"] {
+        background: #66BB6A;
+    }
+    .btn-fix-all[data-state="failed"] {
+        background: #EF5350;
+    }
+    .btn-done:disabled, .btn-download:disabled, .btn-fix-all:disabled {
         opacity: 0.6;
         cursor: not-allowed;
         transform: none;
@@ -674,6 +692,97 @@ def _generate_javascript(port: int) -> str:
             URL.revokeObjectURL(url);
         }}
 
+        // 修复所有违规
+        async function fixAllViolations() {{
+            const btn = document.getElementById('btn-fix-all');
+            btn.disabled = true;
+            btn.textContent = '修复中...';
+            btn.dataset.state = 'fixing';
+
+            try {{
+                const response = await fetch(`http://localhost:${{SERVER_PORT}}/fix-all`);
+                const result = await response.json();
+                if (result.success && result.task_id) {{
+                    // 修复已启动，轮询查询状态
+                    pollFixAllStatus(btn, result.task_id, result.total);
+                }} else {{
+                    btn.textContent = '修复全部';
+                    btn.dataset.state = 'failed';
+                    btn.disabled = false;
+                    alert('启动修复失败: ' + (result.message || '未知错误'));
+                }}
+            }} catch (e) {{
+                btn.textContent = '修复全部';
+                btn.dataset.state = 'failed';
+                btn.disabled = false;
+                alert('操作失败');
+            }}
+        }}
+
+        // 轮询修复全部任务状态
+        async function pollFixAllStatus(btn, taskId, total) {{
+            const maxAttempts = 300;  // 最多轮询 300 次（约 5 分钟）
+            const pollInterval = 1000;  // 每秒查询一次
+            let attempts = 0;
+
+            const poll = async () => {{
+                attempts++;
+                try {{
+                    const response = await fetch(
+                        `http://localhost:${{SERVER_PORT}}/fix-status?task_id=${{taskId}}`
+                    );
+                    const result = await response.json();
+
+                    if (result.status === 'completed') {{
+                        btn.textContent = '已全部修复';
+                        btn.dataset.state = 'completed';
+                        // 标记所有违规项为已修复
+                        document.querySelectorAll('.violation').forEach(el => {{
+                            el.classList.add('fixed');
+                        }});
+                        document.querySelectorAll('.btn-fix-single').forEach(el => {{
+                            el.textContent = '已修复';
+                            el.dataset.state = 'fixed';
+                            el.disabled = true;
+                        }});
+                        return;
+                    }} else if (result.status === 'failed') {{
+                        btn.textContent = '修复失败';
+                        btn.dataset.state = 'failed';
+                        btn.disabled = false;
+                        alert('修复失败: ' + result.message);
+                        return;
+                    }} else if (result.status === 'running') {{
+                        // 更新进度显示
+                        btn.textContent = `修复中...${{attempts}}s`;
+                        if (attempts < maxAttempts) {{
+                            setTimeout(poll, pollInterval);
+                        }} else {{
+                            btn.textContent = '超时';
+                            btn.dataset.state = 'failed';
+                            btn.disabled = false;
+                        }}
+                    }} else {{
+                        // 未知状态
+                        btn.textContent = '修复全部';
+                        btn.dataset.state = 'failed';
+                        btn.disabled = false;
+                    }}
+                }} catch (e) {{
+                    if (attempts < maxAttempts) {{
+                        setTimeout(poll, pollInterval);
+                    }} else {{
+                        btn.textContent = '修复全部';
+                        btn.dataset.state = 'failed';
+                        btn.disabled = false;
+                    }}
+                }}
+            }};
+
+            // 启动轮询
+            setTimeout(poll, pollInterval);
+        }}
+
         // 完成并继续编译
         async function finishAndContinue() {{
             if (actionSent) return;
@@ -847,6 +956,7 @@ class HtmlReportGenerator:
             html_parts.append(f'''
     <div class="footer-actions">
         <button class="btn-download" onclick="downloadReport()" id="btn-download">📥 下载报告</button>
+        <button class="btn-fix-all" onclick="fixAllViolations()" id="btn-fix-all" data-state="normal">🔧 修复全部</button>
         <button class="btn-done" onclick="finishAndContinue()" id="btn-done">✓ 完成并继续编译</button>
     </div>
     <div class="footer">

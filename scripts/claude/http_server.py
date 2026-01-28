@@ -29,6 +29,7 @@ _server_should_stop = False
 _timeout_reset_time = None
 _ignore_cache = None
 _fixer_instance = None
+_all_violations = []  # 存储所有违规，供"修复全部"使用
 
 # 修复任务状态跟踪
 # 格式: {task_id: {'status': 'running'|'completed'|'failed', 'message': str}}
@@ -39,6 +40,12 @@ def set_ignore_cache(cache):
     """设置忽略缓存实例"""
     global _ignore_cache
     _ignore_cache = cache
+
+
+def set_all_violations(violations):
+    """设置所有违规列表"""
+    global _all_violations
+    _all_violations = violations
 
 
 def set_fixer_instance(fixer):
@@ -103,6 +110,9 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
         elif path == '/fix-status':
             # 查询修复任务状态
             self._handle_fix_status(params)
+        elif path == '/fix-all':
+            # 修复所有违规
+            self._handle_fix_all()
         else:
             self.send_error(404)
 
@@ -203,6 +213,72 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
             })
         else:
             self._send_json_response({'success': False, 'message': '任务不存在'})
+
+    def _handle_fix_all(self):
+        """处理修复所有违规的请求"""
+        global _fixer_instance, _timeout_reset_time, _fix_tasks, _all_violations
+        import threading
+        import uuid
+
+        if not _all_violations:
+            self._send_json_response({'success': False, 'message': '没有可修复的问题'})
+            return
+
+        # 重置超时
+        _timeout_reset_time = time.time()
+
+        # 创建任务 ID
+        task_id = str(uuid.uuid4())[:8]
+        total_count = len(_all_violations)
+        _fix_tasks[task_id] = {
+            'status': 'running',
+            'message': f'正在修复 {total_count} 个问题...',
+            'total': total_count,
+            'completed': 0
+        }
+
+        def do_fix_all():
+            global _fix_tasks
+            try:
+                if _fixer_instance:
+                    success, result_msg = _fixer_instance.fix_violations_silent(_all_violations)
+                    if success:
+                        _fix_tasks[task_id] = {
+                            'status': 'completed',
+                            'message': f'已修复 {total_count} 个问题',
+                            'total': total_count,
+                            'completed': total_count
+                        }
+                    else:
+                        _fix_tasks[task_id] = {
+                            'status': 'failed',
+                            'message': result_msg,
+                            'total': total_count,
+                            'completed': 0
+                        }
+                else:
+                    _fix_tasks[task_id] = {
+                        'status': 'failed',
+                        'message': 'Fixer 未初始化',
+                        'total': total_count,
+                        'completed': 0
+                    }
+            except Exception as e:
+                _fix_tasks[task_id] = {
+                    'status': 'failed',
+                    'message': str(e),
+                    'total': total_count,
+                    'completed': 0
+                }
+
+        # 在后台线程执行修复
+        threading.Thread(target=do_fix_all, daemon=True).start()
+        self._send_json_response({
+            'success': True,
+            'status': 'started',
+            'task_id': task_id,
+            'total': total_count
+        })
 
     def _open_in_xcode(self, file_path: str, line: str):
         """使用 xed 命令在 Xcode 中打开文件"""

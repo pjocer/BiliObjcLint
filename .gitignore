@@ -35,3 +35,7 @@ logs/
 *.tmp
 *.bak
 typescript
+
+# Test directories (local testing)
+test/
+tests/
