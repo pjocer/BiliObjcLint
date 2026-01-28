@@ -34,6 +34,7 @@ from core.logger import get_logger, LogContext, log_claude_fix_start, log_claude
 # 全局变量用于 HTTP 服务器通信
 _user_action = None
 _server_should_stop = False
+_timeout_reset_time = None  # 用于重置超时计时
 
 
 class ActionRequestHandler(BaseHTTPRequestHandler):
@@ -45,19 +46,54 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         global _user_action, _server_should_stop
+        from urllib.parse import urlparse, parse_qs
 
-        if self.path == '/fix':
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        if path == '/fix':
             _user_action = 'fix'
             _server_should_stop = True
             self._send_response("正在启动自动修复...")
-        elif self.path == '/cancel':
+        elif path == '/cancel':
             _user_action = 'cancel'
             _server_should_stop = True
             self._send_response("已取消")
-        elif self.path == '/status':
+        elif path == '/status':
             self._send_response("running")
+        elif path == '/open':
+            # 在 Xcode 中打开文件
+            params = parse_qs(parsed.query)
+            file_path = params.get('file', [''])[0]
+            line = params.get('line', ['1'])[0]
+            self._open_in_xcode(file_path, line)
         else:
             self.send_error(404)
+
+    def _open_in_xcode(self, file_path: str, line: str):
+        """使用 xed 命令在 Xcode 中打开文件"""
+        global _timeout_reset_time
+        try:
+            if file_path and os.path.exists(file_path):
+                # 使用 xed 命令打开文件并跳转到指定行
+                subprocess.Popen(['xed', '--line', str(line), file_path],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL)
+                # 重置超时计时
+                _timeout_reset_time = time.time()
+                self._send_json_response({'success': True, 'message': '已在 Xcode 中打开'})
+            else:
+                self._send_json_response({'success': False, 'message': '文件不存在'})
+        except Exception as e:
+            self._send_json_response({'success': False, 'message': str(e)})
+
+    def _send_json_response(self, data: dict):
+        """发送 JSON 响应"""
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json; charset=utf-8')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode('utf-8'))
 
     def _send_response(self, message: str):
         self.send_response(200)
@@ -313,6 +349,84 @@ class ClaudeFixer:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
+
+    def _read_code_context(self, file_path: str, line: int, context_lines: int = 3) -> List[Tuple[int, str]]:
+        """
+        读取代码上下文
+
+        Args:
+            file_path: 文件路径
+            line: 目标行号
+            context_lines: 上下文行数
+
+        Returns:
+            [(line_number, code_line), ...]
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                all_lines = f.readlines()
+
+            start = max(0, line - context_lines - 1)
+            end = min(len(all_lines), line + context_lines)
+
+            result = []
+            for i in range(start, end):
+                result.append((i + 1, all_lines[i].rstrip('\n\r')))
+            return result
+        except Exception as e:
+            self.logger.warning(f"Failed to read code context from {file_path}: {e}")
+            return []
+
+    def _escape_html(self, text: str) -> str:
+        """转义 HTML 特殊字符"""
+        return (text
+                .replace('&', '&amp;')
+                .replace('<', '&lt;')
+                .replace('>', '&gt;')
+                .replace('"', '&quot;')
+                .replace("'", '&#39;'))
+
+    def _highlight_objc(self, code: str) -> str:
+        """
+        简单的 Objective-C 语法高亮
+
+        Args:
+            code: 代码文本
+
+        Returns:
+            带有 HTML 高亮标记的代码
+        """
+        import re
+
+        # 先转义 HTML
+        code = self._escape_html(code)
+
+        # 关键字
+        keywords = r'\b(if|else|for|while|do|switch|case|default|break|continue|return|goto|typedef|struct|enum|union|sizeof|static|extern|const|volatile|inline|register|auto|signed|unsigned|void|char|short|int|long|float|double|bool|BOOL|YES|NO|nil|NULL|self|super|id|Class|SEL|IMP|instancetype|nullable|nonnull|NS_ASSUME_NONNULL_BEGIN|NS_ASSUME_NONNULL_END)\b'
+        code = re.sub(keywords, r'<span class="hl-keyword">\1</span>', code)
+
+        # @关键字
+        at_keywords = r'(@interface|@implementation|@end|@protocol|@property|@synthesize|@dynamic|@class|@public|@private|@protected|@package|@selector|@encode|@try|@catch|@finally|@throw|@synchronized|@autoreleasepool|@optional|@required|@import|@available)'
+        code = re.sub(at_keywords, r'<span class="hl-at-keyword">\1</span>', code)
+
+        # 属性关键字
+        prop_keywords = r'\b(nonatomic|atomic|strong|weak|copy|assign|retain|readonly|readwrite|getter|setter|nullable|nonnull|class)\b'
+        code = re.sub(prop_keywords, r'<span class="hl-prop">\1</span>', code)
+
+        # 字符串 (简单处理，不处理转义)
+        code = re.sub(r'(@"[^"]*")', r'<span class="hl-string">\1</span>', code)
+        code = re.sub(r'("(?:[^"\\]|\\.)*")', r'<span class="hl-string">\1</span>', code)
+
+        # 数字
+        code = re.sub(r'\b(\d+\.?\d*[fFlL]?)\b', r'<span class="hl-number">\1</span>', code)
+
+        # 注释 (单行)
+        code = re.sub(r'(//.*?)$', r'<span class="hl-comment">\1</span>', code)
+
+        # 预处理指令
+        code = re.sub(r'^(\s*)(#\w+)', r'\1<span class="hl-preprocessor">\2</span>', code)
+
+        return code
 
     def generate_html_report(self, violations: List[Dict], port: int = None) -> str:
         """
@@ -582,6 +696,122 @@ class ClaudeFixer:
                 color: #ffcc80;
             }
         }
+        /* 可点击的违规项 */
+        .violation-header {
+            cursor: pointer;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            width: 100%;
+        }
+        .violation-header:hover {
+            opacity: 0.9;
+        }
+        .expand-icon {
+            transition: transform 0.2s;
+            font-size: 12px;
+            opacity: 0.6;
+        }
+        .violation.expanded .expand-icon {
+            transform: rotate(90deg);
+        }
+        /* 代码预览区域 */
+        .code-preview {
+            display: none;
+            margin-top: 12px;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #1e1e1e;
+        }
+        .violation.expanded .code-preview {
+            display: block;
+        }
+        .code-actions {
+            display: flex;
+            justify-content: flex-end;
+            padding: 8px 12px;
+            background: #2d2d2d;
+            border-bottom: 1px solid #404040;
+        }
+        .btn-xcode {
+            padding: 6px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            background: #007AFF;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.2s;
+        }
+        .btn-xcode:hover {
+            background: #0056CC;
+        }
+        .code-block {
+            padding: 12px 0;
+            overflow-x: auto;
+            font-family: "SF Mono", Monaco, Menlo, monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .code-line {
+            display: flex;
+            padding: 2px 12px;
+        }
+        .code-line.highlighted {
+            background: rgba(255, 200, 0, 0.2);
+        }
+        .code-line-num {
+            min-width: 45px;
+            padding-right: 12px;
+            text-align: right;
+            color: #858585;
+            user-select: none;
+            border-right: 1px solid #404040;
+            margin-right: 12px;
+        }
+        .code-line-content {
+            white-space: pre;
+            color: #d4d4d4;
+        }
+        /* ObjC 语法高亮 */
+        .hl-keyword { color: #569cd6; }
+        .hl-at-keyword { color: #c586c0; }
+        .hl-prop { color: #4ec9b0; }
+        .hl-string { color: #ce9178; }
+        .hl-number { color: #b5cea8; }
+        .hl-comment { color: #6a9955; font-style: italic; }
+        .hl-preprocessor { color: #c586c0; }
+        @media (prefers-color-scheme: light) {
+            .code-preview {
+                background: #f5f5f5;
+            }
+            .code-actions {
+                background: #e8e8e8;
+                border-bottom-color: #d0d0d0;
+            }
+            .code-line.highlighted {
+                background: rgba(255, 200, 0, 0.3);
+            }
+            .code-line-num {
+                color: #6e6e6e;
+                border-right-color: #d0d0d0;
+            }
+            .code-line-content {
+                color: #1e1e1e;
+            }
+            .hl-keyword { color: #0000ff; }
+            .hl-at-keyword { color: #af00db; }
+            .hl-prop { color: #267f99; }
+            .hl-string { color: #a31515; }
+            .hl-number { color: #098658; }
+            .hl-comment { color: #008000; }
+            .hl-preprocessor { color: #af00db; }
+        }
     </style>
 </head>
 <body>
@@ -633,18 +863,46 @@ class ClaudeFixer:
         </div>
         <div class="violations-list">''')
 
-            for v in sorted(file_violations, key=lambda x: x.get('line', 0)):
+            for idx, v in enumerate(sorted(file_violations, key=lambda x: x.get('line', 0))):
                 severity = v.get('severity', 'warning')
                 line = v.get('line', 0)
                 message = v.get('message', '')
                 rule = v.get('rule', '')
+                violation_id = f"v-{hash(file_path)}-{idx}"
+
+                # 读取代码上下文
+                code_lines = self._read_code_context(file_path, line)
+
+                # 生成代码预览 HTML
+                code_html = ''
+                if code_lines:
+                    code_html = '<div class="code-block">'
+                    for ln, content in code_lines:
+                        highlighted = 'highlighted' if ln == line else ''
+                        highlighted_content = self._highlight_objc(content)
+                        code_html += f'<div class="code-line {highlighted}"><span class="code-line-num">{ln}</span><span class="code-line-content">{highlighted_content}</span></div>'
+                    code_html += '</div>'
+
+                # 转义文件路径用于 JavaScript
+                escaped_file_path = file_path.replace('\\', '\\\\').replace("'", "\\'")
 
                 html_parts.append(f'''
-            <div class="violation {severity}">
-                <span class="line-num">Line {line}</span>
-                <span class="severity {severity}">{severity}</span>
-                <span class="message">{message}</span>
-                <span class="rule">{rule}</span>
+            <div class="violation {severity}" id="{violation_id}" onclick="toggleViolation('{violation_id}')">
+                <div class="violation-header">
+                    <span class="expand-icon">▶</span>
+                    <span class="line-num">Line {line}</span>
+                    <span class="severity {severity}">{severity}</span>
+                    <span class="message">{self._escape_html(message)}</span>
+                    <span class="rule">{rule}</span>
+                </div>
+                <div class="code-preview" onclick="event.stopPropagation()">
+                    <div class="code-actions">
+                        <button class="btn-xcode" onclick="openInXcode('{escaped_file_path}', {line})">
+                            <span>📱</span> 在 Xcode 中打开
+                        </button>
+                    </div>
+                    {code_html}
+                </div>
             </div>''')
 
             html_parts.append('''
@@ -661,8 +919,36 @@ class ClaudeFixer:
         const SERVER_PORT = {port};
         let actionSent = false;
 
+        // 展开/折叠违规项
+        function toggleViolation(id) {{
+            const el = document.getElementById(id);
+            if (el) {{
+                el.classList.toggle('expanded');
+            }}
+        }}
+
+        // 在 Xcode 中打开文件
+        async function openInXcode(file, line) {{
+            try {{
+                const response = await fetch(`http://localhost:${{SERVER_PORT}}/open?file=${{encodeURIComponent(file)}}&line=${{line}}`);
+                const result = await response.json();
+                if (!result.success) {{
+                    alert('打开失败: ' + result.message);
+                }}
+            }} catch (e) {{
+                console.error('打开 Xcode 失败:', e);
+                alert('打开 Xcode 失败，请重试');
+            }}
+        }}
+
         async function doAction(action) {{
             if (actionSent) return;
+
+            // 确认对话框
+            const actionText = action === 'fix' ? '自动修复' : '取消';
+            const confirmed = confirm(`确定要「${{actionText}}」吗？点击确定后此页面将关闭。`);
+            if (!confirmed) return;
+
             actionSent = true;
 
             const btnCancel = document.getElementById('btn-cancel');
@@ -677,7 +963,12 @@ class ClaudeFixer:
             try {{
                 const response = await fetch(`http://localhost:${{SERVER_PORT}}/${{action}}`);
                 if (response.ok) {{
-                    // 请求成功，页面会自动跳转到结果页
+                    // 请求成功，尝试关闭页面
+                    window.close();
+                    // 如果无法关闭（非脚本打开的窗口），显示提示
+                    setTimeout(() => {{
+                        document.body.innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:-apple-system,sans-serif;"><div style="text-align:center;padding:40px;background:var(--card-bg,#f8f9fa);border-radius:12px;"><h2>' + (action === 'fix' ? '🔧 正在修复中...' : '✓ 已取消') + '</h2><p style="opacity:0.6;margin-top:10px;">可以关闭此页面</p></div></div>';
+                    }}, 100);
                 }}
             }} catch (e) {{
                 console.error('请求失败:', e);
@@ -753,13 +1044,16 @@ class ClaudeFixer:
         Returns:
             用户操作 ('fix', 'cancel') 或 None（超时）
         """
-        global _user_action, _server_should_stop
+        global _user_action, _server_should_stop, _timeout_reset_time
         _user_action = None
         _server_should_stop = False
+        _timeout_reset_time = None
 
         start_time = time.time()
         while not _server_should_stop:
-            if time.time() - start_time > timeout:
+            # 检查是否需要重置超时（用户点击了"在 Xcode 中打开"）
+            effective_start = _timeout_reset_time if _timeout_reset_time else start_time
+            if time.time() - effective_start > timeout:
                 self.logger.warning(f"Action server timed out after {timeout}s")
                 return None
             try:
