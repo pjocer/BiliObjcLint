@@ -832,7 +832,7 @@ class ClaudeFixer:
         <span class="icon">⏳</span>
         <div class="content">
             <div class="title">Xcode 正在等待您的操作</div>
-            <div class="desc">请查阅上方的代码审查结果，然后点击「取消」或「自动修复」继续。在您做出选择之前，Xcode 编译进程将保持等待状态。</div>
+            <div class="desc">请阅读下方的代码审查结果，然后点击「取消」或「自动修复」继续。在您做出选择之前，Xcode 编译进程将保持等待状态。</div>
         </div>
     </div>
     <p class="summary">
