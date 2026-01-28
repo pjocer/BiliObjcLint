@@ -390,6 +390,8 @@ class ClaudeFixer:
         """
         简单的 Objective-C 语法高亮
 
+        使用占位符系统保护字符串和注释，避免后续正则匹配到已生成的 HTML 属性
+
         Args:
             code: 代码文本
 
@@ -401,30 +403,48 @@ class ClaudeFixer:
         # 先转义 HTML
         code = self._escape_html(code)
 
+        # 使用占位符保护字符串和注释，避免后续正则匹配到它们
+        # 占位符格式: \x00TYPE_INDEX\x00
+        placeholders = []
+
+        def save_match(match, match_type):
+            idx = len(placeholders)
+            placeholders.append((match_type, match.group(0)))
+            return f'\x00{match_type}_{idx}\x00'
+
+        # 1. 先提取注释（优先级最高，避免字符串匹配到注释内容）
+        code = re.sub(r'(//.*?)$', lambda m: save_match(m, 'COMMENT'), code)
+
+        # 2. 提取字符串
+        code = re.sub(r'(@&quot;[^&]*&quot;)', lambda m: save_match(m, 'STRING'), code)  # ObjC 字符串 @"..."
+        code = re.sub(r'(&quot;(?:[^&\\]|\\.)*&quot;)', lambda m: save_match(m, 'STRING'), code)  # C 字符串 "..."
+
+        # 3. 现在处理关键字等，不会匹配到字符串和注释
         # 关键字
-        keywords = r'\b(if|else|for|while|do|switch|case|default|break|continue|return|goto|typedef|struct|enum|union|sizeof|static|extern|const|volatile|inline|register|auto|signed|unsigned|void|char|short|int|long|float|double|bool|BOOL|YES|NO|nil|NULL|self|super|id|Class|SEL|IMP|instancetype|nullable|nonnull|NS_ASSUME_NONNULL_BEGIN|NS_ASSUME_NONNULL_END)\b'
+        keywords = r'\b(if|else|for|while|do|switch|case|default|break|continue|return|goto|typedef|struct|enum|union|sizeof|static|extern|const|volatile|inline|register|auto|signed|unsigned|void|char|short|int|long|float|double|bool|BOOL|YES|NO|nil|NULL|self|super|id|Class|SEL|IMP|instancetype|NS_ASSUME_NONNULL_BEGIN|NS_ASSUME_NONNULL_END)\b'
         code = re.sub(keywords, r'<span class="hl-keyword">\1</span>', code)
 
         # @关键字
         at_keywords = r'(@interface|@implementation|@end|@protocol|@property|@synthesize|@dynamic|@class|@public|@private|@protected|@package|@selector|@encode|@try|@catch|@finally|@throw|@synchronized|@autoreleasepool|@optional|@required|@import|@available)'
         code = re.sub(at_keywords, r'<span class="hl-at-keyword">\1</span>', code)
 
-        # 属性关键字 (注意：不包含 class，因为会与 HTML class= 属性冲突)
+        # 属性关键字
         prop_keywords = r'\b(nonatomic|atomic|strong|weak|copy|assign|retain|readonly|readwrite|getter|setter|nullable|nonnull)\b'
         code = re.sub(prop_keywords, r'<span class="hl-prop">\1</span>', code)
-
-        # 字符串 (简单处理，不处理转义)
-        code = re.sub(r'(@"[^"]*")', r'<span class="hl-string">\1</span>', code)
-        code = re.sub(r'("(?:[^"\\]|\\.)*")', r'<span class="hl-string">\1</span>', code)
 
         # 数字
         code = re.sub(r'\b(\d+\.?\d*[fFlL]?)\b', r'<span class="hl-number">\1</span>', code)
 
-        # 注释 (单行)
-        code = re.sub(r'(//.*?)$', r'<span class="hl-comment">\1</span>', code)
-
         # 预处理指令
         code = re.sub(r'^(\s*)(#\w+)', r'\1<span class="hl-preprocessor">\2</span>', code)
+
+        # 4. 恢复字符串和注释，并添加高亮
+        for i, (match_type, content) in enumerate(placeholders):
+            placeholder = f'\x00{match_type}_{i}\x00'
+            if match_type == 'COMMENT':
+                code = code.replace(placeholder, f'<span class="hl-comment">{content}</span>')
+            elif match_type == 'STRING':
+                code = code.replace(placeholder, f'<span class="hl-string">{content}</span>')
 
         return code
 
