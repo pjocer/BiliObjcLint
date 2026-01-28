@@ -193,8 +193,11 @@ claude_autofix:
 | `todo_fixme` | TODO/FIXME 检测 | warning |
 | `weak_delegate` | Delegate 应使用 weak | error |
 | `block_retain_cycle` | Block 循环引用检测 | warning |
+| `strong_self_in_block` | Block 中 weakSelf 后 strongSelf 使用检查 | warning |
 | `forbidden_api` | 禁用 API 检查 | error |
 | `hardcoded_credentials` | 硬编码凭据检测 | error |
+| `insecure_random` | 不安全随机数生成检测 | warning |
+| `file_header` | 文件头注释检查 | warning |
 
 ### OCLint 规则
 

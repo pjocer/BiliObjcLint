@@ -112,6 +112,10 @@ python_rules:
     enabled: true
     severity: warning
 
+  strong_self_in_block:
+    enabled: true
+    severity: warning
+
   # ---------- 安全规则 ----------
   forbidden_api:
     enabled: false  # 默认关闭
@@ -128,6 +132,21 @@ python_rules:
   hardcoded_credentials:
     enabled: true
     severity: error
+
+  insecure_random:
+    enabled: true
+    severity: warning
+
+  # ---------- 文件规范 ----------
+  file_header:
+    enabled: false  # 默认关闭，需要配置模板后启用
+    severity: warning
+    params:
+      required_patterns: []
+      # 示例配置:
+      # required_patterns:
+      #   - "Copyright"
+      #   - "Created by"
 
 # ==================== 自定义规则 ====================
 custom_rules:
