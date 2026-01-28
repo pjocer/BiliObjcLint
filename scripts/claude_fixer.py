@@ -1423,42 +1423,60 @@ class ClaudeFixer:
             by_file[file_path].append(v)
 
         prompt_parts = [
-            "请修复以下 Objective-C 代码问题。",
+            "# 代码修复任务（最小化修改）",
             "",
-            "**重要提示**：请严格只修复下方列出的具体问题，不要修复文件中的其他问题，即使你发现了其他问题也请忽略。",
+            "## ⚠️ 严格限制 - 必须遵守",
             "",
-            "## 违规列表",
+            "**你的任务是做最小限度的修改来修复指定问题。**",
+            "",
+            "### 禁止行为（违反将导致任务失败）：",
+            "- ❌ 禁止重构代码",
+            "- ❌ 禁止优化代码",
+            "- ❌ 禁止重写代码",
+            "- ❌ 禁止改变代码结构",
+            "- ❌ 禁止修改未列出的代码行",
+            "- ❌ 禁止添加新功能",
+            "- ❌ 禁止删除未涉及的代码",
+            "- ❌ 禁止修改代码风格或格式",
+            "- ❌ 禁止添加注释或文档",
+            "- ❌ 禁止修复未在下方列表中明确指出的问题",
+            "",
+            "### 允许行为：",
+            "- ✅ 只修改下方列表中指定行号的代码",
+            "- ✅ 做最小限度的字符级别修改",
+            "- ✅ 例如：将 `strong` 改为 `weak`，仅此而已",
+            "",
+            "## 需要修复的问题（仅修复这些）",
             ""
         ]
 
         for file_path, file_violations in by_file.items():
-            prompt_parts.append(f"### {file_path}")
+            prompt_parts.append(f"### 文件: {file_path}")
+            prompt_parts.append("")
             for v in file_violations:
                 line = v.get('line', 0)
-                severity = v.get('severity', 'warning')
                 message = v.get('message', '')
                 rule = v.get('rule', '')
-                prompt_parts.append(f"- 行 {line} [{severity}] {message} ({rule})")
+                prompt_parts.append(f"- **行 {line}**: {message} [{rule}]")
             prompt_parts.append("")
 
         prompt_parts.extend([
-            "## 修复规则说明",
+            "## 修复方法参考",
             "",
-            "- **weak_delegate**: delegate/dataSource 属性应使用 weak 修饰，避免循环引用",
-            "- **property_naming**: 属性名应使用 camelCase（小写字母开头）",
-            "- **method_naming**: 方法名应以小写字母开头",
-            "- **block_retain_cycle**: 在 block 中使用 self 前应声明 `__weak typeof(self) weakSelf = self;`",
-            "- **hardcoded_credentials**: 移除硬编码的密码/密钥/token",
-            "- **todo_fixme**: 处理或移除 TODO/FIXME 注释",
-            "- **line_length**: 将超长行拆分为多行（每行不超过 120 字符）",
-            "- **method_length**: 将过长方法拆分为多个小方法（每个方法不超过 80 行）",
-            "- **constant_naming**: 常量应以 k 前缀开头或使用全大写",
+            "| 规则 | 修复方法 | 示例 |",
+            "|------|----------|------|",
+            "| weak_delegate | 将 `strong` 改为 `weak` | `@property (nonatomic, strong)` → `@property (nonatomic, weak)` |",
+            "| property_naming | 将首字母改为小写 | `URL` → `url` |",
+            "| constant_naming | 添加 `k` 前缀 | `Constant` → `kConstant` |",
             "",
-            "## 执行要求",
+            "## 执行指令",
             "",
-            "1. 请直接使用 Edit 工具修改文件，不需要解释",
-            "2. **只修复上方列出的具体行号和问题**，不要修复文件中未列出的其他问题",
-            "3. 每次 Edit 只修改一个问题，不要在一次编辑中修改多处",
+            "1. 读取文件，定位到指定行号",
+            "2. 仅修改该行中与问题相关的最小部分",
+            "3. 使用 Edit 工具提交修改",
+            "4. 不要做任何额外的修改",
+            "",
+            "**再次强调：只做最小修改，不要重写或优化任何代码！**"
         ])
 
         return "\n".join(prompt_parts)
