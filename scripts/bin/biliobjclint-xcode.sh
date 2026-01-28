@@ -11,8 +11,10 @@
 # 选项:
 #   --project, -p NAME   指定项目名称（用于 workspace 中指定项目）
 #   --target, -t NAME    指定 Target 名称（默认：主 Target）
+#   --lint-path PATH     指定 BiliObjCLint 安装路径（默认：自动检测）
 #   --remove             移除已添加的 Lint Phase
 #   --override           强制覆盖已存在的 Lint Phase
+#   --check-update       检查已注入脚本是否需要更新
 #   --list-projects      列出 workspace 中所有项目
 #   --list-targets       列出所有可用的 Targets
 #   --dry-run            仅显示将要进行的修改，不实际执行
@@ -67,8 +69,10 @@ show_help() {
     echo "选项:"
     echo "  --project, -p NAME  指定项目名称（用于 workspace 中指定项目）"
     echo "  --target, -t NAME   指定 Target 名称（默认：主 Target）"
+    echo "  --lint-path PATH    指定 BiliObjCLint 安装路径（默认：自动检测）"
     echo "  --remove            移除已添加的 Lint Phase"
     echo "  --override          强制覆盖已存在的 Lint Phase"
+    echo "  --check-update      检查已注入脚本是否需要更新"
     echo "  --list-projects     列出 workspace 中所有项目"
     echo "  --list-targets      列出所有可用的 Targets"
     echo "  --dry-run           仅显示将要进行的修改，不实际执行"
@@ -84,6 +88,9 @@ show_help() {
     exit 0
 }
 
+# TODO: 优化 show_manual 功能
+# 1. 生成的脚本应该使用 Homebrew 安装路径而非开发路径
+# 2. 考虑支持生成适配不同安装方式的脚本模板
 show_manual() {
     local LINT_PATH="$PROJECT_ROOT"
 
@@ -164,6 +171,7 @@ SCRIPT
 PROJECT_PATH=""
 PROJECT_NAME=""
 TARGET_NAME=""
+LINT_PATH=""
 ACTION="add"
 DRY_RUN=""
 OVERRIDE=""
@@ -186,12 +194,20 @@ while [[ $# -gt 0 ]]; do
             TARGET_NAME="$2"
             shift 2
             ;;
+        --lint-path)
+            LINT_PATH="$2"
+            shift 2
+            ;;
         --remove)
             ACTION="remove"
             shift
             ;;
         --override)
             OVERRIDE="--override"
+            shift
+            ;;
+        --check-update)
+            ACTION="check-update"
             shift
             ;;
         --list-projects)
@@ -269,6 +285,8 @@ fi
 
 if [ "$ACTION" = "remove" ]; then
     CMD_ARGS+=("--remove")
+elif [ "$ACTION" = "check-update" ]; then
+    CMD_ARGS+=("--check-update")
 elif [ "$ACTION" = "list-projects" ]; then
     CMD_ARGS+=("--list-projects")
 elif [ "$ACTION" = "list-targets" ]; then
@@ -281,6 +299,10 @@ fi
 
 if [ -n "$OVERRIDE" ]; then
     CMD_ARGS+=("$OVERRIDE")
+fi
+
+if [ -n "$LINT_PATH" ]; then
+    CMD_ARGS+=("--lint-path" "$LINT_PATH")
 fi
 
 # 执行 Python 脚本
