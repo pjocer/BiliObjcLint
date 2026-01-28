@@ -3,7 +3,7 @@
 # OCLint 编译脚本
 #
 # 用法:
-#   ./build_oclint.sh [选项]
+#   ./scripts/others/build_oclint.sh [选项]
 #
 # 选项:
 #   --clean       清理后重新编译
@@ -16,7 +16,7 @@ set -e
 
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 OCLINT_DIR="$PROJECT_ROOT/oclint"
 BUILD_DIR="$PROJECT_ROOT/build"
 

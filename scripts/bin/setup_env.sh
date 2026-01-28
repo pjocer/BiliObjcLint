@@ -3,7 +3,7 @@
 # 环境初始化脚本
 #
 # 用法:
-#   ./setup_env.sh
+#   ./scripts/bin/setup_env.sh
 #
 # 此脚本会:
 # 1. 创建 Python 虚拟环境
@@ -27,7 +27,7 @@ print_warn() {
 
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 cd "$PROJECT_ROOT"
 
@@ -73,5 +73,5 @@ print_info "环境初始化完成!"
 echo ""
 echo "使用方法:"
 echo "  激活环境:  source $VENV_DIR/bin/activate"
-echo "  运行 lint: python scripts/biliobjclint.py --help"
+echo "  运行 lint: $PROJECT_ROOT/scripts/bin/biliobjclint.sh --help"
 echo ""

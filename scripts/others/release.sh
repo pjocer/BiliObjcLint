@@ -2,16 +2,16 @@
 #
 # BiliObjCLint Release Script
 # Usage:
-#   ./scripts/release.sh          # Auto increment patch version (v1.0.0 -> v1.0.1)
-#   ./scripts/release.sh minor    # Auto increment minor version (v1.0.0 -> v1.1.0)
-#   ./scripts/release.sh major    # Auto increment major version (v1.0.0 -> v2.0.0)
-#   ./scripts/release.sh v1.2.3   # Specify exact version
+#   ./scripts/others/release.sh          # Auto increment patch version (v1.0.0 -> v1.0.1)
+#   ./scripts/others/release.sh minor    # Auto increment minor version (v1.0.0 -> v1.1.0)
+#   ./scripts/others/release.sh major    # Auto increment major version (v1.0.0 -> v2.0.0)
+#   ./scripts/others/release.sh v1.2.3   # Specify exact version
 #
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 FORMULA_FILE="$PROJECT_ROOT/Formula/biliobjclint.rb"
 VERSION_FILE="$PROJECT_ROOT/VERSION"
 REPO_URL="https://github.com/pjocer/BiliObjcLint"

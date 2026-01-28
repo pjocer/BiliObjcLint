@@ -10,7 +10,7 @@
 #   ./bootstrap.sh --project path/to/App.xcodeproj --target MyTarget
 #   ./bootstrap.sh -w App.xcworkspace -p MyProject -t MyTarget
 #
-# 在 Xcode Build Phase 中使用:
+# 在 Xcode Build Phase 中使用 (将此脚本复制到项目的 scripts 目录后):
 #   "${SRCROOT}/scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "${PROJECT_FILE_PATH}" -t "${TARGET_NAME}"
 #
 # 注意: ${WORKSPACE_PATH} 是 workspace 完整路径，${PROJECT_FILE_PATH} 是 .xcodeproj 完整路径

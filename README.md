@@ -47,7 +47,7 @@ git clone https://github.com/pjocer/BiliObjcLint.git
 cd BiliObjcLint
 
 # Initialize Python virtual environment
-./scripts/setup_env.sh
+./scripts/bin/setup_env.sh
 ```
 
 ## Quick Start
@@ -98,7 +98,7 @@ Use the bootstrap script to automatically install and configure BiliObjCLint:
 **Step 1: Copy bootstrap.sh to your project**
 ```bash
 mkdir -p /path/to/your/project/scripts
-cp $(brew --prefix)/share/biliobjclint/scripts/bootstrap.sh /path/to/your/project/scripts/
+cp $(brew --prefix)/share/biliobjclint/scripts/bin/bootstrap.sh /path/to/your/project/scripts/
 ```
 
 **Step 2: Add Build Phase in Xcode**

@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# Xcode 集成安装脚本
+# BiliObjCLint Xcode 集成安装脚本
 #
 # 用法:
-#   ./install_xcode.sh <项目路径> [选项]
+#   biliobjclint-xcode <项目路径> [选项]
 #
 # 参数:
 #   项目路径      .xcworkspace 或 .xcodeproj 路径
@@ -18,10 +18,10 @@
 #   --help, -h           显示帮助
 #
 # 示例:
-#   ./install_xcode.sh /path/to/MyApp.xcworkspace
-#   ./install_xcode.sh /path/to/MyApp.xcodeproj --target MyApp
-#   ./install_xcode.sh /path/to/MyApp.xcodeproj --list-targets
-#   ./install_xcode.sh /path/to/MyApp.xcodeproj --remove
+#   biliobjclint-xcode /path/to/MyApp.xcworkspace
+#   biliobjclint-xcode /path/to/MyApp.xcodeproj --target MyApp
+#   biliobjclint-xcode /path/to/MyApp.xcodeproj --list-targets
+#   biliobjclint-xcode /path/to/MyApp.xcodeproj --remove
 #
 
 set -e
@@ -51,7 +51,7 @@ print_error() {
 
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 show_help() {
     echo "BiliObjCLint Xcode 集成安装脚本"
@@ -232,7 +232,7 @@ fi
 PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python3"
 if [ ! -f "$PYTHON_BIN" ]; then
     print_error "venv 未初始化，请先运行:"
-    echo "  $PROJECT_ROOT/scripts/setup_env.sh"
+    echo "  $PROJECT_ROOT/scripts/bin/setup_env.sh"
     exit 1
 fi
 
@@ -263,7 +263,7 @@ if [ -n "$OVERRIDE" ]; then
 fi
 
 # 执行 Python 脚本
-"$PYTHON_BIN" "$SCRIPT_DIR/xcode_integrator.py" "${CMD_ARGS[@]}"
+"$PYTHON_BIN" "$PROJECT_ROOT/scripts/xcode_integrator.py" "${CMD_ARGS[@]}"
 
 EXIT_CODE=$?
 

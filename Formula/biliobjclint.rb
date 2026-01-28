@@ -19,16 +19,16 @@ class Biliobjclint < Formula
     # Install Python dependencies
     system venv/"bin/pip", "install", "-r", libexec/"requirements.txt"
 
-    # Create wrapper script
+    # Create wrapper script that calls shell script
     (bin/"biliobjclint").write <<~EOS
       #!/bin/bash
-      exec "#{venv}/bin/python3" "#{libexec}/scripts/biliobjclint.py" "$@"
+      exec "#{libexec}/scripts/bin/biliobjclint.sh" "$@"
     EOS
 
-    # Create Xcode integration script wrapper
+    # Create Xcode integration script wrapper that calls shell script
     (bin/"biliobjclint-xcode").write <<~EOS
       #!/bin/bash
-      exec "#{venv}/bin/python3" "#{libexec}/scripts/xcode_integrator.py" "$@"
+      exec "#{libexec}/scripts/bin/biliobjclint-xcode.sh" "$@"
     EOS
   end
 

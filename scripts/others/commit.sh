@@ -4,15 +4,15 @@
 # 同时提交改动到主仓库和 Homebrew tap 仓库
 #
 # Usage:
-#   ./scripts/commit.sh "commit message"
-#   ./scripts/commit.sh -m "commit message"
-#   ./scripts/commit.sh                      # 交互式输入 commit message
+#   ./scripts/others/commit.sh "commit message"
+#   ./scripts/others/commit.sh -m "commit message"
+#   ./scripts/others/commit.sh                      # 交互式输入 commit message
 #
 # 保持BILIOBJCLINT工程和BILIOBJCLINT Homebrew Tap工程在同一目录下
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 # 仓库路径
 MAIN_REPO="$PROJECT_ROOT"

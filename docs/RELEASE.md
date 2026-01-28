@@ -8,16 +8,16 @@
 
 ```bash
 # 自动递增 patch 版本 (v1.0.0 -> v1.0.1)
-./scripts/release.sh
+./scripts/others/release.sh
 
 # 自动递增 minor 版本 (v1.0.0 -> v1.1.0)
-./scripts/release.sh minor
+./scripts/others/release.sh minor
 
 # 自动递增 major 版本 (v1.0.0 -> v2.0.0)
-./scripts/release.sh major
+./scripts/others/release.sh major
 
 # 指定版本号
-./scripts/release.sh v1.2.3
+./scripts/others/release.sh v1.2.3
 ```
 
 脚本会自动完成以下操作：

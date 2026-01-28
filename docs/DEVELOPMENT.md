@@ -49,7 +49,7 @@ git clone https://github.com/pjocer/BiliObjcLint.git
 cd BiliObjcLint
 
 # 初始化 Python 虚拟环境
-./scripts/setup_env.sh
+./scripts/bin/setup_env.sh
 
 # 激活虚拟环境（可选，用于开发调试）
 source .venv/bin/activate

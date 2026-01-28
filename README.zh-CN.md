@@ -47,7 +47,7 @@ git clone https://github.com/pjocer/BiliObjcLint.git
 cd BiliObjcLint
 
 # 初始化 Python 虚拟环境
-./scripts/setup_env.sh
+./scripts/bin/setup_env.sh
 ```
 
 ## 快速开始
@@ -98,7 +98,7 @@ biliobjclint-xcode /path/to/App.xcodeproj --list-targets
 **第一步：复制 bootstrap.sh 到你的项目**
 ```bash
 mkdir -p /path/to/your/project/scripts
-cp $(brew --prefix)/share/biliobjclint/scripts/bootstrap.sh /path/to/your/project/scripts/
+cp $(brew --prefix)/share/biliobjclint/scripts/bin/bootstrap.sh /path/to/your/project/scripts/
 ```
 
 **第二步：在 Xcode 中添加 Build Phase**
