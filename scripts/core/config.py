@@ -39,6 +39,21 @@ class ClaudeAutofixConfig:
 
 
 @dataclass
+class LocalPodsConfig:
+    """本地 Pod 检测配置"""
+    # 是否启用本地 Pod 检测
+    enabled: bool = True
+    # 是否对本地 Pod 进行增量检测
+    # - True: 只检查本地 Pod 的 git 变更（如果是 git 仓库）
+    # - False: 全量检查本地 Pod 的所有文件
+    incremental: bool = True
+    # 本地 Pod 的包含模式（空表示所有）
+    included_pods: List[str] = field(default_factory=list)
+    # 本地 Pod 的排除模式
+    excluded_pods: List[str] = field(default_factory=lambda: ["*Test*", "*Mock*"])
+
+
+@dataclass
 class LintConfig:
     """完整的 Lint 配置"""
     # 基础配置
@@ -69,6 +84,9 @@ class LintConfig:
 
     # Claude 自动修复配置
     claude_autofix: ClaudeAutofixConfig = field(default_factory=ClaudeAutofixConfig)
+
+    # 本地 Pod 检测配置
+    local_pods: LocalPodsConfig = field(default_factory=LocalPodsConfig)
 
 
 class ConfigLoader:
@@ -149,6 +167,12 @@ class ConfigLoader:
             "trigger": "any",
             "mode": "silent",
             "timeout": 120
+        },
+        "local_pods": {
+            "enabled": True,
+            "incremental": True,
+            "included_pods": [],
+            "excluded_pods": ["*Test*", "*Mock*"]
         }
     }
 
@@ -214,6 +238,14 @@ class ConfigLoader:
             timeout=claude_autofix_cfg.get("timeout", 120)
         )
 
+        local_pods_cfg = self._config.get("local_pods", {})
+        local_pods = LocalPodsConfig(
+            enabled=local_pods_cfg.get("enabled", True),
+            incremental=local_pods_cfg.get("incremental", True),
+            included_pods=local_pods_cfg.get("included_pods", []),
+            excluded_pods=local_pods_cfg.get("excluded_pods", ["*Test*", "*Mock*"])
+        )
+
         return LintConfig(
             base_branch=self._config.get("base_branch", "origin/master"),
             incremental=self._config.get("incremental", True),
@@ -225,7 +257,8 @@ class ConfigLoader:
             custom_rules_python_path=custom_rules.get("python", {}).get("path", "./custom_rules/python/"),
             custom_rules_cpp_enabled=custom_rules.get("cpp", {}).get("enabled", True),
             severity_mapping=self._config.get("severity_mapping", {}),
-            claude_autofix=claude_autofix
+            claude_autofix=claude_autofix,
+            local_pods=local_pods
         )
 
     def get_raw_config(self) -> Dict[str, Any]:

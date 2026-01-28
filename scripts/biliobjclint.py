@@ -25,7 +25,7 @@ import sys
 import os
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 import fnmatch
 
 # 添加 scripts 目录到路径
@@ -38,6 +38,7 @@ from core.reporter import Reporter, Violation, Severity
 from core.oclint_runner import OCLintRunner
 from core.rule_engine import RuleEngine
 from core.logger import get_logger, LogContext, log_lint_start, log_lint_end
+from core.local_pods import LocalPodsAnalyzer
 
 
 class BiliObjCLint:
@@ -50,6 +51,9 @@ class BiliObjCLint:
         self.reporter = Reporter(xcode_output=args.xcode_output)
         self.logger = get_logger("biliobjclint")
         self.start_time = time.time()
+        # 本地 Pod 相关
+        self.local_pods_analyzer: Optional[LocalPodsAnalyzer] = None
+        self.file_to_pod_map: Dict[str, str] = {}  # file_path -> pod_name
 
     def run(self) -> int:
         """执行 lint 检查，返回退出码"""
@@ -84,10 +88,25 @@ class BiliObjCLint:
 
         # 3. 获取变更行号（增量模式）
         changed_lines_map = {}
-        if self.args.incremental and is_git_repo(str(self.project_root)):
+        if self.args.incremental:
             with LogContext(self.logger, "git_diff_analysis"):
-                analyzer = GitDiffAnalyzer(str(self.project_root), self.config.base_branch)
-                changed_lines_map = analyzer.get_all_changed_lines_map(files)
+                # 主工程文件
+                main_project_files = [f for f in files if f not in self.file_to_pod_map]
+                if main_project_files and is_git_repo(str(self.project_root)):
+                    analyzer = GitDiffAnalyzer(str(self.project_root), self.config.base_branch)
+                    changed_lines_map = analyzer.get_all_changed_lines_map(main_project_files)
+
+                # 本地 Pod 文件
+                if self.local_pods_analyzer and self.config.local_pods.incremental:
+                    local_pod_files = [f for f in files if f in self.file_to_pod_map]
+                    for f in local_pod_files:
+                        changed_lines = self.local_pods_analyzer.get_changed_lines(f)
+                        if changed_lines:  # 只有有变更时才添加
+                            changed_lines_map[f] = changed_lines
+                        else:
+                            # 如果没有变更行信息（非 git 仓库或新文件），检查所有行
+                            changed_lines_map[f] = set()
+
                 self.logger.debug(f"Changed lines map: {len(changed_lines_map)} files")
 
         # 4. 执行 OCLint 检查
@@ -104,14 +123,20 @@ class BiliObjCLint:
                 self.reporter.add_violations(python_violations)
                 self.logger.info(f"Python rules violations: {len(python_violations)}")
 
-        # 6. 过滤增量结果
+        # 6. 设置本地 Pod 信息
+        if self.file_to_pod_map:
+            for v in self.reporter.violations:
+                if v.file_path in self.file_to_pod_map:
+                    v.pod_name = self.file_to_pod_map[v.file_path]
+
+        # 7. 过滤增量结果
         if self.args.incremental and changed_lines_map:
             before_count = len(self.reporter.violations)
             self.reporter.filter_by_changed_lines(changed_lines_map)
             after_count = len(self.reporter.violations)
             self.logger.debug(f"Incremental filter: {before_count} -> {after_count} violations")
 
-        # 7. 输出结果
+        # 8. 输出结果
         elapsed = time.time() - self.start_time
         errors_count = sum(1 for v in self.reporter.violations if v.severity == Severity.ERROR)
         warnings_count = len(self.reporter.violations) - errors_count
@@ -192,7 +217,62 @@ class BiliObjCLint:
         # 应用 exclude 过滤
         files = self._filter_excluded(files)
 
+        # 添加本地 Pod 文件
+        if self.config.local_pods.enabled:
+            local_pod_files = self._get_local_pod_files()
+            files.extend(local_pod_files)
+
         return files
+
+    def _get_local_pod_files(self) -> List[str]:
+        """获取本地 Pod 中的文件"""
+        self.local_pods_analyzer = LocalPodsAnalyzer(str(self.project_root))
+        local_pods = self.local_pods_analyzer.get_local_pods()
+
+        if not local_pods:
+            return []
+
+        files = []
+        extensions = ['.m', '.mm', '.h']
+
+        for pod_name, pod_path in local_pods.items():
+            # 检查是否应该跳过此 Pod
+            if not self._should_check_pod(pod_name):
+                self.logger.debug(f"Skipping excluded pod: {pod_name}")
+                continue
+
+            # 获取 Pod 中的变更文件
+            pod_files = self.local_pods_analyzer.get_changed_files(
+                pod_path,
+                pod_name,
+                extensions,
+                incremental=self.config.local_pods.incremental
+            )
+
+            # 记录文件到 Pod 的映射
+            for f in pod_files:
+                self.file_to_pod_map[f] = pod_name
+
+            files.extend(pod_files)
+            self.logger.info(f"Local pod [{pod_name}]: {len(pod_files)} files to check")
+
+        return files
+
+    def _should_check_pod(self, pod_name: str) -> bool:
+        """判断是否应该检查此 Pod"""
+        # 检查排除模式
+        for pattern in self.config.local_pods.excluded_pods:
+            if fnmatch.fnmatch(pod_name, pattern):
+                return False
+
+        # 检查包含模式（空表示所有）
+        if self.config.local_pods.included_pods:
+            for pattern in self.config.local_pods.included_pods:
+                if fnmatch.fnmatch(pod_name, pattern):
+                    return True
+            return False
+
+        return True
 
     def _find_all_files(self) -> List[str]:
         """查找所有匹配的文件"""

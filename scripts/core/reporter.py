@@ -28,6 +28,7 @@ class Violation:
     message: str
     rule_id: str
     source: str = "biliobjclint"  # biliobjclint | oclint
+    pod_name: Optional[str] = None  # 所属本地 Pod 名称（None 表示主工程）
 
     def to_xcode_format(self) -> str:
         """
@@ -39,7 +40,7 @@ class Violation:
 
     def to_dict(self) -> dict:
         """转换为字典"""
-        return {
+        result = {
             "file": self.file_path,
             "line": self.line,
             "column": self.column,
@@ -48,6 +49,9 @@ class Violation:
             "rule": self.rule_id,
             "source": self.source
         }
+        if self.pod_name:
+            result["pod_name"] = self.pod_name
+        return result
 
 
 class Reporter:
@@ -128,6 +132,27 @@ class Reporter:
                 has_error = True
 
         return 1 if has_error else 0
+
+    def get_display_path(self, violation: Violation) -> str:
+        """
+        获取用于显示的文件路径（带 Pod 名称前缀）
+
+        用于 HTML 报告和日志输出
+        """
+        if violation.pod_name:
+            # 对于本地 Pod，显示 [PodName] 前缀 + 相对路径
+            try:
+                from pathlib import Path
+                file_path = Path(violation.file_path)
+                # 只取文件名或最后两级路径
+                if len(file_path.parts) > 2:
+                    rel_display = "/".join(file_path.parts[-2:])
+                else:
+                    rel_display = file_path.name
+                return f"[{violation.pod_name}] {rel_display}"
+            except Exception:
+                return f"[{violation.pod_name}] {violation.file_path}"
+        return violation.file_path
 
     def get_summary(self) -> dict:
         """获取统计摘要"""
