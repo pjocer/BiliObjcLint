@@ -18,6 +18,9 @@ import sys
 import tempfile
 import time
 import uuid
+import threading
+import socket
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Tuple, Optional, List, Dict
 
@@ -26,6 +29,50 @@ SCRIPT_DIR = Path(__file__).parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from core.logger import get_logger, LogContext, log_claude_fix_start, log_claude_fix_end
+
+
+# 全局变量用于 HTTP 服务器通信
+_user_action = None
+_server_should_stop = False
+
+
+class ActionRequestHandler(BaseHTTPRequestHandler):
+    """处理来自 HTML 页面的用户操作请求"""
+
+    def log_message(self, format, *args):
+        """禁止默认的 HTTP 日志输出"""
+        pass
+
+    def do_GET(self):
+        global _user_action, _server_should_stop
+
+        if self.path == '/fix':
+            _user_action = 'fix'
+            _server_should_stop = True
+            self._send_response("正在启动自动修复...")
+        elif self.path == '/cancel':
+            _user_action = 'cancel'
+            _server_should_stop = True
+            self._send_response("已取消")
+        elif self.path == '/status':
+            self._send_response("running")
+        else:
+            self.send_error(404)
+
+    def _send_response(self, message: str):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html; charset=utf-8')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        html = f'''<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>BiliObjCLint</title>
+<style>
+body {{ font-family: -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f5f5; }}
+.message {{ text-align: center; padding: 40px; background: white; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+@media (prefers-color-scheme: dark) {{ body {{ background: #1a1a2e; }} .message {{ background: #16213e; color: #e0e0e0; }} }}
+</style></head>
+<body><div class="message"><h2>{message}</h2><p>可以关闭此页面</p></div></body></html>'''
+        self.wfile.write(html.encode('utf-8'))
 
 
 class ClaudeFixer:
@@ -266,6 +313,486 @@ class ClaudeFixer:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
+
+    def generate_html_report(self, violations: List[Dict], port: int = None) -> str:
+        """
+        生成 HTML 格式的违规报告
+
+        Args:
+            violations: 违规列表
+            port: 本地服务器端口，如果提供则添加交互按钮
+
+        Returns:
+            HTML 文件路径
+        """
+        # 按文件分组
+        by_file = {}
+        for v in violations:
+            file_path = v.get('file', '')
+            if file_path not in by_file:
+                by_file[file_path] = []
+            by_file[file_path].append(v)
+
+        # 统计
+        error_count = sum(1 for v in violations if v.get('severity') == 'error')
+        warning_count = len(violations) - error_count
+
+        # 生成 HTML
+        html_parts = ['''<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BiliObjCLint - 代码问题报告</title>
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #333333;
+            --card-bg: #f8f9fa;
+            --border-color: #e9ecef;
+            --error-bg: #fff5f5;
+            --error-border: #fc8181;
+            --error-text: #c53030;
+            --warning-bg: #fffaf0;
+            --warning-border: #f6ad55;
+            --warning-text: #c05621;
+            --code-bg: #f1f3f5;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #1a1a2e;
+                --text-color: #e0e0e0;
+                --card-bg: #16213e;
+                --border-color: #0f3460;
+                --error-bg: #2d1f1f;
+                --error-border: #c53030;
+                --error-text: #fc8181;
+                --warning-bg: #2d2a1f;
+                --warning-border: #c05621;
+                --warning-text: #f6ad55;
+                --code-bg: #0f3460;
+            }
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .summary {
+            font-size: 16px;
+            color: var(--text-color);
+            opacity: 0.8;
+            margin-bottom: 30px;
+        }
+        .error-badge {
+            background: var(--error-text);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .warning-badge {
+            background: var(--warning-text);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .file-section {
+            margin-bottom: 24px;
+        }
+        .file-header {
+            font-size: 16px;
+            font-weight: 600;
+            padding: 12px 16px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .file-path {
+            font-family: "SF Mono", Monaco, monospace;
+            font-size: 14px;
+            word-break: break-all;
+        }
+        .violations-list {
+            border: 1px solid var(--border-color);
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+        }
+        .violation {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: flex-start;
+        }
+        .violation:last-child {
+            border-bottom: none;
+            border-radius: 0 0 8px 8px;
+        }
+        .violation.error {
+            background: var(--error-bg);
+        }
+        .violation.warning {
+            background: var(--warning-bg);
+        }
+        .line-num {
+            font-family: "SF Mono", Monaco, monospace;
+            font-size: 13px;
+            background: var(--code-bg);
+            padding: 2px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+        .severity {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+        .severity.error {
+            background: var(--error-border);
+            color: white;
+        }
+        .severity.warning {
+            background: var(--warning-border);
+            color: white;
+        }
+        .message {
+            flex: 1;
+            min-width: 200px;
+        }
+        .rule {
+            font-family: "SF Mono", Monaco, monospace;
+            font-size: 12px;
+            color: var(--text-color);
+            opacity: 0.6;
+            background: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 12px;
+            opacity: 0.6;
+        }
+        .action-bar {
+            position: sticky;
+            top: 0;
+            background: var(--bg-color);
+            padding: 16px 0;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            z-index: 100;
+        }
+        .btn {
+            padding: 12px 32px;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .btn:active {
+            transform: translateY(0);
+        }
+        .btn-cancel {
+            background: var(--card-bg);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+        }
+        .btn-fix {
+            background: #4CAF50;
+            color: white;
+        }
+        .btn-fix:hover {
+            background: #43A047;
+        }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .notice-box {
+            background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
+            border: 1px solid #ffc107;
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            box-shadow: 0 2px 8px rgba(255, 193, 7, 0.15);
+        }
+        .notice-box .icon {
+            font-size: 24px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .notice-box .content {
+            flex: 1;
+        }
+        .notice-box .title {
+            font-weight: 600;
+            font-size: 15px;
+            color: #8d6e00;
+            margin-bottom: 6px;
+        }
+        .notice-box .desc {
+            font-size: 13px;
+            color: #6d5600;
+            line-height: 1.5;
+        }
+        @media (prefers-color-scheme: dark) {
+            .notice-box {
+                background: linear-gradient(135deg, #3d3200 0%, #2d2500 100%);
+                border-color: #b38f00;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            }
+            .notice-box .title {
+                color: #ffd54f;
+            }
+            .notice-box .desc {
+                color: #ffcc80;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 BiliObjCLint 代码问题报告</h1>
+    <p class="summary">
+        发现 <strong>''', str(len(violations)), '''</strong> 个问题
+        ''']
+
+        # 如果提供了端口，添加交互按钮和提示
+        if port:
+            html_parts.append(f'''
+    </p>
+    <div class="action-bar">
+        <button class="btn btn-cancel" onclick="doAction('cancel')" id="btn-cancel">取消</button>
+        <button class="btn btn-fix" onclick="doAction('fix')" id="btn-fix">🔧 自动修复</button>
+    </div>
+    <div class="notice-box">
+        <span class="icon">⏳</span>
+        <div class="content">
+            <div class="title">Xcode 正在等待您的操作</div>
+            <div class="desc">请查阅上方的代码审查结果，然后点击「取消」或「自动修复」继续。在您做出选择之前，Xcode 编译进程将保持等待状态。</div>
+        </div>
+    </div>
+    <p class="summary">
+        ''')
+        else:
+            html_parts.append('')  # 保持结构一致
+
+        if error_count > 0:
+            html_parts.append(f'<span class="error-badge">{error_count} errors</span> ')
+        if warning_count > 0:
+            html_parts.append(f'<span class="warning-badge">{warning_count} warnings</span>')
+
+        html_parts.append('</p>')
+
+        # 按文件输出违规
+        for file_path, file_violations in by_file.items():
+            # 获取相对路径用于显示
+            try:
+                display_path = str(Path(file_path).relative_to(self.project_root))
+            except ValueError:
+                display_path = file_path
+
+            html_parts.append(f'''
+    <div class="file-section">
+        <div class="file-header">
+            <span>📄</span>
+            <span class="file-path">{display_path}</span>
+        </div>
+        <div class="violations-list">''')
+
+            for v in sorted(file_violations, key=lambda x: x.get('line', 0)):
+                severity = v.get('severity', 'warning')
+                line = v.get('line', 0)
+                message = v.get('message', '')
+                rule = v.get('rule', '')
+
+                html_parts.append(f'''
+            <div class="violation {severity}">
+                <span class="line-num">Line {line}</span>
+                <span class="severity {severity}">{severity}</span>
+                <span class="message">{message}</span>
+                <span class="rule">{rule}</span>
+            </div>''')
+
+            html_parts.append('''
+        </div>
+    </div>''')
+
+        # 添加 JavaScript（仅当有端口时）
+        if port:
+            html_parts.append(f'''
+    <div class="footer">
+        Generated by BiliObjCLint
+    </div>
+    <script>
+        const SERVER_PORT = {port};
+        let actionSent = false;
+
+        async function doAction(action) {{
+            if (actionSent) return;
+            actionSent = true;
+
+            const btnCancel = document.getElementById('btn-cancel');
+            const btnFix = document.getElementById('btn-fix');
+            btnCancel.disabled = true;
+            btnFix.disabled = true;
+
+            if (action === 'fix') {{
+                btnFix.textContent = '正在启动修复...';
+            }}
+
+            try {{
+                const response = await fetch(`http://localhost:${{SERVER_PORT}}/${{action}}`);
+                if (response.ok) {{
+                    // 请求成功，页面会自动跳转到结果页
+                }}
+            }} catch (e) {{
+                console.error('请求失败:', e);
+                alert('操作失败，请重试');
+                actionSent = false;
+                btnCancel.disabled = false;
+                btnFix.disabled = false;
+                btnFix.textContent = '🔧 自动修复';
+            }}
+        }}
+    </script>
+</body>
+</html>''')
+        else:
+            html_parts.append('''
+    <div class="footer">
+        Generated by BiliObjCLint
+    </div>
+</body>
+</html>''')
+
+        # 写入临时文件
+        html_content = ''.join(html_parts)
+        report_path = '/tmp/biliobjclint_report.html'
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+
+        self.logger.debug(f"Generated HTML report: {report_path}")
+        return report_path
+
+    def open_html_report(self, report_path: str):
+        """
+        在浏览器中打开 HTML 报告
+
+        Args:
+            report_path: HTML 文件路径
+        """
+        try:
+            subprocess.run(['open', report_path], check=True)
+            self.logger.debug(f"Opened HTML report in browser: {report_path}")
+        except Exception as e:
+            self.logger.error(f"Failed to open HTML report: {e}")
+
+    def _find_available_port(self) -> int:
+        """找到一个可用的端口"""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('localhost', 0))
+            return s.getsockname()[1]
+
+    def _start_action_server(self, port: int) -> HTTPServer:
+        """
+        启动本地 HTTP 服务器监听用户操作
+
+        Args:
+            port: 监听端口
+
+        Returns:
+            HTTPServer 实例
+        """
+        server = HTTPServer(('localhost', port), ActionRequestHandler)
+        server.timeout = 1  # 设置超时以便检查停止标志
+        self.logger.debug(f"Started action server on port {port}")
+        return server
+
+    def _wait_for_user_action(self, server: HTTPServer, timeout: int = 300) -> Optional[str]:
+        """
+        等待用户在浏览器中的操作
+
+        Args:
+            server: HTTPServer 实例
+            timeout: 超时时间（秒）
+
+        Returns:
+            用户操作 ('fix', 'cancel') 或 None（超时）
+        """
+        global _user_action, _server_should_stop
+        _user_action = None
+        _server_should_stop = False
+
+        start_time = time.time()
+        while not _server_should_stop:
+            if time.time() - start_time > timeout:
+                self.logger.warning(f"Action server timed out after {timeout}s")
+                return None
+            try:
+                server.handle_request()
+            except Exception as e:
+                self.logger.warning(f"Server error: {e}")
+                break
+
+        return _user_action
+
+    def _shutdown_server(self, server: HTTPServer):
+        """关闭 HTTP 服务器"""
+        if server:
+            try:
+                server.server_close()
+                self.logger.debug("Action server shut down")
+            except Exception as e:
+                self.logger.warning(f"Error shutting down server: {e}")
+
+    def cleanup_temp_files(self, *paths):
+        """
+        清理临时文件
+
+        Args:
+            paths: 要删除的文件路径列表
+        """
+        for path in paths:
+            if path and os.path.exists(path):
+                try:
+                    os.unlink(path)
+                    self.logger.debug(f"Cleaned up temp file: {path}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to cleanup temp file {path}: {e}")
 
     def build_fix_prompt(self, violations: List[Dict]) -> str:
         """
@@ -535,99 +1062,109 @@ class ClaudeFixer:
             log_claude_fix_end(False, error_msg, time.time() - self.start_time)
             return 1
 
-        # 显示询问对话框
-        message = f"发现 {len(violations)} 个代码问题"
-        if error_count > 0 and warning_count > 0:
-            message += f"\n（{error_count} errors, {warning_count} warnings）"
-        elif error_count > 0:
-            message += f"\n（{error_count} errors）"
-        else:
-            message += f"\n（{warning_count} warnings）"
-        message += "\n\n是否让 Claude 尝试自动修复？"
+        # 启动本地服务器并显示 HTML 报告
+        html_report_path = None
+        server = None
+        server_port = None
+        user_action = None
 
-        # 调试：记录即将显示对话框
-        with open("/tmp/biliobjclint_debug.log", "a") as f:
-            f.write(f"About to show dialog: {message}\n")
+        try:
+            # 找到可用端口并启动服务器
+            server_port = self._find_available_port()
+            server = self._start_action_server(server_port)
 
-        self.logger.debug("Showing user confirmation dialog")
-        clicked = self.show_dialog(
-            "BiliObjCLint",
-            message,
-            ["取消", "自动修复"],
-            default_button="自动修复",
-            icon="caution"
-        )
+            self.logger.info(f"Started action server on port {server_port}")
 
-        # 调试：记录用户点击结果
-        with open("/tmp/biliobjclint_debug.log", "a") as f:
-            f.write(f"Dialog result: clicked={clicked}\n")
+            # 生成带按钮的 HTML 报告
+            html_report_path = self.generate_html_report(violations, port=server_port)
 
-        if clicked != "自动修复":
-            self.logger.info("User cancelled fix operation")
-            log_claude_fix_end(False, "User cancelled", time.time() - self.start_time)
-            return 0
+            # 调试日志
+            with open("/tmp/biliobjclint_debug.log", "a") as f:
+                f.write(f"Opening HTML report with interactive buttons, port={server_port}\n")
 
-        self.logger.info(f"User confirmed fix, mode={self.mode}")
+            # 在浏览器中打开报告
+            self.open_html_report(html_report_path)
 
-        # 根据模式执行修复
-        if self.mode == 'silent':
-            # 显示进度通知
-            self.show_progress_notification("Claude 正在修复代码问题...")
+            # 等待用户操作（超时 5 分钟）
+            self.logger.info("Waiting for user action in browser...")
+            user_action = self._wait_for_user_action(server, timeout=300)
 
-            # 执行修复
-            success, result_msg = self.fix_violations_silent(violations)
+            # 调试：记录用户操作结果
+            with open("/tmp/biliobjclint_debug.log", "a") as f:
+                f.write(f"User action: {user_action}\n")
 
-            # 显示结果
-            if success:
-                self.logger.info("Fix completed successfully")
-                self.show_dialog(
-                    "BiliObjCLint",
-                    f"Claude 已完成修复！\n\n请重新编译以验证修复结果",
-                    ["确定"],
-                    icon="note"
-                )
-                log_claude_fix_end(True, "Fix completed", time.time() - self.start_time)
-            else:
-                self.logger.error(f"Fix failed: {result_msg}")
-                self.show_dialog(
-                    "BiliObjCLint",
-                    f"修复过程中出现问题\n\n{result_msg}",
-                    ["确定"],
-                    icon="stop"
-                )
-                log_claude_fix_end(False, result_msg, time.time() - self.start_time)
-                return 1
+            if user_action == 'cancel' or user_action is None:
+                self.logger.info("User cancelled or timed out")
+                log_claude_fix_end(False, "User cancelled", time.time() - self.start_time)
+                return 0
 
-        elif self.mode == 'terminal':
-            success, result_msg = self.fix_violations_terminal(violations)
-            self.logger.info(f"Terminal mode result: success={success}, msg={result_msg}")
-            if not success:
+            # user_action == 'fix'
+            self.logger.info(f"User confirmed fix, mode={self.mode}")
+
+            # 根据模式执行修复
+            if self.mode == 'silent':
+                # 显示进度通知
+                self.show_progress_notification("Claude 正在修复代码问题...")
+
+                # 执行修复
+                success, result_msg = self.fix_violations_silent(violations)
+
+                # 显示结果
+                if success:
+                    self.logger.info("Fix completed successfully")
+                    self.show_dialog(
+                        "BiliObjCLint",
+                        f"Claude 已完成修复！\n\n请重新编译以验证修复结果",
+                        ["确定"],
+                        icon="note"
+                    )
+                    log_claude_fix_end(True, "Fix completed", time.time() - self.start_time)
+                else:
+                    self.logger.error(f"Fix failed: {result_msg}")
+                    self.show_dialog(
+                        "BiliObjCLint",
+                        f"修复过程中出现问题\n\n{result_msg}",
+                        ["确定"],
+                        icon="stop"
+                    )
+                    log_claude_fix_end(False, result_msg, time.time() - self.start_time)
+                    return 1
+
+            elif self.mode == 'terminal':
+                success, result_msg = self.fix_violations_terminal(violations)
+                self.logger.info(f"Terminal mode result: success={success}, msg={result_msg}")
+                if not success:
+                    self.show_dialog(
+                        "BiliObjCLint",
+                        result_msg,
+                        ["确定"],
+                        icon="stop"
+                    )
+                    log_claude_fix_end(False, result_msg, time.time() - self.start_time)
+                    return 1
+                log_claude_fix_end(True, "Terminal opened", time.time() - self.start_time)
+
+            elif self.mode == 'vscode':
+                success, result_msg = self.fix_violations_vscode(violations)
+                self.logger.info(f"VSCode mode result: success={success}, msg={result_msg}")
                 self.show_dialog(
                     "BiliObjCLint",
                     result_msg,
                     ["确定"],
-                    icon="stop"
+                    icon="note" if success else "stop"
                 )
-                log_claude_fix_end(False, result_msg, time.time() - self.start_time)
-                return 1
-            log_claude_fix_end(True, "Terminal opened", time.time() - self.start_time)
+                if not success:
+                    log_claude_fix_end(False, result_msg, time.time() - self.start_time)
+                    return 1
+                log_claude_fix_end(True, "VSCode opened", time.time() - self.start_time)
 
-        elif self.mode == 'vscode':
-            success, result_msg = self.fix_violations_vscode(violations)
-            self.logger.info(f"VSCode mode result: success={success}, msg={result_msg}")
-            self.show_dialog(
-                "BiliObjCLint",
-                result_msg,
-                ["确定"],
-                icon="note" if success else "stop"
-            )
-            if not success:
-                log_claude_fix_end(False, result_msg, time.time() - self.start_time)
-                return 1
-            log_claude_fix_end(True, "VSCode opened", time.time() - self.start_time)
+            self.logger.log_separator("Claude Fix Session End")
+            return 0
 
-        self.logger.log_separator("Claude Fix Session End")
-        return 0
+        finally:
+            # 关闭服务器并清理临时文件
+            self._shutdown_server(server)
+            self.cleanup_temp_files(html_report_path)
 
     def run_silent_fix(self, violations: List[Dict]) -> int:
         """
