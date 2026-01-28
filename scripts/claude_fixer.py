@@ -915,23 +915,34 @@ class ClaudeFixer:
             text-align: center;
             margin-top: 30px;
         }
-        .btn-done {
+        .btn-done, .btn-download {
             padding: 14px 40px;
             font-size: 16px;
             font-weight: 600;
-            background: #4CAF50;
             color: white;
             border: none;
             border-radius: 8px;
             cursor: pointer;
             transition: all 0.2s;
+            margin: 0 8px;
+        }
+        .btn-done {
+            background: #4CAF50;
         }
         .btn-done:hover {
             background: #43A047;
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         }
-        .btn-done:disabled {
+        .btn-download {
+            background: #2196F3;
+        }
+        .btn-download:hover {
+            background: #1976D2;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .btn-done:disabled, .btn-download:disabled {
             opacity: 0.6;
             cursor: not-allowed;
             transform: none;
@@ -1103,6 +1114,7 @@ class ClaudeFixer:
         if port:
             html_parts.append(f'''
     <div class="footer-actions">
+        <button class="btn-download" onclick="downloadReport()" id="btn-download">📥 下载报告</button>
         <button class="btn-done" onclick="finishAndContinue()" id="btn-done">✓ 完成并继续编译</button>
     </div>
     <div class="footer">
@@ -1193,6 +1205,66 @@ class ClaudeFixer:
                 btn.dataset.state = 'failed';
                 btn.disabled = false;
             }}
+        }}
+
+        // 下载报告
+        function downloadReport() {{
+            // 克隆整个文档
+            const doc = document.documentElement.cloneNode(true);
+
+            // 移除所有操作按钮区域
+            doc.querySelectorAll('.code-actions').forEach(el => el.remove());
+
+            // 移除底部操作按钮
+            doc.querySelectorAll('.footer-actions').forEach(el => el.remove());
+
+            // 移除提示框
+            doc.querySelectorAll('.notice-box').forEach(el => el.remove());
+
+            // 移除所有 script 标签
+            doc.querySelectorAll('script').forEach(el => el.remove());
+
+            // 移除 onclick 属性（展开功能也禁用）
+            doc.querySelectorAll('[onclick]').forEach(el => {{
+                el.removeAttribute('onclick');
+            }});
+
+            // 默认展开所有代码预览
+            doc.querySelectorAll('.violation').forEach(el => {{
+                el.classList.add('expanded');
+            }});
+
+            // 移除展开图标
+            doc.querySelectorAll('.expand-icon').forEach(el => el.remove());
+
+            // 移除 violation-header 的 cursor pointer 样式
+            const style = doc.querySelector('style');
+            if (style) {{
+                style.textContent += `
+                    .violation-header {{ cursor: default !important; }}
+                    .code-preview {{ display: block !important; }}
+                `;
+            }}
+
+            // 生成文件名（包含日期时间）
+            const now = new Date();
+            const dateStr = now.toISOString().slice(0, 19).replace(/[T:]/g, '-');
+            const filename = `BiliObjCLint_Report_${{dateStr}}.html`;
+
+            // 创建完整的 HTML 文档
+            const htmlContent = '<!DOCTYPE html>\\n<html>' + doc.innerHTML + '</html>';
+
+            // 创建 Blob 并下载
+            const blob = new Blob([htmlContent], {{ type: 'text/html;charset=utf-8' }});
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         }}
 
         // 完成并继续编译
