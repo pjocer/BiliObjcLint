@@ -209,6 +209,16 @@ class BlockRetainCycleRule(BaseRule):
         brace_count = 0
         found_block_start = False
 
+        # 先检查当前行是否同时包含 block 开始和 self 使用
+        current_line = lines[line_num - 1] if line_num > 0 else ''
+        if self.BLOCK_START_PATTERN.search(current_line):
+            # 当前行有 block 开始，检查 self 是否在 ^{ 之后
+            block_match = self.BLOCK_START_PATTERN.search(current_line)
+            if block_match:
+                after_block = current_line[block_match.end():]
+                if 'self' in after_block:
+                    return True
+
         for i in range(line_num - 2, max(0, line_num - 100), -1):
             line = lines[i]
 
@@ -216,12 +226,14 @@ class BlockRetainCycleRule(BaseRule):
             if self.METHOD_START_PATTERN.match(line.strip()):
                 break
 
-            # 计算大括号
+            # 计算大括号（向上扫描时，} 表示进入作用域，{ 表示离开作用域）
             brace_count += line.count('}') - line.count('{')
 
             # 检测 block 开始
             if self.BLOCK_START_PATTERN.search(line):
-                if brace_count <= 0:
+                # 只有当 brace_count < 0 时，说明该 block 的 { 还未被关闭
+                # brace_count = 0 表示 block 已经被对应的 } 关闭了
+                if brace_count < 0:
                     found_block_start = True
                     break
 
