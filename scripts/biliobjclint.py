@@ -39,6 +39,7 @@ from core.oclint_runner import OCLintRunner
 from core.rule_engine import RuleEngine
 from core.logger import get_logger, LogContext, log_lint_start, log_lint_end
 from core.local_pods import LocalPodsAnalyzer
+from core.ignore_cache import IgnoreCache
 
 
 class BiliObjCLint:
@@ -54,6 +55,8 @@ class BiliObjCLint:
         # 本地 Pod 相关
         self.local_pods_analyzer: Optional[LocalPodsAnalyzer] = None
         self.file_to_pod_map: Dict[str, str] = {}  # file_path -> pod_name
+        # 忽略缓存
+        self.ignore_cache = IgnoreCache(project_root=str(self.project_root))
 
     def run(self) -> int:
         """执行 lint 检查，返回退出码"""
@@ -97,14 +100,19 @@ class BiliObjCLint:
                     changed_lines_map = analyzer.get_all_changed_lines_map(main_project_files)
 
                 # 本地 Pod 文件
-                if self.local_pods_analyzer and self.config.local_pods.incremental:
+                if self.local_pods_analyzer:
                     local_pod_files = [f for f in files if f in self.file_to_pod_map]
                     for f in local_pod_files:
-                        changed_lines = self.local_pods_analyzer.get_changed_lines(f)
-                        if changed_lines:  # 只有有变更时才添加
-                            changed_lines_map[f] = changed_lines
+                        if self.config.local_pods.incremental:
+                            # 增量模式：只检查变更行
+                            changed_lines = self.local_pods_analyzer.get_changed_lines(f)
+                            if changed_lines:
+                                changed_lines_map[f] = changed_lines
+                            else:
+                                # 如果没有变更行信息（非 git 仓库或新文件），检查所有行
+                                changed_lines_map[f] = set()
                         else:
-                            # 如果没有变更行信息（非 git 仓库或新文件），检查所有行
+                            # 全量模式：检查所有行（空集合表示不过滤）
                             changed_lines_map[f] = set()
 
                 self.logger.debug(f"Changed lines map: {len(changed_lines_map)} files")
@@ -129,14 +137,22 @@ class BiliObjCLint:
                 if v.file_path in self.file_to_pod_map:
                     v.pod_name = self.file_to_pod_map[v.file_path]
 
-        # 7. 过滤增量结果
+        # 7. 过滤被忽略的违规
+        with LogContext(self.logger, "ignore_filter"):
+            before_ignore_count = len(self.reporter.violations)
+            self._filter_ignored_violations()
+            after_ignore_count = len(self.reporter.violations)
+            if before_ignore_count != after_ignore_count:
+                self.logger.info(f"Filtered {before_ignore_count - after_ignore_count} ignored violations")
+
+        # 9. 过滤增量结果
         if self.args.incremental and changed_lines_map:
             before_count = len(self.reporter.violations)
             self.reporter.filter_by_changed_lines(changed_lines_map)
             after_count = len(self.reporter.violations)
             self.logger.debug(f"Incremental filter: {before_count} -> {after_count} violations")
 
-        # 8. 输出结果
+        # 10. 输出结果
         elapsed = time.time() - self.start_time
         errors_count = sum(1 for v in self.reporter.violations if v.severity == Severity.ERROR)
         warnings_count = len(self.reporter.violations) - errors_count
@@ -273,6 +289,16 @@ class BiliObjCLint:
             return False
 
         return True
+
+    def _filter_ignored_violations(self):
+        """过滤被忽略的违规"""
+        filtered = []
+        for v in self.reporter.violations:
+            if not self.ignore_cache.is_ignored(v.file_path, v.line, v.rule_id):
+                filtered.append(v)
+            else:
+                self.logger.debug(f"Filtered ignored violation: {v.file_path}:{v.line} [{v.rule_id}]")
+        self.reporter.violations = filtered
 
     def _find_all_files(self) -> List[str]:
         """查找所有匹配的文件"""

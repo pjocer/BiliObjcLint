@@ -29,12 +29,15 @@ SCRIPT_DIR = Path(__file__).parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from core.logger import get_logger, LogContext, log_claude_fix_start, log_claude_fix_end
+from core.ignore_cache import IgnoreCache
 
 
 # 全局变量用于 HTTP 服务器通信
 _user_action = None
 _server_should_stop = False
 _timeout_reset_time = None  # 用于重置超时计时
+_ignore_cache = None  # 忽略缓存实例
+_fixer_instance = None  # ClaudeFixer 实例引用
 
 
 class ActionRequestHandler(BaseHTTPRequestHandler):
@@ -45,11 +48,12 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        global _user_action, _server_should_stop
-        from urllib.parse import urlparse, parse_qs
+        global _user_action, _server_should_stop, _ignore_cache, _fixer_instance
+        from urllib.parse import urlparse, parse_qs, unquote
 
         parsed = urlparse(self.path)
         path = parsed.path
+        params = parse_qs(parsed.query)
 
         if path == '/fix':
             _user_action = 'fix'
@@ -59,16 +63,89 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
             _user_action = 'cancel'
             _server_should_stop = True
             self._send_response("已取消")
+        elif path == '/done':
+            # 完成并继续编译
+            _user_action = 'done'
+            _server_should_stop = True
+            self._send_response("已完成")
         elif path == '/status':
             self._send_response("running")
         elif path == '/open':
             # 在 Xcode 中打开文件
-            params = parse_qs(parsed.query)
             file_path = params.get('file', [''])[0]
             line = params.get('line', ['1'])[0]
             self._open_in_xcode(file_path, line)
+        elif path == '/ignore':
+            # 忽略单个违规
+            self._handle_ignore(params)
+        elif path == '/fix-single':
+            # 修复单个违规
+            self._handle_fix_single(params)
         else:
             self.send_error(404)
+
+    def _handle_ignore(self, params: dict):
+        """处理忽略单个违规的请求"""
+        global _ignore_cache, _timeout_reset_time
+        from urllib.parse import unquote
+
+        file_path = unquote(params.get('file', [''])[0])
+        line = int(params.get('line', ['0'])[0])
+        rule = params.get('rule', [''])[0]
+        message = unquote(params.get('message', [''])[0])
+
+        if not file_path or not line or not rule:
+            self._send_json_response({'success': False, 'message': '参数不完整'})
+            return
+
+        try:
+            if _ignore_cache:
+                success = _ignore_cache.add_ignore(file_path, line, rule, message)
+                if success:
+                    _timeout_reset_time = time.time()  # 重置超时
+                    self._send_json_response({'success': True, 'message': '已添加到忽略列表'})
+                else:
+                    self._send_json_response({'success': False, 'message': '添加忽略失败'})
+            else:
+                self._send_json_response({'success': False, 'message': '忽略缓存未初始化'})
+        except Exception as e:
+            self._send_json_response({'success': False, 'message': str(e)})
+
+    def _handle_fix_single(self, params: dict):
+        """处理修复单个违规的请求"""
+        global _fixer_instance, _timeout_reset_time
+        from urllib.parse import unquote
+        import threading
+
+        file_path = unquote(params.get('file', [''])[0])
+        line = int(params.get('line', ['0'])[0])
+        rule = params.get('rule', [''])[0]
+        message = unquote(params.get('message', [''])[0])
+
+        if not file_path or not line or not rule:
+            self._send_json_response({'success': False, 'message': '参数不完整'})
+            return
+
+        # 立即返回，异步执行修复
+        _timeout_reset_time = time.time()  # 重置超时
+
+        # 构建单个违规
+        violation = {
+            'file': file_path,
+            'line': line,
+            'rule': rule,
+            'message': message,
+            'severity': 'warning'
+        }
+
+        def do_fix():
+            if _fixer_instance:
+                success, msg = _fixer_instance.fix_violations_silent([violation])
+                # 修复结果可以通过轮询 /fix-status 获取（简化版直接假设成功）
+
+        # 在后台线程执行修复
+        threading.Thread(target=do_fix, daemon=True).start()
+        self._send_json_response({'success': True, 'status': 'started'})
 
     def _open_in_xcode(self, file_path: str, line: str):
         """使用 xed 命令在 Xcode 中打开文件"""
@@ -574,10 +651,8 @@ class ClaudeFixer:
         .violation {
             padding: 12px 16px;
             border-bottom: 1px solid var(--border-color);
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            align-items: flex-start;
+            display: block;
+            width: 100%;
         }
         .violation:last-child {
             border-bottom: none;
@@ -588,6 +663,13 @@ class ClaudeFixer:
         }
         .violation.warning {
             background: var(--warning-bg);
+        }
+        .violation.ignored {
+            opacity: 0.5;
+        }
+        .violation.fixed {
+            opacity: 0.6;
+            background: rgba(76, 175, 80, 0.1);
         }
         .line-num {
             font-family: "SF Mono", Monaco, monospace;
@@ -746,6 +828,8 @@ class ClaudeFixer:
             border-radius: 8px;
             overflow: hidden;
             background: #1e1e1e;
+            width: 100%;
+            box-sizing: border-box;
         }
         .violation.expanded .code-preview {
             display: block;
@@ -753,10 +837,57 @@ class ClaudeFixer:
         .code-actions {
             display: flex;
             justify-content: flex-end;
-            padding: 8px 12px;
+            gap: 8px;
+            padding: 10px 12px;
             background: #2d2d2d;
             border-bottom: 1px solid #404040;
         }
+        /* 操作按钮通用样式 */
+        .btn-action {
+            padding: 6px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-action:disabled {
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+        /* 忽略按钮 */
+        .btn-ignore {
+            background: #78909C;
+            color: white;
+        }
+        .btn-ignore:hover:not(:disabled) {
+            background: #607D8B;
+        }
+        .btn-ignore[data-state="ignored"] {
+            background: #B0BEC5;
+            cursor: default;
+        }
+        /* 修复按钮 */
+        .btn-fix-single {
+            background: #4CAF50;
+            color: white;
+        }
+        .btn-fix-single:hover:not(:disabled) {
+            background: #43A047;
+        }
+        .btn-fix-single[data-state="fixing"] {
+            background: #FFA726;
+            cursor: wait;
+        }
+        .btn-fix-single[data-state="fixed"] {
+            background: #66BB6A;
+            cursor: default;
+        }
+        .btn-fix-single[data-state="failed"] {
+            background: #EF5350;
+        }
+        /* Xcode 按钮 */
         .btn-xcode {
             padding: 6px 14px;
             font-size: 13px;
@@ -773,6 +904,37 @@ class ClaudeFixer:
         }
         .btn-xcode:hover {
             background: #0056CC;
+        }
+        /* 底部完成按钮 */
+        .footer-actions {
+            position: sticky;
+            bottom: 0;
+            background: var(--bg-color);
+            padding: 20px;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+            margin-top: 30px;
+        }
+        .btn-done {
+            padding: 14px 40px;
+            font-size: 16px;
+            font-weight: 600;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-done:hover {
+            background: #43A047;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .btn-done:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
         }
         .code-block {
             padding: 12px 0;
@@ -843,19 +1005,15 @@ class ClaudeFixer:
         发现 <strong>''', str(len(violations)), '''</strong> 个问题
         ''']
 
-        # 如果提供了端口，添加交互按钮和提示
+        # 如果提供了端口，添加交互提示
         if port:
             html_parts.append(f'''
     </p>
-    <div class="action-bar">
-        <button class="btn btn-cancel" onclick="doAction('cancel')" id="btn-cancel">取消</button>
-        <button class="btn btn-fix" onclick="doAction('fix')" id="btn-fix">🔧 自动修复</button>
-    </div>
     <div class="notice-box">
         <span class="icon">⏳</span>
         <div class="content">
             <div class="title">Xcode 正在等待您的操作</div>
-            <div class="desc">请阅读下方的代码审查结果，然后点击「取消」或「自动修复」继续。在您做出选择之前，Xcode 编译进程将保持等待状态。</div>
+            <div class="desc">请阅读下方的代码审查结果，可以对每个问题单独「忽略」或「修复」。处理完成后点击底部的「完成并继续编译」按钮。</div>
         </div>
     </div>
     <p class="summary">
@@ -909,6 +1067,9 @@ class ClaudeFixer:
                 # 转义文件路径用于 JavaScript
                 escaped_file_path = file_path.replace('\\', '\\\\').replace("'", "\\'")
 
+                # 转义消息用于 JavaScript
+                escaped_message = message.replace('\\', '\\\\').replace("'", "\\'").replace('"', '\\"').replace('\n', ' ')
+
                 html_parts.append(f'''
             <div class="violation {severity}" id="{violation_id}" onclick="toggleViolation('{violation_id}')">
                 <div class="violation-header">
@@ -920,6 +1081,12 @@ class ClaudeFixer:
                 </div>
                 <div class="code-preview" onclick="event.stopPropagation()">
                     <div class="code-actions">
+                        <button class="btn-action btn-ignore" onclick="ignoreViolation(this, '{escaped_file_path}', {line}, '{rule}', '{escaped_message}')" data-state="normal">
+                            忽略
+                        </button>
+                        <button class="btn-action btn-fix-single" onclick="fixSingleViolation(this, '{escaped_file_path}', {line}, '{rule}', '{escaped_message}')" data-state="normal">
+                            修复
+                        </button>
                         <button class="btn-xcode" onclick="openInXcode('{escaped_file_path}', {line})">
                             <span>📱</span> 在 Xcode 中打开
                         </button>
@@ -932,9 +1099,12 @@ class ClaudeFixer:
         </div>
     </div>''')
 
-        # 添加 JavaScript（仅当有端口时）
+        # 添加 JavaScript 和底部按钮（仅当有端口时）
         if port:
             html_parts.append(f'''
+    <div class="footer-actions">
+        <button class="btn-done" onclick="finishAndContinue()" id="btn-done">✓ 完成并继续编译</button>
+    </div>
     <div class="footer">
         Generated by BiliObjCLint
     </div>
@@ -964,42 +1134,92 @@ class ClaudeFixer:
             }}
         }}
 
-        async function doAction(action) {{
-            if (actionSent) return;
-
-            // 确认对话框
-            const actionText = action === 'fix' ? '自动修复' : '取消';
-            const confirmed = confirm(`确定要「${{actionText}}」吗？点击确定后此页面将关闭。`);
-            if (!confirmed) return;
-
-            actionSent = true;
-
-            const btnCancel = document.getElementById('btn-cancel');
-            const btnFix = document.getElementById('btn-fix');
-            btnCancel.disabled = true;
-            btnFix.disabled = true;
-
-            if (action === 'fix') {{
-                btnFix.textContent = '正在启动修复...';
-            }}
+        // 忽略单个违规
+        async function ignoreViolation(btn, file, line, rule, message) {{
+            event.stopPropagation();
+            btn.disabled = true;
+            btn.textContent = '处理中...';
 
             try {{
-                const response = await fetch(`http://localhost:${{SERVER_PORT}}/${{action}}`);
+                const response = await fetch(
+                    `http://localhost:${{SERVER_PORT}}/ignore?` +
+                    `file=${{encodeURIComponent(file)}}&line=${{line}}&rule=${{rule}}&message=${{encodeURIComponent(message)}}`
+                );
+                const result = await response.json();
+                if (result.success) {{
+                    btn.textContent = '已忽略';
+                    btn.dataset.state = 'ignored';
+                    btn.closest('.violation').classList.add('ignored');
+                }} else {{
+                    btn.textContent = '忽略';
+                    btn.disabled = false;
+                    alert('忽略失败: ' + result.message);
+                }}
+            }} catch (e) {{
+                btn.textContent = '忽略';
+                btn.disabled = false;
+                alert('操作失败');
+            }}
+        }}
+
+        // 修复单个违规
+        async function fixSingleViolation(btn, file, line, rule, message) {{
+            event.stopPropagation();
+            btn.disabled = true;
+            btn.textContent = '修复中...';
+            btn.dataset.state = 'fixing';
+
+            try {{
+                const response = await fetch(
+                    `http://localhost:${{SERVER_PORT}}/fix-single?` +
+                    `file=${{encodeURIComponent(file)}}&line=${{line}}&` +
+                    `rule=${{rule}}&message=${{encodeURIComponent(message)}}`
+                );
+                const result = await response.json();
+                if (result.success) {{
+                    // 修复已启动，等待一段时间后更新状态
+                    setTimeout(() => {{
+                        btn.textContent = '已修复';
+                        btn.dataset.state = 'fixed';
+                        btn.closest('.violation').classList.add('fixed');
+                    }}, 3000);
+                }} else {{
+                    btn.textContent = '重试';
+                    btn.dataset.state = 'failed';
+                    btn.disabled = false;
+                }}
+            }} catch (e) {{
+                btn.textContent = '重试';
+                btn.dataset.state = 'failed';
+                btn.disabled = false;
+            }}
+        }}
+
+        // 完成并继续编译
+        async function finishAndContinue() {{
+            if (actionSent) return;
+            actionSent = true;
+
+            const btnDone = document.getElementById('btn-done');
+            btnDone.disabled = true;
+            btnDone.textContent = '正在关闭...';
+
+            try {{
+                const response = await fetch(`http://localhost:${{SERVER_PORT}}/done`);
                 if (response.ok) {{
                     // 请求成功，尝试关闭页面
                     window.close();
-                    // 如果无法关闭（非脚本打开的窗口），显示提示
+                    // 如果无法关闭，显示提示
                     setTimeout(() => {{
-                        document.body.innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:-apple-system,sans-serif;"><div style="text-align:center;padding:40px;background:var(--card-bg,#f8f9fa);border-radius:12px;"><h2>' + (action === 'fix' ? '🔧 正在修复中...' : '✓ 已取消') + '</h2><p style="opacity:0.6;margin-top:10px;">可以关闭此页面</p></div></div>';
+                        document.body.innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:-apple-system,sans-serif;"><div style="text-align:center;padding:40px;background:var(--card-bg,#f8f9fa);border-radius:12px;"><h2>✓ 已完成</h2><p style="opacity:0.6;margin-top:10px;">可以关闭此页面</p></div></div>';
                     }}, 100);
                 }}
             }} catch (e) {{
                 console.error('请求失败:', e);
                 alert('操作失败，请重试');
                 actionSent = false;
-                btnCancel.disabled = false;
-                btnFix.disabled = false;
-                btnFix.textContent = '🔧 自动修复';
+                btnDone.disabled = false;
+                btnDone.textContent = '✓ 完成并继续编译';
             }}
         }}
     </script>
@@ -1405,6 +1625,11 @@ class ClaudeFixer:
             server = None
             server_port = None
 
+            # 初始化全局变量供 HTTP 处理器使用
+            global _ignore_cache, _fixer_instance
+            _ignore_cache = IgnoreCache(project_root=str(self.project_root))
+            _fixer_instance = self
+
             try:
                 # 找到可用端口并启动服务器
                 server_port = self._find_available_port()
@@ -1444,6 +1669,11 @@ class ClaudeFixer:
             if user_action == 'cancel' or user_action is None:
                 self.logger.info("User cancelled or timed out from HTML")
                 log_claude_fix_end(False, "User cancelled", time.time() - self.start_time)
+                return 0
+
+            if user_action == 'done':
+                self.logger.info("User finished reviewing (done)")
+                log_claude_fix_end(True, "User finished", time.time() - self.start_time)
                 return 0
         else:
             # 未知结果

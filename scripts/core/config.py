@@ -45,8 +45,8 @@ class LocalPodsConfig:
     enabled: bool = True
     # 是否对本地 Pod 进行增量检测
     # - True: 只检查本地 Pod 的 git 变更（如果是 git 仓库）
-    # - False: 全量检查本地 Pod 的所有文件
-    incremental: bool = True
+    # - False: 全量检查本地 Pod 的所有文件（推荐，因为本地 Pod 通常是正在开发的代码）
+    incremental: bool = False
     # 本地 Pod 的包含模式（空表示所有）
     included_pods: List[str] = field(default_factory=list)
     # 本地 Pod 的排除模式
@@ -170,7 +170,7 @@ class ConfigLoader:
         },
         "local_pods": {
             "enabled": True,
-            "incremental": True,
+            "incremental": False,
             "included_pods": [],
             "excluded_pods": ["*Test*", "*Mock*"]
         }
@@ -241,7 +241,7 @@ class ConfigLoader:
         local_pods_cfg = self._config.get("local_pods", {})
         local_pods = LocalPodsConfig(
             enabled=local_pods_cfg.get("enabled", True),
-            incremental=local_pods_cfg.get("incremental", True),
+            incremental=local_pods_cfg.get("incremental", False),
             included_pods=local_pods_cfg.get("included_pods", []),
             excluded_pods=local_pods_cfg.get("excluded_pods", ["*Test*", "*Mock*"])
         )
