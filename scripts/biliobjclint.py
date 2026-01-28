@@ -257,13 +257,21 @@ class BiliObjCLint:
                 self.logger.debug(f"Skipping excluded pod: {pod_name}")
                 continue
 
+            # 增量检测条件：主工程增量模式 或 本地 Pod 配置增量模式
+            use_incremental = self.args.incremental or self.config.local_pods.incremental
+
             # 获取 Pod 中的变更文件
             pod_files = self.local_pods_analyzer.get_changed_files(
                 pod_path,
                 pod_name,
                 extensions,
-                incremental=self.config.local_pods.incremental
+                incremental=use_incremental
             )
+
+            # 跳过没有变更文件的 Pod
+            if not pod_files:
+                self.logger.debug(f"Skipping pod with no changes: {pod_name}")
+                continue
 
             # 记录文件到 Pod 的映射
             for f in pod_files:
