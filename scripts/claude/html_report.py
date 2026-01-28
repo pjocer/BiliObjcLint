@@ -544,13 +544,9 @@ def _generate_javascript(port: int) -> str:
                     `rule=${{rule}}&message=${{encodeURIComponent(message)}}`
                 );
                 const result = await response.json();
-                if (result.success) {{
-                    // 修复已启动，等待一段时间后更新状态
-                    setTimeout(() => {{
-                        btn.textContent = '已修复';
-                        btn.dataset.state = 'fixed';
-                        btn.closest('.violation').classList.add('fixed');
-                    }}, 3000);
+                if (result.success && result.task_id) {{
+                    // 修复已启动，轮询查询状态
+                    pollFixStatus(btn, result.task_id);
                 }} else {{
                     btn.textContent = '重试';
                     btn.dataset.state = 'failed';
@@ -561,6 +557,61 @@ def _generate_javascript(port: int) -> str:
                 btn.dataset.state = 'failed';
                 btn.disabled = false;
             }}
+        }}
+
+        // 轮询修复任务状态
+        async function pollFixStatus(btn, taskId) {{
+            const maxAttempts = 120;  // 最多轮询 120 次（约 2 分钟）
+            const pollInterval = 1000;  // 每秒查询一次
+            let attempts = 0;
+
+            const poll = async () => {{
+                attempts++;
+                try {{
+                    const response = await fetch(
+                        `http://localhost:${{SERVER_PORT}}/fix-status?task_id=${{taskId}}`
+                    );
+                    const result = await response.json();
+
+                    if (result.status === 'completed') {{
+                        btn.textContent = '已修复';
+                        btn.dataset.state = 'fixed';
+                        btn.closest('.violation').classList.add('fixed');
+                        return;
+                    }} else if (result.status === 'failed') {{
+                        btn.textContent = '修复失败';
+                        btn.dataset.state = 'failed';
+                        btn.disabled = false;
+                        return;
+                    }} else if (result.status === 'running') {{
+                        // 更新进度显示
+                        btn.textContent = `修复中...${{attempts}}s`;
+                        if (attempts < maxAttempts) {{
+                            setTimeout(poll, pollInterval);
+                        }} else {{
+                            btn.textContent = '超时';
+                            btn.dataset.state = 'failed';
+                            btn.disabled = false;
+                        }}
+                    }} else {{
+                        // 未知状态
+                        btn.textContent = '重试';
+                        btn.dataset.state = 'failed';
+                        btn.disabled = false;
+                    }}
+                }} catch (e) {{
+                    if (attempts < maxAttempts) {{
+                        setTimeout(poll, pollInterval);
+                    }} else {{
+                        btn.textContent = '重试';
+                        btn.dataset.state = 'failed';
+                        btn.disabled = false;
+                    }}
+                }}
+            }};
+
+            // 启动轮询
+            setTimeout(poll, pollInterval);
         }}
 
         // 下载报告
