@@ -112,10 +112,6 @@ python_rules:
     enabled: true
     severity: warning
 
-  strong_self_in_block:
-    enabled: true
-    severity: warning
-
   # ---------- 安全规则 ----------
   forbidden_api:
     enabled: false  # 默认关闭

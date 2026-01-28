@@ -192,8 +192,7 @@ See `config/default.yaml` for a complete example.
 | `method_length` | Method length limit | warning |
 | `todo_fixme` | TODO/FIXME detection | warning |
 | `weak_delegate` | Delegate should use weak | error |
-| `block_retain_cycle` | Block retain cycle detection | warning |
-| `strong_self_in_block` | Check strongSelf usage after weakSelf in blocks | warning |
+| `block_retain_cycle` | Block retain cycle detection (includes weak/strong self check) | warning |
 | `forbidden_api` | Forbidden API check | error |
 | `hardcoded_credentials` | Hardcoded credentials detection | error |
 | `insecure_random` | Insecure random number generation detection | warning |

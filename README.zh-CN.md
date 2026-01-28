@@ -192,8 +192,7 @@ claude_autofix:
 | `method_length` | 方法长度限制 | warning |
 | `todo_fixme` | TODO/FIXME 检测 | warning |
 | `weak_delegate` | Delegate 应使用 weak | error |
-| `block_retain_cycle` | Block 循环引用检测 | warning |
-| `strong_self_in_block` | Block 中 weakSelf 后 strongSelf 使用检查 | warning |
+| `block_retain_cycle` | Block 循环引用检测（含 weak/strong self 检查） | warning |
 | `forbidden_api` | 禁用 API 检查 | error |
 | `hardcoded_credentials` | 硬编码凭据检测 | error |
 | `insecure_random` | 不安全随机数生成检测 | warning |
