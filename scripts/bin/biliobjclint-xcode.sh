@@ -9,9 +9,11 @@
 #   项目路径      .xcworkspace 或 .xcodeproj 路径
 #
 # 选项:
+#   --project, -p NAME   指定项目名称（用于 workspace 中指定项目）
 #   --target, -t NAME    指定 Target 名称（默认：主 Target）
 #   --remove             移除已添加的 Lint Phase
 #   --override           强制覆盖已存在的 Lint Phase
+#   --list-projects      列出 workspace 中所有项目
 #   --list-targets       列出所有可用的 Targets
 #   --dry-run            仅显示将要进行的修改，不实际执行
 #   --manual             显示手动配置说明（不自动修改项目）
@@ -19,6 +21,7 @@
 #
 # 示例:
 #   biliobjclint-xcode /path/to/MyApp.xcworkspace
+#   biliobjclint-xcode /path/to/MyApp.xcworkspace -p MyProject -t MyTarget
 #   biliobjclint-xcode /path/to/MyApp.xcodeproj --target MyApp
 #   biliobjclint-xcode /path/to/MyApp.xcodeproj --list-targets
 #   biliobjclint-xcode /path/to/MyApp.xcodeproj --remove
@@ -62,9 +65,11 @@ show_help() {
     echo "  项目路径            .xcworkspace 或 .xcodeproj 路径"
     echo ""
     echo "选项:"
+    echo "  --project, -p NAME  指定项目名称（用于 workspace 中指定项目）"
     echo "  --target, -t NAME   指定 Target 名称（默认：主 Target）"
     echo "  --remove            移除已添加的 Lint Phase"
     echo "  --override          强制覆盖已存在的 Lint Phase"
+    echo "  --list-projects     列出 workspace 中所有项目"
     echo "  --list-targets      列出所有可用的 Targets"
     echo "  --dry-run           仅显示将要进行的修改，不实际执行"
     echo "  --manual            显示手动配置说明（不自动修改项目）"
@@ -72,6 +77,7 @@ show_help() {
     echo ""
     echo "示例:"
     echo "  $0 /path/to/MyApp.xcworkspace"
+    echo "  $0 /path/to/MyApp.xcworkspace -p MyProject -t MyTarget"
     echo "  $0 /path/to/MyApp.xcodeproj --target MyApp"
     echo "  $0 /path/to/MyApp.xcodeproj --list-targets"
     echo "  $0 /path/to/MyApp.xcodeproj --remove"
@@ -156,6 +162,7 @@ SCRIPT
 
 # 解析参数
 PROJECT_PATH=""
+PROJECT_NAME=""
 TARGET_NAME=""
 ACTION="add"
 DRY_RUN=""
@@ -171,6 +178,10 @@ while [[ $# -gt 0 ]]; do
             MANUAL_MODE=true
             shift
             ;;
+        --project|-p)
+            PROJECT_NAME="$2"
+            shift 2
+            ;;
         --target|-t)
             TARGET_NAME="$2"
             shift 2
@@ -183,8 +194,12 @@ while [[ $# -gt 0 ]]; do
             OVERRIDE="--override"
             shift
             ;;
+        --list-projects)
+            ACTION="list-projects"
+            shift
+            ;;
         --list-targets)
-            ACTION="list"
+            ACTION="list-targets"
             shift
             ;;
         --dry-run)
@@ -244,13 +259,19 @@ echo ""
 # 构建命令参数
 CMD_ARGS=("$PROJECT_PATH")
 
+if [ -n "$PROJECT_NAME" ]; then
+    CMD_ARGS+=("--project" "$PROJECT_NAME")
+fi
+
 if [ -n "$TARGET_NAME" ]; then
     CMD_ARGS+=("--target" "$TARGET_NAME")
 fi
 
 if [ "$ACTION" = "remove" ]; then
     CMD_ARGS+=("--remove")
-elif [ "$ACTION" = "list" ]; then
+elif [ "$ACTION" = "list-projects" ]; then
+    CMD_ARGS+=("--list-projects")
+elif [ "$ACTION" = "list-targets" ]; then
     CMD_ARGS+=("--list-targets")
 fi
 
