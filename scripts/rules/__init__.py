@@ -15,6 +15,9 @@ from .style_rules import (
 from .memory_rules import (
     WeakDelegateRule,
     BlockRetainCycleRule,
+    WrapperEmptyPointerRule,
+    DictUsageRule,
+    CollectionMutationRule,
 )
 from .security_rules import (
     ForbiddenApiRule,
@@ -37,6 +40,9 @@ def get_all_rules():
         # Memory
         WeakDelegateRule,
         BlockRetainCycleRule,
+        WrapperEmptyPointerRule,
+        DictUsageRule,
+        CollectionMutationRule,
         # Security
         ForbiddenApiRule,
         HardcodedCredentialsRule,
@@ -58,6 +64,9 @@ __all__ = [
     # Memory
     'WeakDelegateRule',
     'BlockRetainCycleRule',
+    'WrapperEmptyPointerRule',
+    'DictUsageRule',
+    'CollectionMutationRule',
     # Security
     'ForbiddenApiRule',
     'HardcodedCredentialsRule',

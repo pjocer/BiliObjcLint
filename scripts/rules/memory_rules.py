@@ -523,3 +523,674 @@ class BlockRetainCycleRule(BaseRule):
                 )
 
         return None
+
+
+class WrapperEmptyPointerRule(BaseRule):
+    """容器字面量空指针检查
+
+    检测 @{} 和 @[] 中可能为 nil 的元素，防止运行时崩溃。
+    """
+
+    identifier = "wrapper_empty_pointer"
+    name = "Wrapper Empty Pointer Check"
+    description = "检查容器字面量中的元素是否可能为 nil"
+    default_severity = "warning"
+
+    # 安全的值模式（一定非 nil）
+    SAFE_VALUE_PATTERNS = [
+        re.compile(r'^@".*"$'),           # 字符串字面量
+        re.compile(r'^@\d+\.?\d*$'),      # 数字字面量 @123, @3.14
+        re.compile(r'^@\(.+\)$'),         # 装箱表达式 @(expr)
+        re.compile(r'^@(YES|NO|TRUE|FALSE|true|false)$'),  # 布尔字面量
+        re.compile(r'^@\{.*\}$'),         # 嵌套字典
+        re.compile(r'^@\[.*\]$'),         # 嵌套数组
+        re.compile(r'^nil$'),             # nil 本身（虽然不安全，但这是显式的）
+    ]
+
+    def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
+        violations = []
+
+        # 查找所有容器字面量
+        containers = self._find_containers(content, lines)
+
+        for container in containers:
+            line_num = container['line']
+
+            if not self.should_check_line(line_num, changed_lines):
+                continue
+
+            # 跳过注释行
+            line = lines[line_num - 1] if line_num <= len(lines) else ''
+            stripped = line.strip()
+            if stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*'):
+                continue
+
+            # 检查容器中的每个值
+            for value_info in container['values']:
+                value = value_info['value']
+                col = value_info['column']
+
+                is_safe, unsafe_part = self._is_safe_value(value)
+                if not is_safe:
+                    # 如果有 unsafe_part（来自三目运算符），使用它作为警告内容
+                    warn_value = unsafe_part if unsafe_part else value
+                    violations.append(self.create_violation(
+                        file_path=file_path,
+                        line=line_num,
+                        column=col,
+                        message=f"'{warn_value}' 可能为 nil，请确认其值一定不为空"
+                    ))
+
+        return violations
+
+    def _find_containers(self, _content: str, lines: List[str]) -> List[dict]:
+        """查找所有容器字面量及其内容"""
+        containers = []
+
+        for line_num, line in enumerate(lines, 1):
+            # 跳过注释
+            stripped = line.strip()
+            if stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*'):
+                continue
+
+            # 移除行尾注释
+            comment_pos = line.find('//')
+            check_line = line[:comment_pos] if comment_pos != -1 else line
+
+            # 查找字典字面量 @{...}
+            dict_containers = self._find_dict_literals(check_line, line_num)
+            containers.extend(dict_containers)
+
+            # 查找数组字面量 @[...]
+            array_containers = self._find_array_literals(check_line, line_num)
+            containers.extend(array_containers)
+
+        return containers
+
+    def _find_dict_literals(self, line: str, line_num: int) -> List[dict]:
+        """查找行中的字典字面量"""
+        containers = []
+        i = 0
+
+        while i < len(line):
+            # 查找 @{
+            if i < len(line) - 1 and line[i:i+2] == '@{':
+                start = i
+                # 找到匹配的 }
+                content_start = i + 2
+                brace_count = 1
+                j = content_start
+
+                while j < len(line) and brace_count > 0:
+                    if line[j] == '{':
+                        brace_count += 1
+                    elif line[j] == '}':
+                        brace_count -= 1
+                    j += 1
+
+                if brace_count == 0:
+                    # 提取字典内容
+                    dict_content = line[content_start:j-1]
+                    values = self._parse_dict_values(dict_content, start + 2)
+                    if values:
+                        containers.append({
+                            'type': 'dict',
+                            'line': line_num,
+                            'values': values
+                        })
+                    i = j
+                    continue
+            i += 1
+
+        return containers
+
+    def _find_array_literals(self, line: str, line_num: int) -> List[dict]:
+        """查找行中的数组字面量"""
+        containers = []
+        i = 0
+
+        while i < len(line):
+            # 查找 @[
+            if i < len(line) - 1 and line[i:i+2] == '@[':
+                start = i
+                # 找到匹配的 ]
+                content_start = i + 2
+                bracket_count = 1
+                j = content_start
+
+                while j < len(line) and bracket_count > 0:
+                    if line[j] == '[':
+                        bracket_count += 1
+                    elif line[j] == ']':
+                        bracket_count -= 1
+                    j += 1
+
+                if bracket_count == 0:
+                    # 提取数组内容
+                    array_content = line[content_start:j-1]
+                    values = self._parse_array_values(array_content, start + 2)
+                    if values:
+                        containers.append({
+                            'type': 'array',
+                            'line': line_num,
+                            'values': values
+                        })
+                    i = j
+                    continue
+            i += 1
+
+        return containers
+
+    def _parse_dict_values(self, content: str, base_col: int) -> List[dict]:
+        """解析字典内容，提取所有值"""
+        values = []
+
+        if not content.strip():
+            return values
+
+        # 按逗号分割键值对（注意处理嵌套）
+        pairs = self._split_by_comma(content)
+
+        for pair in pairs:
+            pair = pair.strip()
+            if not pair:
+                continue
+
+            # 找到冒号分隔键和值
+            colon_pos = self._find_colon_separator(pair)
+            if colon_pos != -1:
+                value = pair[colon_pos + 1:].strip()
+                # 计算值的列位置
+                value_col = base_col + content.find(pair) + colon_pos + 1
+                while value_col < len(content) + base_col and content[value_col - base_col:value_col - base_col + 1] in ' \t':
+                    value_col += 1
+
+                if value:
+                    values.append({
+                        'value': value,
+                        'column': value_col + 1
+                    })
+
+        return values
+
+    def _parse_array_values(self, content: str, base_col: int) -> List[dict]:
+        """解析数组内容，提取所有元素"""
+        values = []
+
+        if not content.strip():
+            return values
+
+        # 按逗号分割元素（注意处理嵌套）
+        elements = self._split_by_comma(content)
+
+        for element in elements:
+            element = element.strip()
+            if not element:
+                continue
+
+            # 计算元素的列位置
+            elem_col = base_col + content.find(element)
+
+            values.append({
+                'value': element,
+                'column': elem_col + 1
+            })
+
+        return values
+
+    def _split_by_comma(self, content: str) -> List[str]:
+        """按逗号分割，但忽略嵌套结构中的逗号"""
+        result = []
+        current = []
+        depth = 0  # 跟踪嵌套深度 (括号、方括号、大括号)
+        in_string = False
+        escape_next = False
+
+        for char in content:
+            if escape_next:
+                current.append(char)
+                escape_next = False
+                continue
+
+            if char == '\\':
+                escape_next = True
+                current.append(char)
+                continue
+
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                current.append(char)
+                continue
+
+            if in_string:
+                current.append(char)
+                continue
+
+            if char in '([{':
+                depth += 1
+                current.append(char)
+            elif char in ')]}':
+                depth -= 1
+                current.append(char)
+            elif char == ',' and depth == 0:
+                result.append(''.join(current))
+                current = []
+            else:
+                current.append(char)
+
+        if current:
+            result.append(''.join(current))
+
+        return result
+
+    def _find_colon_separator(self, pair: str) -> int:
+        """找到键值对中的冒号分隔符位置（忽略嵌套中的冒号）"""
+        depth = 0
+        in_string = False
+        escape_next = False
+
+        for i, char in enumerate(pair):
+            if escape_next:
+                escape_next = False
+                continue
+
+            if char == '\\':
+                escape_next = True
+                continue
+
+            if char == '"':
+                in_string = not in_string
+                continue
+
+            if in_string:
+                continue
+
+            if char in '([{':
+                depth += 1
+            elif char in ')]}':
+                depth -= 1
+            elif char == ':' and depth == 0:
+                return i
+
+        return -1
+
+    def _is_safe_value(self, value: str) -> Tuple[bool, Optional[str]]:
+        """
+        判断值是否安全（一定非 nil）
+
+        Returns:
+            (is_safe, unsafe_part): is_safe 为 True 表示安全，
+            unsafe_part 为需要警告的不安全部分（用于三目运算符场景）
+        """
+        value = value.strip()
+
+        if not value:
+            return True, None
+
+        # 检查是否匹配安全模式
+        for pattern in self.SAFE_VALUE_PATTERNS:
+            if pattern.match(value):
+                return True, None
+
+        # 检查三目运算符
+        ternary_result = self._check_ternary_operator(value)
+        if ternary_result is not None:
+            return ternary_result
+
+        return False, None
+
+    def _check_ternary_operator(self, value: str) -> Optional[Tuple[bool, Optional[str]]]:
+        """
+        检查三目运算符表达式
+
+        支持的格式：
+        - someValue ?: defaultValue (Elvis 运算符)
+        - someValue ? trueValue : falseValue (标准三目)
+
+        Returns:
+            None: 不是三目运算符
+            (True, None): 安全（默认值是字面量）
+            (False, unsafe_part): 不安全，返回需要警告的部分
+        """
+        # 查找 ? 的位置（忽略嵌套结构中的 ?）
+        question_pos = self._find_operator_position(value, '?')
+        if question_pos == -1:
+            return None
+
+        # 检查是否是 Elvis 运算符 (?:)
+        after_question = value[question_pos + 1:].lstrip()
+        if after_question.startswith(':'):
+            # Elvis 运算符: someValue ?: defaultValue
+            default_value = after_question[1:].strip()
+            is_safe, _ = self._is_literal_safe(default_value)
+            if is_safe:
+                return True, None
+            else:
+                return False, default_value
+        else:
+            # 标准三目: someValue ? trueValue : falseValue
+            # 两个分支都可能被返回，所以两个都要检查
+            colon_pos = self._find_operator_position(value[question_pos + 1:], ':')
+            if colon_pos == -1:
+                return None
+
+            # 实际的冒号位置
+            actual_colon_pos = question_pos + 1 + colon_pos
+            true_value = value[question_pos + 1:actual_colon_pos].strip()
+            false_value = value[actual_colon_pos + 1:].strip()
+
+            # 两个分支都必须安全
+            true_safe, _ = self._is_literal_safe(true_value)
+            false_safe, _ = self._is_literal_safe(false_value)
+
+            if true_safe and false_safe:
+                return True, None
+            elif not true_safe:
+                return False, true_value
+            else:
+                return False, false_value
+
+    def _find_operator_position(self, text: str, operator: str) -> int:
+        """查找运算符位置（忽略嵌套结构和字符串中的）"""
+        depth = 0
+        in_string = False
+        escape_next = False
+
+        for i, char in enumerate(text):
+            if escape_next:
+                escape_next = False
+                continue
+
+            if char == '\\':
+                escape_next = True
+                continue
+
+            if char == '"':
+                in_string = not in_string
+                continue
+
+            if in_string:
+                continue
+
+            if char in '([{':
+                depth += 1
+            elif char in ')]}':
+                depth -= 1
+            elif char == operator and depth == 0:
+                return i
+
+        return -1
+
+    def _is_literal_safe(self, value: str) -> Tuple[bool, None]:
+        """检查值是否是字面量（用于三目运算符检查）"""
+        value = value.strip()
+
+        if not value:
+            return True, None
+
+        for pattern in self.SAFE_VALUE_PATTERNS:
+            if pattern.match(value):
+                return True, None
+
+        # 递归检查嵌套的三目运算符
+        ternary_result = self._check_ternary_operator(value)
+        if ternary_result is not None:
+            return ternary_result
+
+        return False, None
+
+
+class DictUsageRule(BaseRule):
+    """字典方法使用检查
+
+    检测 -[NSMutableDictionary setObject:forKey:] 的使用，
+    建议使用 setValue:forKey: 替代以避免 nil 崩溃。
+    """
+
+    identifier = "dict_usage"
+    name = "Dictionary Usage Check"
+    description = "检查 NSMutableDictionary 的 setObject:forKey: 使用"
+    default_severity = "warning"
+
+    # 匹配 setObject:forKey: 方法调用
+    # 例如: [dict setObject:value forKey:key]
+    #       [self.dict setObject:value forKey:key]
+    SET_OBJECT_PATTERN = re.compile(
+        r'\[\s*\S+\s+setObject\s*:\s*\S+\s+forKey\s*:'
+    )
+
+    def check(self, file_path: str, _content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
+        violations = []
+
+        for line_num, line in enumerate(lines, 1):
+            if not self.should_check_line(line_num, changed_lines):
+                continue
+
+            # 跳过注释行
+            stripped = line.strip()
+            if stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*'):
+                continue
+
+            # 移除行尾注释
+            comment_pos = line.find('//')
+            check_line = line[:comment_pos] if comment_pos != -1 else line
+
+            # 检测 setObject:forKey: 使用
+            match = self.SET_OBJECT_PATTERN.search(check_line)
+            if match:
+                violations.append(self.create_violation(
+                    file_path=file_path,
+                    line=line_num,
+                    column=match.start() + 1,
+                    message="请确认 object 非空，建议使用 `setValue:forKey:` 替代"
+                ))
+
+        return violations
+
+
+class CollectionMutationRule(BaseRule):
+    """集合修改操作安全检查
+
+    检测以下场景：
+    1. dict[key] = value - 字典下标赋值，需确认 key 不为空
+    2. array[index] = value - 数组下标赋值，禁止使用，应使用 addObject: 等方法
+    3. [array addObject:value] - 需确认 value 不为空
+    4. [array insertObject:value atIndex:] - 需确认 value 不为空
+    5. [array replaceObjectAtIndex:index withObject:value] - 需确认 value 不为空
+    """
+
+    identifier = "collection_mutation"
+    name = "Collection Mutation Safety Check"
+    description = "检查集合修改操作的安全性"
+    default_severity = "warning"
+
+    # 字典下标赋值: dict[key] = value 或 self.dict[key] = value
+    # 匹配变量名后跟 [xxx] = ，排除数组声明如 NSArray *arr = @[...]
+    DICT_SUBSCRIPT_PATTERN = re.compile(
+        r'(\w+(?:\.\w+)*)\s*\[\s*([^\]]+)\s*\]\s*='
+    )
+
+    # 数组下标赋值: array[0] = value（这是错误用法）
+    # 检测下标是数字的情况
+    ARRAY_SUBSCRIPT_PATTERN = re.compile(
+        r'(\w+(?:\.\w+)*)\s*\[\s*(\d+)\s*\]\s*='
+    )
+
+    # addObject: 方法
+    ADD_OBJECT_PATTERN = re.compile(
+        r'\[\s*(\S+)\s+addObject\s*:\s*([^\]]+)\s*\]'
+    )
+
+    # insertObject:atIndex: 方法
+    INSERT_OBJECT_PATTERN = re.compile(
+        r'\[\s*(\S+)\s+insertObject\s*:\s*([^\]]+?)\s+atIndex\s*:'
+    )
+
+    # replaceObjectAtIndex:withObject: 方法
+    REPLACE_OBJECT_PATTERN = re.compile(
+        r'\[\s*(\S+)\s+replaceObjectAtIndex\s*:\s*\S+\s+withObject\s*:\s*([^\]]+)\s*\]'
+    )
+
+    # 安全的值模式（与 WrapperEmptyPointerRule 相同）
+    SAFE_VALUE_PATTERNS = [
+        re.compile(r'^@".*"$'),           # 字符串字面量
+        re.compile(r'^@\d+\.?\d*$'),      # 数字字面量
+        re.compile(r'^@\(.+\)$'),         # 装箱表达式
+        re.compile(r'^@(YES|NO|TRUE|FALSE|true|false)$'),  # 布尔字面量
+        re.compile(r'^@\{.*\}$'),         # 嵌套字典
+        re.compile(r'^@\[.*\]$'),         # 嵌套数组
+    ]
+
+    def check(self, file_path: str, _content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
+        violations = []
+
+        for line_num, line in enumerate(lines, 1):
+            if not self.should_check_line(line_num, changed_lines):
+                continue
+
+            # 跳过注释行
+            stripped = line.strip()
+            if stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*'):
+                continue
+
+            # 移除行尾注释
+            comment_pos = line.find('//')
+            check_line = line[:comment_pos] if comment_pos != -1 else line
+
+            # 跳过变量声明行（如 NSArray *arr = @[...]）
+            if self._is_variable_declaration(check_line):
+                continue
+
+            # 1. 检测数组下标赋值（错误用法）
+            array_match = self.ARRAY_SUBSCRIPT_PATTERN.search(check_line)
+            if array_match:
+                violations.append(self._create_violation_with_severity(
+                    file_path=file_path,
+                    line=line_num,
+                    column=array_match.start() + 1,
+                    message="禁止使用数组下标赋值，请使用 `addObject:`、`insertObject:atIndex:` 或 `replaceObjectAtIndex:withObject:` 方法",
+                    severity=Severity.ERROR
+                ))
+                continue  # 跳过后续检测，避免重复报告
+
+            # 2. 检测字典下标赋值
+            dict_match = self.DICT_SUBSCRIPT_PATTERN.search(check_line)
+            if dict_match:
+                key = dict_match.group(2).strip()
+                if not self._is_safe_key(key):
+                    violations.append(self.create_violation(
+                        file_path=file_path,
+                        line=line_num,
+                        column=dict_match.start(2) + 1,
+                        message=f"字典下标赋值时请确认 key '{key}' 不为 nil"
+                    ))
+
+            # 3. 检测 addObject:
+            add_match = self.ADD_OBJECT_PATTERN.search(check_line)
+            if add_match:
+                value = add_match.group(2).strip()
+                if not self._is_safe_value(value):
+                    violations.append(self.create_violation(
+                        file_path=file_path,
+                        line=line_num,
+                        column=add_match.start(2) + 1,
+                        message=f"请确认 '{value}' 不为 nil"
+                    ))
+
+            # 4. 检测 insertObject:atIndex:
+            insert_match = self.INSERT_OBJECT_PATTERN.search(check_line)
+            if insert_match:
+                value = insert_match.group(2).strip()
+                if not self._is_safe_value(value):
+                    violations.append(self.create_violation(
+                        file_path=file_path,
+                        line=line_num,
+                        column=insert_match.start(2) + 1,
+                        message=f"请确认 '{value}' 不为 nil"
+                    ))
+
+            # 5. 检测 replaceObjectAtIndex:withObject:
+            replace_match = self.REPLACE_OBJECT_PATTERN.search(check_line)
+            if replace_match:
+                value = replace_match.group(2).strip()
+                if not self._is_safe_value(value):
+                    violations.append(self.create_violation(
+                        file_path=file_path,
+                        line=line_num,
+                        column=replace_match.start(2) + 1,
+                        message=f"请确认 '{value}' 不为 nil"
+                    ))
+
+        return violations
+
+    def _create_violation_with_severity(self, file_path: str, line: int, column: int,
+                                        message: str, severity: Severity) -> Violation:
+        """创建带自定义 severity 的 violation"""
+        return Violation(
+            file_path=file_path,
+            line=line,
+            column=column,
+            severity=severity,
+            message=message,
+            rule_id=self.identifier,
+            source='biliobjclint'
+        )
+
+    def _is_variable_declaration(self, line: str) -> bool:
+        """检查是否是变量声明行"""
+        # 匹配类型声明模式: NSArray *, NSDictionary *, NSMutableArray * 等
+        decl_pattern = re.compile(r'^\s*(NS\w+|__strong|__weak)\s*\*')
+        return bool(decl_pattern.search(line))
+
+    def _is_safe_key(self, key: str) -> bool:
+        """检查字典 key 是否安全"""
+        key = key.strip()
+
+        # 字符串字面量是安全的
+        if re.match(r'^@".*"$', key):
+            return True
+
+        # 常量（全大写或以 k 开头的驼峰）通常是安全的
+        if re.match(r'^k[A-Z]\w*$', key) or re.match(r'^[A-Z][A-Z0-9_]+$', key):
+            return True
+
+        # 系统常量（NS 开头的常量）
+        if re.match(r'^NS\w+$', key):
+            return True
+
+        return False
+
+    def _is_safe_value(self, value: str) -> bool:
+        """检查值是否安全"""
+        value = value.strip()
+
+        if not value:
+            return True
+
+        for pattern in self.SAFE_VALUE_PATTERNS:
+            if pattern.match(value):
+                return True
+
+        # 检查三目运算符
+        if '?' in value:
+            return self._check_ternary_safe(value)
+
+        return False
+
+    def _check_ternary_safe(self, value: str) -> bool:
+        """检查三目运算符的安全性"""
+        literal_pattern = r'@"[^"]*"|@\d+\.?\d*|@\([^)]+\)|@YES|@NO|@\{[^}]*\}|@\[[^\]]*\]'
+
+        # Elvis 运算符: someValue ?: @"default"
+        # 只需检查 default 值是否安全
+        elvis_match = re.search(r'\?\s*:\s*(' + literal_pattern + r')\s*$', value)
+        if elvis_match:
+            return True
+
+        # 标准三目: cond ? trueValue : falseValue
+        # 两个分支都必须是安全的字面量
+        ternary_match = re.search(r'\?\s*(' + literal_pattern + r')\s*:\s*(' + literal_pattern + r')\s*$', value)
+        if ternary_match:
+            return True
+
+        return False

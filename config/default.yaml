@@ -112,6 +112,18 @@ python_rules:
     enabled: true
     severity: warning
 
+  wrapper_empty_pointer:
+    enabled: true
+    severity: warning
+
+  dict_usage:
+    enabled: true
+    severity: warning
+
+  collection_mutation:
+    enabled: true
+    severity: warning
+
   # ---------- 安全规则 ----------
   forbidden_api:
     enabled: false  # 默认关闭
