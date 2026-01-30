@@ -11,15 +11,18 @@
 3. 实现 check 方法
 """
 import re
-from typing import List, Set
-
-# 导入基类
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
+from typing import List, Set
 
-from rules.base_rule import BaseRule
-from core.reporter import Violation
+# 添加 scripts 目录到 Python 路径以便导入基类
+_SCRIPTS_DIR = Path(__file__).resolve().parent.parent.parent / "scripts"
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+# pylint: disable=wrong-import-position
+from core.reporter import Violation  # noqa: E402
+from rules.base_rule import BaseRule  # noqa: E402
 
 
 class NoMagicNumberRule(BaseRule):
