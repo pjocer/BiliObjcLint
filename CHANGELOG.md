@@ -2,6 +2,25 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.1.14 (2026-01-30)
+
+### 重构
+- 重构 rules 模块为子文件夹结构（base_rule/, memory_rules/, naming_rules/, security_rules/, style_rules/）
+- 每个规则类独立为单独的 .py 文件，便于维护和扩展
+
+### 改进
+- 优化 Xcode Build Phase 注入逻辑
+  - Package Manager 注入到 Build Phases 最前面（index 0）
+  - Code Style Check 注入到 Package Manager 后面，若不存在则在 Compile Sources 前面
+- 新增 `_find_phase_index()`、`_create_shell_script_phase()`、`_insert_phase_at_index()` 辅助方法
+
+### 文档
+- README 内置规则表格新增 3 个 memory_rules（wrapper_empty_pointer, dict_usage, collection_mutation）
+- README bootstrap 脚本文档添加自动更新说明
+
+### 其他
+- 合并 test/ 到 tests/ 文件夹
+
 ## v1.1.13 (2026-01-30)
 
 ### 新增
