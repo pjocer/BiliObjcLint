@@ -1,6 +1,0 @@
-{
-  "include": ["scripts", "custom_rules"],
-  "extraPaths": ["scripts"],
-  "pythonVersion": "3.9",
-  "typeCheckingMode": "basic"
-}
