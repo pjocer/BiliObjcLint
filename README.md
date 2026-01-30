@@ -138,8 +138,10 @@ cp $(brew --prefix)/share/biliobjclint/scripts/bin/bootstrap.sh /path/to/your/pr
 
 **What the bootstrap script does:**
 1. Check if BiliObjCLint is installed, install via Homebrew if not
-2. Check if Lint Phase exists, install if not
-3. Check if Lint Phase needs update, update automatically
+2. Silently check for new versions in background (every 24 hours via GitHub Tags API, non-blocking)
+3. Auto-upgrade via `brew upgrade` when new version found, show system notification with version and changelog
+4. Check if Lint Build Phase exists, inject if not
+5. Check Lint Build Phase version, auto-upgrade script if outdated
 
 ### 5. Install OCLint (Optional)
 
@@ -215,6 +217,9 @@ See `config/default.yaml` for a complete example.
 | `todo_fixme` | TODO/FIXME detection | warning |
 | `weak_delegate` | Delegate should use weak | error |
 | `block_retain_cycle` | Block retain cycle detection (includes weak/strong self check) | warning |
+| `wrapper_empty_pointer` | Container literal nil value check | warning |
+| `dict_usage` | Dictionary setObject:forKey: usage check | warning |
+| `collection_mutation` | Collection mutation safety check | warning |
 | `forbidden_api` | Forbidden API check | error |
 | `hardcoded_credentials` | Hardcoded credentials detection | error |
 | `insecure_random` | Insecure random number generation detection | warning |

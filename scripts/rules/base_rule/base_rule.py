@@ -7,7 +7,7 @@ import sys
 
 # 添加路径以便导入
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from core.reporter import Violation, Severity
 from core.config import RuleConfig

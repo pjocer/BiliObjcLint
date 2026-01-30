@@ -185,7 +185,7 @@ static RuleSet rules(new MyCustomCppRule());
 ```bash
 # 详细输出模式
 .venv/bin/python3 scripts/biliobjclint.py \
-    --files test/TestFile.m \
+    --files tests/TestFile.m \
     --verbose \
     --no-oclint
 ```

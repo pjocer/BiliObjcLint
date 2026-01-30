@@ -133,17 +133,17 @@ tail -f logs/biliobjclint_*.log
 ```bash
 # 检查测试文件
 .venv/bin/python3 scripts/biliobjclint.py \
-    --files test/TestFile.m \
+    --files tests/TestFile.m \
     --verbose
 
 # 仅运行 Python 规则
 .venv/bin/python3 scripts/biliobjclint.py \
-    --files test/TestFile.m \
+    --files tests/TestFile.m \
     --no-oclint
 
 # JSON 输出
 .venv/bin/python3 scripts/biliobjclint.py \
-    --files test/TestFile.m \
+    --files tests/TestFile.m \
     --json-output
 ```
 

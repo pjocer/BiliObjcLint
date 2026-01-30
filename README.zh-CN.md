@@ -138,8 +138,10 @@ cp $(brew --prefix)/share/biliobjclint/scripts/bin/bootstrap.sh /path/to/your/pr
 
 **bootstrap 脚本会自动：**
 1. 检查 BiliObjCLint 是否已安装，未安装则通过 Homebrew 安装
-2. 检查 Lint Phase 是否存在，不存在则安装
-3. 检查 Lint Phase 是否需要更新，自动更新到最新版本
+2. 后台静默检测新版本（每 24 小时一次，通过 GitHub Tags API，不阻塞编译）
+3. 发现新版本时自动执行 `brew upgrade`，完成后通过系统通知提示版本和更新内容
+4. 检查 Lint Build Phase 是否存在，不存在则自动注入
+5. 检查 Lint Build Phase 版本，有更新时自动升级脚本
 
 ### 5. 安装 OCLint（可选）
 
@@ -215,6 +217,9 @@ claude_autofix:
 | `todo_fixme` | TODO/FIXME 检测 | warning |
 | `weak_delegate` | Delegate 应使用 weak | error |
 | `block_retain_cycle` | Block 循环引用检测（含 weak/strong self 检查） | warning |
+| `wrapper_empty_pointer` | 容器字面量空指针检查 | warning |
+| `dict_usage` | 字典 setObject:forKey: 使用检查 | warning |
+| `collection_mutation` | 集合修改操作安全检查 | warning |
 | `forbidden_api` | 禁用 API 检查 | error |
 | `hardcoded_credentials` | 硬编码凭据检测 | error |
 | `insecure_random` | 不安全随机数生成检测 | warning |

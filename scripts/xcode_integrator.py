@@ -375,7 +375,13 @@ class XcodeIntegrator:
         return (needs_update, current_version, SCRIPT_VERSION)
 
     def add_lint_phase(self, target, dry_run: bool = False, override: bool = False) -> bool:
-        """添加 Lint Build Phase"""
+        """
+        添加 Lint Build Phase
+
+        注入位置规则：
+        1. 如果存在 [BiliObjcLint] Package Manager，则插入到它后面
+        2. 如果不存在 Package Manager，则插入到 Compile Sources 前面
+        """
         self.logger.info(f"Adding lint phase to target: {target.name}")
 
         if self.has_lint_phase(target):
@@ -394,32 +400,41 @@ class XcodeIntegrator:
         )
         self.logger.debug(f"Generated script content ({len(script_content)} chars)")
 
+        # 确定插入位置
+        bootstrap_index = self._get_bootstrap_phase_index(target)
+        compile_index = self._get_compile_sources_index(target)
+
+        if bootstrap_index >= 0:
+            # Package Manager 存在，插入到它后面
+            insert_index = bootstrap_index + 1
+            position_desc = f"Package Manager 后面 (index {insert_index})"
+        elif compile_index >= 0:
+            # Package Manager 不存在，插入到 Compile Sources 前面
+            insert_index = compile_index
+            position_desc = f"Compile Sources 前面 (index {insert_index})"
+        else:
+            # 都不存在，插入到最前面
+            insert_index = 0
+            position_desc = "Build Phases 最前面 (index 0)"
+
+        self.logger.debug(f"Determined insert position: {position_desc}")
+
         if dry_run:
             self.logger.info(f"[DRY RUN] Would add lint phase to target '{target.name}'")
             print(f"[DRY RUN] 将为 Target '{target.name}' 添加 Build Phase:")
             print(f"  名称: {PHASE_NAME}")
-            print(f"  位置: Compile Sources 之前")
+            print(f"  位置: {position_desc}")
             return True
 
         try:
-            # 使用 pbxproj 的 add_run_script 方法
-            self.project.add_run_script(
-                script=script_content,
-                target_name=target.name,
-                insert_before_compile=True  # 在 Compile Sources 之前插入
-            )
+            # 创建 Shell Script Build Phase
+            phase_id = self._create_shell_script_phase(script_content, PHASE_NAME)
 
-            # 找到刚添加的 phase 并设置名称
-            for phase_id in target.buildPhases:
-                phase = self.project.objects[phase_id]
-                if phase.isa == 'PBXShellScriptBuildPhase':
-                    if hasattr(phase, 'shellScript') and 'BiliObjCLint' in str(phase.shellScript):
-                        if not hasattr(phase, 'name') or not phase.name:
-                            phase.name = PHASE_NAME
-                        break
+            # 插入到计算出的位置
+            self._insert_phase_at_index(target, phase_id, insert_index)
 
-            self.logger.info(f"Successfully added lint phase to target '{target.name}'")
-            print(f"✓ 已为 Target '{target.name}' 添加 Lint Phase")
+            self.logger.info(f"Successfully added lint phase to target '{target.name}' at {position_desc}")
+            print(f"✓ 已为 Target '{target.name}' 添加 Lint Phase（位于 {position_desc}）")
             return True
 
         except Exception as e:
@@ -588,8 +603,99 @@ class XcodeIntegrator:
                     return True
         return False
 
+    def _find_phase_index(self, target, phase_type: str = None, phase_name: str = None) -> int:
+        """
+        查找指定 Build Phase 的索引位置
+
+        Args:
+            target: Target 对象
+            phase_type: Phase 类型，如 'PBXSourcesBuildPhase' (Compile Sources)
+            phase_name: Phase 名称，如 '[BiliObjcLint] Package Manager'
+
+        Returns:
+            找到的索引位置，未找到返回 -1
+        """
+        build_phases = target.buildPhases
+        for i, phase_id in enumerate(build_phases):
+            phase = self.project.objects[phase_id]
+            if phase_type and phase.isa == phase_type:
+                return i
+            if phase_name and hasattr(phase, 'name') and phase.name == phase_name:
+                return i
+        return -1
+
+    def _get_compile_sources_index(self, target) -> int:
+        """获取 Compile Sources 阶段的索引位置"""
+        return self._find_phase_index(target, phase_type='PBXSourcesBuildPhase')
+
+    def _get_bootstrap_phase_index(self, target) -> int:
+        """获取 Package Manager 阶段的索引位置"""
+        return self._find_phase_index(target, phase_name=BOOTSTRAP_PHASE_NAME)
+
+    def _create_shell_script_phase(self, script_content: str, phase_name: str) -> str:
+        """
+        创建一个 Shell Script Build Phase 对象
+
+        Args:
+            script_content: 脚本内容
+            phase_name: Phase 名称
+
+        Returns:
+            创建的 phase 的 ID
+        """
+        from pbxproj import PBXGenericObject
+
+        # 生成唯一 ID
+        import hashlib
+        import time
+        unique_str = f"{phase_name}{time.time()}"
+        phase_id = hashlib.md5(unique_str.encode()).hexdigest()[:24].upper()
+
+        # 创建 PBXShellScriptBuildPhase 对象
+        phase_data = {
+            'isa': 'PBXShellScriptBuildPhase',
+            'buildActionMask': 2147483647,
+            'files': [],
+            'inputPaths': [],
+            'name': phase_name,
+            'outputPaths': [],
+            'runOnlyForDeploymentPostprocessing': 0,
+            'shellPath': '/bin/sh',
+            'shellScript': script_content,
+        }
+
+        phase = PBXGenericObject().parse(phase_data)
+        self.project.objects[phase_id] = phase
+
+        return phase_id
+
+    def _insert_phase_at_index(self, target, phase_id: str, index: int):
+        """
+        在指定位置插入 Build Phase
+
+        Args:
+            target: Target 对象
+            phase_id: Phase ID
+            index: 插入位置，0 表示最前面
+        """
+        build_phases = list(target.buildPhases)
+
+        # 确保 index 在有效范围内
+        if index < 0:
+            index = 0
+        if index > len(build_phases):
+            index = len(build_phases)
+
+        build_phases.insert(index, phase_id)
+        target.buildPhases = build_phases
+        self.logger.debug(f"Inserted phase {phase_id} at index {index}")
+
     def add_bootstrap_phase(self, target, relative_scripts_path: str, dry_run: bool = False) -> bool:
-        """添加 Bootstrap Build Phase"""
+        """
+        添加 Bootstrap Build Phase
+
+        注入位置：Build Phases 最前面（index 0），必须在 Compile Sources 之前
+        """
         self.logger.info(f"Adding bootstrap phase to target: {target.name}")
 
         if self.has_bootstrap_phase(target):
@@ -608,28 +714,19 @@ class XcodeIntegrator:
             self.logger.info(f"[DRY RUN] Would add bootstrap phase to target '{target.name}'")
             print(f"[DRY RUN] 将为 Target '{target.name}' 添加 Bootstrap Phase:")
             print(f"  名称: {BOOTSTRAP_PHASE_NAME}")
+            print(f"  位置: Build Phases 最前面 (index 0)")
             print(f"  脚本路径: {scripts_path}/bootstrap.sh")
             return True
 
         try:
-            # 使用 pbxproj 的 add_run_script 方法
-            self.project.add_run_script(
-                script=script_content,
-                target_name=target.name,
-                insert_before_compile=True  # 在 Compile Sources 之前插入
-            )
+            # 创建 Shell Script Build Phase
+            phase_id = self._create_shell_script_phase(script_content, BOOTSTRAP_PHASE_NAME)
 
-            # 找到刚添加的 phase 并设置名称
-            for phase_id in target.buildPhases:
-                phase = self.project.objects[phase_id]
-                if phase.isa == 'PBXShellScriptBuildPhase':
-                    if hasattr(phase, 'shellScript') and 'Package Manager' in str(phase.shellScript):
-                        if not hasattr(phase, 'name') or not phase.name:
-                            phase.name = BOOTSTRAP_PHASE_NAME
-                        break
+            # 插入到 Build Phases 最前面 (index 0)
+            self._insert_phase_at_index(target, phase_id, 0)
 
-            self.logger.info(f"Successfully added bootstrap phase to target '{target.name}'")
-            print(f"✓ 已为 Target '{target.name}' 添加 Bootstrap Phase")
+            self.logger.info(f"Successfully added bootstrap phase to target '{target.name}' at index 0")
+            print(f"✓ 已为 Target '{target.name}' 添加 Bootstrap Phase（位于 Build Phases 最前面）")
             return True
 
         except Exception as e:

@@ -11,6 +11,7 @@ from .style_rules import (
     LineLengthRule,
     MethodLengthRule,
     TodoFixmeRule,
+    FileHeaderRule,
 )
 from .memory_rules import (
     WeakDelegateRule,
@@ -22,6 +23,7 @@ from .memory_rules import (
 from .security_rules import (
     ForbiddenApiRule,
     HardcodedCredentialsRule,
+    InsecureRandomRule,
 )
 
 
@@ -37,6 +39,7 @@ def get_all_rules():
         LineLengthRule,
         MethodLengthRule,
         TodoFixmeRule,
+        FileHeaderRule,
         # Memory
         WeakDelegateRule,
         BlockRetainCycleRule,
@@ -46,6 +49,7 @@ def get_all_rules():
         # Security
         ForbiddenApiRule,
         HardcodedCredentialsRule,
+        InsecureRandomRule,
     ]
 
 
@@ -61,6 +65,7 @@ __all__ = [
     'LineLengthRule',
     'MethodLengthRule',
     'TodoFixmeRule',
+    'FileHeaderRule',
     # Memory
     'WeakDelegateRule',
     'BlockRetainCycleRule',
@@ -70,4 +75,5 @@ __all__ = [
     # Security
     'ForbiddenApiRule',
     'HardcodedCredentialsRule',
+    'InsecureRandomRule',
 ]
