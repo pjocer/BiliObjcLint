@@ -584,8 +584,14 @@ class WrapperEmptyPointerRule(BaseRule):
         return violations
 
     def _find_containers(self, _content: str, lines: List[str]) -> List[dict]:
-        """查找所有容器字面量及其内容"""
+        """查找所有容器字面量及其内容（支持多行）"""
         containers = []
+
+        # 追踪多行容器状态
+        in_dict = False
+        dict_brace_count = 0
+        in_array = False
+        array_bracket_count = 0
 
         for line_num, line in enumerate(lines, 1):
             # 跳过注释
@@ -597,13 +603,93 @@ class WrapperEmptyPointerRule(BaseRule):
             comment_pos = line.find('//')
             check_line = line[:comment_pos] if comment_pos != -1 else line
 
-            # 查找字典字面量 @{...}
+            # 查找单行字典字面量 @{...}
             dict_containers = self._find_dict_literals(check_line, line_num)
             containers.extend(dict_containers)
 
-            # 查找数组字面量 @[...]
+            # 查找单行数组字面量 @[...]
             array_containers = self._find_array_literals(check_line, line_num)
             containers.extend(array_containers)
+
+            # 检测多行字典开始 @{ 且未闭合
+            if '@{' in check_line:
+                # 计算该行的 { 和 } 是否平衡
+                after_at_brace = check_line[check_line.find('@{') + 2:]
+                open_braces = 1 + after_at_brace.count('{')
+                close_braces = after_at_brace.count('}')
+                if open_braces > close_braces:
+                    in_dict = True
+                    dict_brace_count = open_braces - close_braces
+
+            # 如果在多行字典内，检测键值对
+            elif in_dict:
+                # 检测字典键值对: @"key": value 或带有逗号结尾
+                kv_values = self._find_dict_key_value_in_line(check_line, line_num)
+                containers.extend(kv_values)
+
+                # 更新括号计数
+                dict_brace_count += check_line.count('{') - check_line.count('}')
+                if dict_brace_count <= 0:
+                    in_dict = False
+                    dict_brace_count = 0
+
+            # 检测多行数组开始 @[ 且未闭合
+            if '@[' in check_line:
+                after_at_bracket = check_line[check_line.find('@[') + 2:]
+                open_brackets = 1 + after_at_bracket.count('[')
+                close_brackets = after_at_bracket.count(']')
+                if open_brackets > close_brackets:
+                    in_array = True
+                    array_bracket_count = open_brackets - close_brackets
+
+            # 如果在多行数组内，检测元素
+            elif in_array:
+                array_values = self._find_array_element_in_line(check_line, line_num)
+                containers.extend(array_values)
+
+                array_bracket_count += check_line.count('[') - check_line.count(']')
+                if array_bracket_count <= 0:
+                    in_array = False
+                    array_bracket_count = 0
+
+        return containers
+
+    def _find_dict_key_value_in_line(self, line: str, line_num: int) -> List[dict]:
+        """在多行字典中检测键值对"""
+        containers = []
+
+        # 匹配 @"key": value 模式
+        pattern = re.compile(r'@"[^"]*"\s*:\s*([^,}\n]+)')
+        for match in pattern.finditer(line):
+            value = match.group(1).strip()
+            if value:
+                col = match.start(1) + 1
+                containers.append({
+                    'type': 'dict',
+                    'line': line_num,
+                    'values': [{'value': value, 'column': col}]
+                })
+
+        return containers
+
+    def _find_array_element_in_line(self, line: str, line_num: int) -> List[dict]:
+        """在多行数组中检测元素"""
+        containers = []
+
+        # 按逗号分割元素，跳过空白
+        elements = self._split_by_comma(line)
+        col_offset = 1
+
+        for elem in elements:
+            elem = elem.strip()
+            if elem and not elem.startswith(']'):
+                # 计算列位置
+                elem_pos = line.find(elem)
+                containers.append({
+                    'type': 'array',
+                    'line': line_num,
+                    'values': [{'value': elem, 'column': elem_pos + 1 if elem_pos >= 0 else col_offset}]
+                })
 
         return containers
 
@@ -955,8 +1041,9 @@ class DictUsageRule(BaseRule):
     # 匹配 setObject:forKey: 方法调用
     # 例如: [dict setObject:value forKey:key]
     #       [self.dict setObject:value forKey:key]
+    # 注意：value 可能包含空格（如 @"some value"），所以用 .+? 而非 \S+
     SET_OBJECT_PATTERN = re.compile(
-        r'\[\s*\S+\s+setObject\s*:\s*\S+\s+forKey\s*:'
+        r'\[\s*\S+\s+setObject\s*:.+?\s+forKey\s*:'
     )
 
     def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
@@ -1158,6 +1245,29 @@ class CollectionMutationRule(BaseRule):
 
         # 系统常量（NS 开头的常量）
         if re.match(r'^NS\w+$', key):
+            return True
+
+        # 检查三目运算符（Elvis 或标准三目）
+        if '?' in key:
+            return self._check_ternary_safe_key(key)
+
+        return False
+
+    def _check_ternary_safe_key(self, key: str) -> bool:
+        """检查三目运算符作为 key 的安全性"""
+        # 安全的 key 模式：字符串字面量、常量等
+        safe_key_pattern = r'@"[^"]*"|k[A-Z]\w*|[A-Z][A-Z0-9_]+|NS\w+'
+
+        # Elvis 运算符: someValue ?: @"default"
+        # 只需检查 default 值是否是安全的 key
+        elvis_match = re.search(r'\?\s*:\s*(' + safe_key_pattern + r')\s*$', key)
+        if elvis_match:
+            return True
+
+        # 标准三目: cond ? trueKey : falseKey
+        # 两个分支都必须是安全的 key 值
+        ternary_match = re.search(r'\?\s*(' + safe_key_pattern + r')\s*:\s*(' + safe_key_pattern + r')\s*$', key)
+        if ternary_match:
             return True
 
         return False
