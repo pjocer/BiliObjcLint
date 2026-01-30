@@ -1,8 +1,8 @@
 class Biliobjclint < Formula
   desc "Objective-C code linting tool with Xcode integration and Claude AI auto-fix"
   homepage "https://github.com/pjocer/BiliObjcLint"
-  url "https://github.com/pjocer/BiliObjcLint/archive/refs/tags/v1.1.14.tar.gz"
-  sha256 "b03140d9f0c799fb0ca6c9efccd538459f9e3ec8f61e67e6951c38638fa141a7"
+  url "https://github.com/pjocer/BiliObjcLint/archive/refs/tags/v1.1.15.tar.gz"
+  sha256 "eae2ee461cda8a0e4d84485502be83897211903235e69a9a3058942c2b882159"
   license "MIT"
   head "https://github.com/pjocer/BiliObjcLint.git", branch: "main"
 
