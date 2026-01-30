@@ -678,6 +678,8 @@ class XcodeIntegrator:
             phase_id: Phase ID
             index: 插入位置，0 表示最前面
         """
+        from pbxproj.PBXKey import PBXKey
+
         build_phases = list(target.buildPhases)
 
         # 确保 index 在有效范围内
@@ -686,7 +688,9 @@ class XcodeIntegrator:
         if index > len(build_phases):
             index = len(build_phases)
 
-        build_phases.insert(index, phase_id)
+        # 将 phase_id 转换为 PBXKey 对象（需要传入 parent）
+        phase_key = PBXKey(phase_id, self.project.objects)
+        build_phases.insert(index, phase_key)
         target.buildPhases = build_phases
         self.logger.debug(f"Inserted phase {phase_id} at index {index}")
 
