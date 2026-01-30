@@ -197,6 +197,141 @@ install_lint_phase() {
     info "Lint Build Phase 安装完成"
 }
 
+# ==================== Homebrew 静默自动更新 ====================
+
+UPDATE_STATE_FILE="$HOME/.biliobjclint_update_state"
+UPDATE_CHECK_INTERVAL=86400  # 24小时
+
+# 读取更新状态
+load_update_state() {
+    if [ -f "$UPDATE_STATE_FILE" ]; then
+        source "$UPDATE_STATE_FILE"
+    fi
+}
+
+# 保存更新状态
+save_update_state() {
+    echo "LAST_CHECK_TIMESTAMP=$(date +%s)" > "$UPDATE_STATE_FILE"
+}
+
+# 检查是否需要检测更新
+should_check_update() {
+    load_update_state
+    local current_time
+    current_time=$(date +%s)
+    local time_diff=$((current_time - ${LAST_CHECK_TIMESTAMP:-0}))
+    [ $time_diff -ge ${UPDATE_CHECK_INTERVAL:-86400} ]
+}
+
+# 获取远端最新版本（通过 GitHub Tags API）
+get_remote_version() {
+    curl -s --connect-timeout 3 --max-time 5 \
+        "https://api.github.com/repos/pjocer/BiliObjcLint/tags" 2>/dev/null \
+        | grep '"name"' | head -1 | sed 's/.*"name": *"\([^"]*\)".*/\1/'
+}
+
+# 获取本地安装版本
+get_local_version() {
+    local brew_prefix
+    brew_prefix=$(brew --prefix biliobjclint 2>/dev/null)
+
+    if [ -f "$brew_prefix/libexec/VERSION" ]; then
+        echo "v$(cat "$brew_prefix/libexec/VERSION")"
+    elif [ -f "$brew_prefix/VERSION" ]; then
+        echo "v$(cat "$brew_prefix/VERSION")"
+    fi
+}
+
+# 比较版本号（$1 > $2 返回 0）
+version_gt() {
+    test "$(printf '%s\n' "$1" "$2" | sort -V | head -n 1)" != "$1"
+}
+
+# 获取指定版本的 CHANGELOG
+get_changelog_for_version() {
+    local version="$1"
+    local changelog
+
+    # 从 GitHub 获取 CHANGELOG
+    changelog=$(curl -s --connect-timeout 3 --max-time 5 \
+        "https://raw.githubusercontent.com/pjocer/BiliObjcLint/main/CHANGELOG.md" 2>/dev/null)
+
+    if [ -z "$changelog" ]; then
+        echo "查看: github.com/pjocer/BiliObjcLint/releases"
+        return
+    fi
+
+    # 提取指定版本的更新内容（简化版，取前几条）
+    echo "$changelog" | awk -v ver="$version" '
+        /^## / {
+            if (found) exit
+            if (index($0, ver)) found=1
+            next
+        }
+        found && /^- / { gsub(/^- /, "• "); print }
+    ' | head -5
+}
+
+# 静默执行更新
+silent_update() {
+    local local_ver="$1"
+    local remote_ver="$2"
+
+    # 静默执行 brew upgrade（重定向所有输出）
+    brew update >/dev/null 2>&1
+    brew upgrade biliobjclint >/dev/null 2>&1
+
+    if [ $? -eq 0 ]; then
+        # 获取更新内容
+        local changelog
+        changelog=$(get_changelog_for_version "$remote_ver")
+
+        # 构建通知消息
+        local message
+        if [ -n "$changelog" ]; then
+            message="更新内容:\n$changelog"
+        else
+            message="查看更新详情: github.com/pjocer/BiliObjcLint/releases"
+        fi
+
+        # 显示系统通知
+        osascript -e "display notification \"$message\" with title \"BiliObjCLint 已更新\" subtitle \"版本 $remote_ver\"" >/dev/null 2>&1 &
+    fi
+}
+
+# 后台检测并更新
+check_and_update_background() {
+    # 检查是否需要检测
+    if ! should_check_update; then
+        return 0
+    fi
+
+    # 更新检测时间戳
+    save_update_state
+
+    # 获取版本信息
+    local local_ver remote_ver
+    local_ver=$(get_local_version)
+    remote_ver=$(get_remote_version)
+
+    # 版本检测失败则跳过
+    if [ -z "$remote_ver" ] || [ -z "$local_ver" ]; then
+        return 0
+    fi
+
+    # 已是最新
+    if [ "$local_ver" = "$remote_ver" ]; then
+        return 0
+    fi
+
+    # 比较版本，确认远端更新
+    if version_gt "$remote_ver" "$local_ver"; then
+        silent_update "$local_ver" "$remote_ver"
+    fi
+}
+
+# ==================== Main ====================
+
 # Main logic
 main() {
     # Step 1: Check/Install biliobjclint
@@ -204,6 +339,8 @@ main() {
         install_biliobjclint
     else
         info "BiliObjCLint 已安装"
+        # 后台静默检测更新（完全不阻塞编译）
+        check_and_update_background &
     fi
 
     # Step 2: Check lint phase status

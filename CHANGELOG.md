@@ -1,0 +1,51 @@
+# BiliObjCLint 更新日志
+
+所有重要的版本更新都会记录在此文件中。
+
+## v1.1.12 (2026-01-30)
+
+### 修复
+- 修复 WrapperEmptyPointerRule 无法检测多行字典字面量中值的问题
+- 修复 DictUsageRule 正则表达式无法匹配含空格值的问题
+- 修复 CollectionMutationRule 对 Elvis 运算符和三目运算符 key 的误报
+
+### 改进
+- 新增 `_find_dict_key_value_in_line()` 方法支持多行容器检测
+- 新增 `_check_ternary_safe_key()` 方法识别安全的 key 表达式
+- 优化 setObject:forKey: 检测模式，支持值中包含空格
+
+## v1.1.11 (2026-01-28)
+
+### 修复
+- 修复 DictUsageRule 和 CollectionMutationRule 的 check 方法参数名不匹配问题
+
+## v1.1.10 (2026-01-28)
+
+### 新增
+- 新增 WrapperEmptyPointerRule 规则，检测容器字面量中的空指针风险
+- 新增 DictUsageRule 规则，检测 setObject:forKey: 的使用
+- 新增 CollectionMutationRule 规则，检测集合修改操作的安全性
+
+### 改进
+- 优化三目运算符和 Elvis 运算符的安全性检测
+
+## v1.1.9 (2026-01-27)
+
+### 新增
+- 新增 biliobjclint-xcode --bootstrap 模式，支持自动复制 bootstrap.sh 并注入 Build Phase
+
+## v1.1.8 (2026-01-27)
+
+### 改进
+- 优化 Xcode 集成脚本
+- 改进 Build Phase 注入逻辑
+
+## v1.1.0 (2026-01-20)
+
+### 新增
+- 首个正式版本发布
+- 支持通过 Homebrew 安装
+- 支持 Xcode Build Phase 集成
+- 支持增量检查（仅检查 git 变更）
+- 支持 Claude AI 自动修复
+- 内置多种代码规范检查规则
