@@ -959,7 +959,8 @@ class DictUsageRule(BaseRule):
         r'\[\s*\S+\s+setObject\s*:\s*\S+\s+forKey\s*:'
     )
 
-    def check(self, file_path: str, _content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
+    def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
+        del content  # unused
         violations = []
 
         for line_num, line in enumerate(lines, 1):
@@ -1041,7 +1042,8 @@ class CollectionMutationRule(BaseRule):
         re.compile(r'^@\[.*\]$'),         # 嵌套数组
     ]
 
-    def check(self, file_path: str, _content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
+    def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
+        del content  # unused
         violations = []
 
         for line_num, line in enumerate(lines, 1):
