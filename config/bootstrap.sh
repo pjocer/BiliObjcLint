@@ -108,6 +108,10 @@ if [ -n "$WORKSPACE" ] && [[ "$WORKSPACE" == *.xcworkspace ]]; then
     # 如果 PROJECT 是名称（不是路径），作为 -p 参数
     if [ -n "$PROJECT" ] && [[ "$PROJECT" != *.xcodeproj ]]; then
         PROJECT_ARG="-p $PROJECT"
+    elif [ -n "$PROJECT" ] && [[ "$PROJECT" == *.xcodeproj ]]; then
+        # PROJECT 是 .xcodeproj 路径，提取项目名作为 -p 参数
+        PROJECT_NAME=$(basename "$PROJECT" .xcodeproj)
+        PROJECT_ARG="-p $PROJECT_NAME"
     fi
 elif [ -n "$PROJECT" ] && [[ "$PROJECT" == *.xcodeproj ]]; then
     # PROJECT 是完整的 .xcodeproj 路径

@@ -2,6 +2,12 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.2.3 (2026-02-02)
+
+### 修复
+- 修复 bootstrap.sh 在 workspace + xcodeproj 场景下未正确传递 project name 的问题
+  - 从 `${PROJECT_FILE_PATH}` 自动提取项目名称作为 `-p` 参数
+
 ## v1.2.2 (2026-02-02)
 
 ### 修复
