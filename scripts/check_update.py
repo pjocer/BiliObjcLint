@@ -122,7 +122,8 @@ def get_changelog_for_version(version: str) -> str:
         )
         if result.returncode == 0:
             brew_prefix = result.stdout.strip()
-            changelog_file = Path(brew_prefix) / 'libexec' / 'CHANGELOG.md'
+            # CHANGELOG.md is at Cellar root, not in libexec (Homebrew auto-extracts it)
+            changelog_file = Path(brew_prefix) / 'CHANGELOG.md'
             if changelog_file.exists():
                 content = changelog_file.read_text()
                 # 查找对应版本的 changelog

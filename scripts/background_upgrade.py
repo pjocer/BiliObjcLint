@@ -60,7 +60,8 @@ def get_changelog_for_version(version: str) -> str:
         brew_prefix = get_brew_prefix()
         logger.info(f"Looking for changelog, brew_prefix: {brew_prefix}, version: {version}")
         if brew_prefix:
-            changelog_file = brew_prefix / 'libexec' / 'CHANGELOG.md'
+            # CHANGELOG.md is at Cellar root, not in libexec (Homebrew auto-extracts it)
+            changelog_file = brew_prefix / 'CHANGELOG.md'
             logger.info(f"Changelog file path: {changelog_file}, exists: {changelog_file.exists()}")
             if changelog_file.exists():
                 content = changelog_file.read_text()

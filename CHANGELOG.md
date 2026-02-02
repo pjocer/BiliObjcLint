@@ -2,6 +2,13 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.1.41 (2026-02-02)
+
+### 修复
+- 修复更新弹窗不显示 CHANGELOG 内容的问题
+  - CHANGELOG.md 被 Homebrew 自动提取到 Cellar 根目录，而非 libexec
+  - 修正 `get_changelog_for_version()` 函数的文件路径查找逻辑
+
 ## v1.1.40 (2026-02-02)
 
 ### 修复
