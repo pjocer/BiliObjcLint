@@ -223,11 +223,23 @@ should_check_update() {
     [ $time_diff -ge ${UPDATE_CHECK_INTERVAL:-86400} ]
 }
 
-# 获取远端最新版本（通过 GitHub Tags API）
+# 获取远端最新版本
+# 优先使用 brew info（需要先 brew update），失败则回退到 GitHub API
 get_remote_version() {
-    curl -s --connect-timeout 3 --max-time 5 \
+    local version
+
+    # 方法1: 从 brew info 获取（更可靠，不受沙盒限制）
+    version=$(brew info biliobjclint 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    if [ -n "$version" ]; then
+        echo "v$version"
+        return
+    fi
+
+    # 方法2: 回退到 GitHub API（可能在沙盒环境中失败）
+    version=$(curl -s --connect-timeout 5 --max-time 10 \
         "https://api.github.com/repos/pjocer/BiliObjcLint/tags" 2>/dev/null \
-        | grep '"name"' | head -1 | sed 's/.*"name": *"\([^"]*\)".*/\1/'
+        | grep '"name"' | head -1 | sed 's/.*"name": *"\([^"]*\)".*/\1/')
+    echo "$version"
 }
 
 # 获取本地安装版本
@@ -277,13 +289,9 @@ silent_update() {
     local local_ver="$1"
     local remote_ver="$2"
 
-    log_update "silent_update: Starting brew update..."
+    log_update "silent_update: Starting brew upgrade..."
 
-    # 静默执行 brew upgrade（重定向所有输出）
-    brew update >/dev/null 2>&1
-    local brew_update_exit=$?
-    log_update "silent_update: brew update exit code: $brew_update_exit"
-
+    # 静默执行 brew upgrade（brew update 已在 check_and_update_background 中执行）
     brew upgrade biliobjclint >/dev/null 2>&1
     local brew_upgrade_exit=$?
     log_update "silent_update: brew upgrade exit code: $brew_upgrade_exit"
@@ -336,7 +344,11 @@ check_and_update_background() {
         return 0
     fi
 
-    log_update "Passed cooldown check, fetching versions..."
+    log_update "Passed cooldown check, running brew update..."
+
+    # 先执行 brew update，确保 brew info 能获取最新版本
+    brew update >/dev/null 2>&1
+    log_update "brew update completed"
 
     # 获取版本信息
     local local_ver remote_ver
