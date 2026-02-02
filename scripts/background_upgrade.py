@@ -218,6 +218,17 @@ def update_build_phase(
         return False
 
 
+def show_updating_notification():
+    """显示正在更新的系统通知"""
+    title = "BiliObjCLint"
+    message = "检测到BiliObjcLint需要更新，正在后台更新中..."
+    try:
+        script = f'display notification "{message}" with title "{title}"'
+        subprocess.run(['osascript', '-e', script], capture_output=True, timeout=10)
+    except Exception as e:
+        logger.debug(f"Failed to show updating notification: {e}")
+
+
 def do_upgrade(
     local_ver: str,
     remote_ver: str,
@@ -228,6 +239,16 @@ def do_upgrade(
 ) -> bool:
     """
     执行 brew upgrade
+
+    流程：
+    1. brew update
+    2. 显示系统通知 "检测到BiliObjcLint需要更新，正在后台更新中..."
+    3. brew upgrade biliobjclint（同步执行）
+    4. 复制脚本到目标工程
+    5. 强制更新 Build Phase
+    6. 获取 CHANGELOG 内容
+    7. 显示更新完成弹窗
+    8. 用户点击 OK 后进程结束
 
     Args:
         local_ver: 当前本地版本
@@ -247,41 +268,54 @@ def do_upgrade(
         logger.info("Running brew update...")
         result = subprocess.run(['brew', 'update'], capture_output=True, timeout=120)
         if result.returncode != 0:
-            logger.error(f"brew update failed: {result.stderr}")
+            stderr = result.stderr.decode() if isinstance(result.stderr, bytes) else result.stderr
+            logger.error(f"brew update failed: {stderr}")
             # 继续执行 upgrade，update 失败不阻塞
 
-        # 2. brew upgrade
+        # 2. 显示系统通知：正在更新中
+        logger.info("Showing updating notification...")
+        show_updating_notification()
+
+        # 3. brew upgrade（同步执行）
         logger.info("Running brew upgrade biliobjclint...")
         result = subprocess.run(
             ['brew', 'upgrade', 'biliobjclint'],
             capture_output=True, timeout=300
         )
 
-        if result.returncode == 0:
-            logger.info("Upgrade completed successfully")
-
-            # 3. 强制覆盖脚本到目标工程
-            if scripts_dir:
-                copy_scripts_to_project(Path(scripts_dir), force=True)
-
-            # 4. 更新 Build Phase
-            if project_path:
-                logger.info("Updating Build Phase...")
-                update_build_phase(project_path, target_name, project_name, scripts_dir)
-
-            # 5. 显示弹窗
-            changelog = get_changelog_for_version(remote_ver)
-            show_update_dialog(remote_ver, changelog)
-
-            return True
-        else:
+        if result.returncode != 0:
             stderr = result.stderr.decode() if isinstance(result.stderr, bytes) else result.stderr
             # 如果已经是最新版本，不算错误
             if 'already installed' in stderr or 'already the newest' in stderr.lower():
                 logger.info("Already up to date")
-                return True
-            logger.error(f"brew upgrade failed: {stderr}")
-            return False
+            else:
+                logger.error(f"brew upgrade failed: {stderr}")
+                return False
+
+        logger.info("Upgrade completed successfully")
+
+        # 4. 复制脚本到目标工程（强制覆盖）
+        if scripts_dir:
+            logger.info(f"Copying scripts to {scripts_dir}...")
+            copy_scripts_to_project(Path(scripts_dir), force=True)
+
+        # 5. 强制更新 Build Phase
+        if project_path:
+            logger.info("Force updating Build Phase...")
+            update_build_phase(project_path, target_name, project_name, scripts_dir)
+
+        # 6. 获取 CHANGELOG 内容（从新版本读取）
+        logger.info(f"Getting changelog for version {remote_ver}...")
+        changelog = get_changelog_for_version(remote_ver)
+        logger.info(f"Changelog content length: {len(changelog)}")
+
+        # 7. 显示更新完成弹窗（阻塞等待用户点击 OK）
+        logger.info("Showing update dialog...")
+        show_update_dialog(remote_ver, changelog)
+
+        # 8. 用户点击 OK 后，进程正常结束
+        logger.info("User acknowledged update, process ending")
+        return True
 
     except subprocess.TimeoutExpired:
         logger.error("Upgrade timed out")
