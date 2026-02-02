@@ -158,6 +158,35 @@ calculate_sha256() {
     echo "$sha256"
 }
 
+# Check CHANGELOG for version entry
+check_changelog() {
+    local version=$1
+    local changelog_file="$PROJECT_ROOT/CHANGELOG.md"
+
+    if [ ! -f "$changelog_file" ]; then
+        warn "CHANGELOG.md not found"
+        return 1
+    fi
+
+    # Check if CHANGELOG contains entry for this version
+    # Match patterns like "## v1.1.32" or "## v1.1.32 (date)"
+    if grep -q "^## ${version}" "$changelog_file"; then
+        info "CHANGELOG contains entry for ${version}"
+        return 0
+    else
+        error "CHANGELOG.md 缺少 ${version} 的更新记录！
+
+请先在 CHANGELOG.md 中添加版本更新说明，格式如下：
+
+## ${version} ($(date +%Y-%m-%d))
+
+### 新增/修复/改进/重构
+- 更新内容描述
+
+然后重新运行发布脚本。"
+    fi
+}
+
 # Update VERSION file
 update_version_file() {
     local version=$1
@@ -245,6 +274,9 @@ main() {
     fi
 
     info "New version: $new_version"
+
+    # Check CHANGELOG before proceeding
+    check_changelog "$new_version"
 
     # Confirm (unless -y is specified)
     if [ "$SKIP_CONFIRM" = false ]; then

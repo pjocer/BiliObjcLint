@@ -2,6 +2,34 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.1.32 (2026-02-02)
+
+### 修复
+- 修复升级后 Build Phase 版本号不更新的问题
+- 每次编译时检查 Lint Phase 版本，版本不匹配时自动更新
+
+### 改进
+- 更新弹窗现在正确显示 CHANGELOG 内容
+
+## v1.1.31 (2026-02-02)
+
+### 重构
+- 移除主仓库 Formula 目录，Formula 只在 homebrew-biliobjclint tap 仓库维护
+- 简化 release.sh 发布流程，tag 现在只包含源代码变更
+
+## v1.1.30 (2026-02-02)
+
+### 修复
+- 修复后台升级线程被强制终止导致 brew upgrade 无法执行的问题
+- 创建独立的 `background_upgrade.py` 脚本执行升级逻辑
+- 使用 `subprocess.Popen` 替代 `daemon=True` 的线程
+- 使用 `start_new_session=True` 确保子进程独立于父进程
+
+## v1.1.29 (2026-02-02)
+
+### 修复
+- 修复 `--manual` 使用自动计算的路径
+
 ## v1.1.28 (2026-02-02)
 
 ### 重构

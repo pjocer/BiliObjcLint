@@ -322,11 +322,19 @@ def do_check_and_inject(
             logger.error(f"Target not found: {target_name}")
             return False
 
-        # 5. 检查并注入 Code Style Check Build Phase
+        # 5. 检查并注入/更新 Code Style Check Build Phase
         if integrator.has_lint_phase(target):
-            logger.info(f"Target '{target.name}' already has lint phase")
-            print(f"[BiliObjCLint] Target '{target.name}' 已存在 Lint Phase")
-            return True
+            # 检查版本是否需要更新
+            current_version = integrator.get_lint_phase_version(target)
+            from xcode_integrator import SCRIPT_VERSION
+            if current_version and current_version != SCRIPT_VERSION:
+                logger.info(f"Lint phase version mismatch: {current_version} -> {SCRIPT_VERSION}")
+                print(f"[BiliObjCLint] 更新 Lint Phase 版本: {current_version} -> {SCRIPT_VERSION}")
+                # 使用 override 更新 Build Phase
+            else:
+                logger.info(f"Target '{target.name}' already has lint phase with correct version")
+                print(f"[BiliObjCLint] Target '{target.name}' 已存在 Lint Phase (v{current_version})")
+                return True
 
         # 计算 scripts_path 相对于 SRCROOT 的路径
         srcroot = integrator.get_project_srcroot()
