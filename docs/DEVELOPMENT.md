@@ -8,7 +8,6 @@
 BiliObjCLint/
 ├── Formula/
 │   └── biliobjclint.rb       # Homebrew formula
-├── oclint/                   # OCLint 源码（BSD 3-Clause）
 ├── scripts/
 │   ├── biliobjclint.py       # 主入口
 │   ├── xcode_integrator.py   # Xcode 集成工具
@@ -24,23 +23,21 @@ BiliObjCLint/
 │   ├── core/                 # 核心模块
 │   │   ├── config.py         # 配置管理
 │   │   ├── git_diff.py       # Git 增量检测
-│   │   ├── oclint_runner.py  # OCLint 封装
 │   │   ├── reporter.py       # 输出格式化
 │   │   ├── rule_engine.py    # Python 规则引擎
 │   │   └── logger.py         # 日志系统
 │   ├── rules/                # 内置 Python 规则
-│   │   ├── naming_rules.py   # 命名规则
-│   │   ├── memory_rules.py   # 内存管理规则
-│   │   ├── style_rules.py    # 代码风格规则
-│   │   └── security_rules.py # 安全规则
+│   │   ├── naming_rules/     # 命名规则
+│   │   ├── memory_rules/     # 内存管理规则
+│   │   ├── style_rules/      # 代码风格规则
+│   │   └── security_rules/   # 安全规则
 │   ├── others/               # 辅助脚本
 │   │   ├── release.sh        # 版本发布脚本
 │   │   └── commit.sh         # 提交脚本
 │   └── lib/
 │       └── logging.sh        # Shell 日志库
 ├── custom_rules/
-│   ├── python/               # 自定义 Python 规则
-│   └── cpp/                  # 自定义 C++ 规则
+│   └── python/               # 自定义 Python 规则
 ├── config/
 │   └── default.yaml          # 默认配置模板
 ├── docs/                     # 开发文档
@@ -70,7 +67,7 @@ source .venv/bin/activate
 - 解析命令行参数
 - 加载配置
 - 获取待检查文件
-- 调用规则引擎和 OCLint
+- 调用规则引擎
 - 输出结果
 
 ### rule_engine.py
@@ -135,11 +132,6 @@ tail -f logs/biliobjclint_*.log
 .venv/bin/python3 scripts/biliobjclint.py \
     --files tests/TestFile.m \
     --verbose
-
-# 仅运行 Python 规则
-.venv/bin/python3 scripts/biliobjclint.py \
-    --files tests/TestFile.m \
-    --no-oclint
 
 # JSON 输出
 .venv/bin/python3 scripts/biliobjclint.py \

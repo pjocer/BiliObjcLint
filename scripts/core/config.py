@@ -19,15 +19,6 @@ class RuleConfig:
 
 
 @dataclass
-class OCLintConfig:
-    """OCLint 配置"""
-    enabled: bool = True
-    enable_rules: List[str] = field(default_factory=list)
-    disable_rules: List[str] = field(default_factory=list)
-    rule_configurations: List[Dict[str, Any]] = field(default_factory=list)
-
-
-@dataclass
 class ClaudeAutofixConfig:
     """Claude 自动修复配置"""
     # 触发模式: any | error | disable
@@ -36,6 +27,16 @@ class ClaudeAutofixConfig:
     mode: str = "silent"
     # 超时时间（秒）
     timeout: int = 120
+    # API 基础地址（内部网关地址，留空则使用官方 API）
+    api_base_url: str = ""
+    # API 认证令牌（用于内部网关，对应 ANTHROPIC_AUTH_TOKEN）
+    api_token: str = ""
+    # API 密钥（用于官方 API，对应 ANTHROPIC_API_KEY）
+    api_key: str = ""
+    # Claude 模型名称
+    model: str = ""
+    # 是否禁用非必要的网络请求
+    disable_nonessential_traffic: bool = True
 
 
 @dataclass
@@ -65,22 +66,11 @@ class LintConfig:
     included: List[str] = field(default_factory=lambda: ["**/*.m", "**/*.mm", "**/*.h"])
     excluded: List[str] = field(default_factory=lambda: ["Pods/**", "Vendor/**"])
 
-    # OCLint 配置
-    oclint: OCLintConfig = field(default_factory=OCLintConfig)
-
     # Python 规则配置
     python_rules: Dict[str, RuleConfig] = field(default_factory=dict)
 
     # 自定义规则路径
     custom_rules_python_path: str = "./custom_rules/python/"
-    custom_rules_cpp_enabled: bool = True
-
-    # 严重级别映射
-    severity_mapping: Dict[str, str] = field(default_factory=lambda: {
-        "priority1": "error",
-        "priority2": "warning",
-        "priority3": "warning"
-    })
 
     # Claude 自动修复配置
     claude_autofix: ClaudeAutofixConfig = field(default_factory=ClaudeAutofixConfig)
@@ -98,19 +88,6 @@ class ConfigLoader:
         "fail_on_error": True,
         "included": ["**/*.m", "**/*.mm", "**/*.h"],
         "excluded": ["Pods/**", "Vendor/**", "ThirdParty/**", "**/Generated/**"],
-        "oclint": {
-            "enabled": True,
-            "enable_rules": [],
-            "disable_rules": [],
-            "rule_configurations": [
-                {"key": "LONG_METHOD", "value": 80},
-                {"key": "LONG_LINE", "value": 120},
-                {"key": "CYCLOMATIC_COMPLEXITY", "value": 10},
-                {"key": "NPATH_COMPLEXITY", "value": 200},
-                {"key": "LONG_VARIABLE_NAME", "value": 30},
-                {"key": "SHORT_VARIABLE_NAME", "value": 2},
-            ]
-        },
         "python_rules": {
             "class_prefix": {
                 "enabled": True,
@@ -153,15 +130,7 @@ class ConfigLoader:
             "python": {
                 "enabled": True,
                 "path": "./custom_rules/python/"
-            },
-            "cpp": {
-                "enabled": True
             }
-        },
-        "severity_mapping": {
-            "priority1": "error",
-            "priority2": "warning",
-            "priority3": "warning"
         },
         "claude_autofix": {
             "trigger": "any",
@@ -212,14 +181,6 @@ class ConfigLoader:
 
     def _build_lint_config(self) -> LintConfig:
         """构建 LintConfig 对象"""
-        oclint_cfg = self._config.get("oclint", {})
-        oclint = OCLintConfig(
-            enabled=oclint_cfg.get("enabled", True),
-            enable_rules=oclint_cfg.get("enable_rules", []),
-            disable_rules=oclint_cfg.get("disable_rules", []),
-            rule_configurations=oclint_cfg.get("rule_configurations", [])
-        )
-
         python_rules = {}
         for rule_name, rule_cfg in self._config.get("python_rules", {}).items():
             if isinstance(rule_cfg, dict):
@@ -235,7 +196,12 @@ class ConfigLoader:
         claude_autofix = ClaudeAutofixConfig(
             trigger=claude_autofix_cfg.get("trigger", "any"),
             mode=claude_autofix_cfg.get("mode", "silent"),
-            timeout=claude_autofix_cfg.get("timeout", 120)
+            timeout=claude_autofix_cfg.get("timeout", 120),
+            api_base_url=claude_autofix_cfg.get("api_base_url", ""),
+            api_token=claude_autofix_cfg.get("api_token", ""),
+            api_key=claude_autofix_cfg.get("api_key", ""),
+            model=claude_autofix_cfg.get("model", ""),
+            disable_nonessential_traffic=claude_autofix_cfg.get("disable_nonessential_traffic", True)
         )
 
         local_pods_cfg = self._config.get("local_pods", {})
@@ -252,11 +218,8 @@ class ConfigLoader:
             fail_on_error=self._config.get("fail_on_error", True),
             included=self._config.get("included", ["**/*.m", "**/*.mm", "**/*.h"]),
             excluded=self._config.get("excluded", []),
-            oclint=oclint,
             python_rules=python_rules,
             custom_rules_python_path=custom_rules.get("python", {}).get("path", "./custom_rules/python/"),
-            custom_rules_cpp_enabled=custom_rules.get("cpp", {}).get("enabled", True),
-            severity_mapping=self._config.get("severity_mapping", {}),
             claude_autofix=claude_autofix,
             local_pods=local_pods
         )

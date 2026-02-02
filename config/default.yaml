@@ -30,41 +30,6 @@ excluded:
   - "**/*Tests.m"
   - "**/*Mock*.m"
 
-# ==================== OCLint 配置 ====================
-oclint:
-  # 是否启用 OCLint
-  enabled: true
-
-  # 启用的规则（为空表示使用默认规则）
-  enable_rules: []
-
-  # 禁用的规则
-  disable_rules:
-    - LongLine  # 由 Python 规则处理，避免重复
-
-  # 规则参数配置
-  rule_configurations:
-    - key: LONG_METHOD
-      value: 80
-    - key: LONG_LINE
-      value: 120
-    - key: CYCLOMATIC_COMPLEXITY
-      value: 10
-    - key: NPATH_COMPLEXITY
-      value: 200
-    - key: LONG_VARIABLE_NAME
-      value: 30
-    - key: SHORT_VARIABLE_NAME
-      value: 2
-    - key: LONG_CLASS
-      value: 1000
-    - key: TOO_MANY_FIELDS
-      value: 20
-    - key: TOO_MANY_METHODS
-      value: 50
-    - key: TOO_MANY_PARAMETERS
-      value: 6
-
 # ==================== Python 规则配置 ====================
 python_rules:
   # ---------- 命名规范 ----------
@@ -85,6 +50,12 @@ python_rules:
   method_naming:
     enabled: true
     severity: warning
+
+  method_parameter:
+    enabled: true
+    severity: warning
+    params:
+      max_params: 4  # 最大参数数量
 
   # ---------- 代码风格 ----------
   line_length:
@@ -163,17 +134,6 @@ custom_rules:
     enabled: true
     path: "./custom_rules/python/"
 
-  # C++ 自定义规则（编译后自动加载）
-  cpp:
-    enabled: true
-
-# ==================== 严重级别映射 ====================
-# OCLint priority 到 Xcode 严重级别的映射
-severity_mapping:
-  priority1: error    # P1 → 红色错误，中断编译
-  priority2: warning  # P2 → 黄色警告
-  priority3: warning  # P3 → 黄色警告
-
 # ==================== Claude 自动修复配置 ====================
 claude_autofix:
   # 触发模式
@@ -190,6 +150,40 @@ claude_autofix:
 
   # 修复超时时间（秒），仅对 silent 模式有效
   timeout: 120
+
+  # ---------- Claude Code API 配置 ----------
+  # 以下配置用于 Claude Code CLI 调用，支持两种方式：
+  #
+  # 方式一：使用内部网关（推荐公司内部使用）
+  #   设置 api_base_url 指向内部网关地址，使用 api_token 认证
+  #   示例：
+  #     api_base_url: "http://llmapi.bilibili.co"
+  #     api_token: "bsk-xxxxxxxxxxxx"
+  #
+  # 方式二：使用官方 Claude API
+  #   不设置 api_base_url（留空），使用 api_key 认证
+  #   示例：
+  #     api_base_url: ""
+  #     api_key: "sk-ant-xxxxxxxxxxxx"
+  #
+  # 注意：api_token 和 api_key 二选一即可，优先使用 api_token
+  # 如果配置为空，将尝试从环境变量或 ~/.zshrc 中读取
+
+  # API 基础地址（内部网关地址，留空则使用官方 API）
+  api_base_url: ""
+
+  # API 认证令牌（用于内部网关，对应 ANTHROPIC_AUTH_TOKEN）
+  api_token: ""
+
+  # API 密钥（用于官方 API，对应 ANTHROPIC_API_KEY）
+  api_key: ""
+
+  # Claude 模型名称（留空则使用 Claude Code 默认模型）
+  # 常用模型：claude-4.5-opus, claude-4.5-sonnet, claude-4-opus
+  model: ""
+
+  # 是否禁用非必要的网络请求（推荐开启以提高性能）
+  disable_nonessential_traffic: true
 
 # ==================== 本地 Pod 检测配置 ====================
 local_pods:

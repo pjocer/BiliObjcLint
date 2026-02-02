@@ -19,18 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-This project includes the following third-party components:
-
-## OCLint
-
-The `oclint/` directory contains OCLint source code, which is licensed under
-the BSD 3-Clause License:
-
-Copyright (C) 2010-2014 Longyi Qi and the OCLint project contributors.
-Copyright (C) 2015-2018 Ryuichi Laboratories and the OCLint project contributors.
-Copyright (C) 2019-2022 Ryuichi Intellectual Property and the OCLint project contributors.
-
-See `oclint/LICENSE` for the full license text.

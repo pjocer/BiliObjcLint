@@ -27,7 +27,7 @@ class Violation:
     severity: Severity
     message: str
     rule_id: str
-    source: str = "biliobjclint"  # biliobjclint | oclint
+    source: str = "biliobjclint"
     pod_name: Optional[str] = None  # 所属本地 Pod 名称（None 表示主工程）
     related_lines: Optional[Tuple[int, int]] = None  # 关联行范围 (start, end)，用于增量过滤
 

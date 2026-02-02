@@ -6,6 +6,7 @@ from .naming_rules import (
     PropertyNamingRule,
     ConstantNamingRule,
     MethodNamingRule,
+    MethodParameterRule,
 )
 from .style_rules import (
     LineLengthRule,
@@ -35,6 +36,7 @@ def get_all_rules():
         PropertyNamingRule,
         ConstantNamingRule,
         MethodNamingRule,
+        MethodParameterRule,
         # Style
         LineLengthRule,
         MethodLengthRule,
@@ -61,6 +63,7 @@ __all__ = [
     'PropertyNamingRule',
     'ConstantNamingRule',
     'MethodNamingRule',
+    'MethodParameterRule',
     # Style
     'LineLengthRule',
     'MethodLengthRule',

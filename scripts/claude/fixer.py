@@ -47,11 +47,18 @@ class ClaudeFixer:
         self.trigger = self.autofix_config.get('trigger', 'any')
         self.mode = self.autofix_config.get('mode', 'silent')
         self.timeout = self.autofix_config.get('timeout', 120)
+        # Claude Code API 配置
+        self.api_base_url = self.autofix_config.get('api_base_url', '')
+        self.api_token = self.autofix_config.get('api_token', '')
+        self.api_key = self.autofix_config.get('api_key', '')
+        self.model = self.autofix_config.get('model', '')
+        self.disable_nonessential_traffic = self.autofix_config.get('disable_nonessential_traffic', True)
         self.start_time = None
         self._claude_path = None
 
         logger.debug(f"ClaudeFixer initialized: project_root={self.project_root}")
         logger.debug(f"Config: trigger={self.trigger}, mode={self.mode}, timeout={self.timeout}")
+        logger.debug(f"API config: base_url={self.api_base_url or '(default)'}, model={self.model or '(default)'}")
 
     def _find_claude_path(self) -> Optional[str]:
         """
@@ -94,12 +101,58 @@ class ClaudeFixer:
         logger.warning("Claude CLI not found in any known path")
         return None
 
+    def _build_claude_env(self) -> Dict[str, str]:
+        """
+        构建 Claude Code CLI 所需的环境变量
+
+        优先级：yaml 配置 > shell 配置文件 > 系统环境变量
+
+        Returns:
+            环境变量字典
+        """
+        env_vars = {}
+
+        # 1. 首先从 yaml 配置读取
+        if self.api_base_url:
+            env_vars['ANTHROPIC_BASE_URL'] = self.api_base_url
+            logger.debug(f"Using api_base_url from yaml: {self.api_base_url}")
+
+        # api_token 和 api_key 都设置，兼容不同的环境变量名
+        if self.api_token:
+            env_vars['ANTHROPIC_AUTH_TOKEN'] = self.api_token
+            env_vars['ANTHROPIC_AUTH_KEY'] = self.api_token
+            logger.debug("Using api_token from yaml")
+        elif self.api_key:
+            env_vars['ANTHROPIC_API_KEY'] = self.api_key
+            logger.debug("Using api_key from yaml")
+
+        if self.model:
+            env_vars['ANTHROPIC_MODEL'] = self.model
+            env_vars['ANTHROPIC_SMALL_FAST_MODEL'] = self.model
+            logger.debug(f"Using model from yaml: {self.model}")
+
+        if self.disable_nonessential_traffic:
+            env_vars['CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'] = '1'
+
+        # 2. 如果 yaml 配置不完整，从 shell 配置文件补充
+        if not env_vars.get('ANTHROPIC_AUTH_TOKEN') and not env_vars.get('ANTHROPIC_API_KEY'):
+            shell_env = self._load_shell_env()
+            for key, value in shell_env.items():
+                if key not in env_vars:
+                    env_vars[key] = value
+
+        if env_vars:
+            logger.info(f"Built {len(env_vars)} env vars for Claude CLI")
+        else:
+            logger.warning("No Claude API credentials configured")
+
+        return env_vars
+
     def _load_shell_env(self) -> Dict[str, str]:
         """
         从用户的 shell 配置文件读取环境变量
 
-        Xcode Build Phase 后台进程不会加载 .zshrc/.bashrc，
-        需要手动读取相关的 ANTHROPIC_* 等环境变量
+        作为 yaml 配置的后备方案，当 yaml 中未配置 API 凭证时使用
 
         Returns:
             环境变量字典
@@ -145,9 +198,7 @@ class ClaudeFixer:
                 logger.warning(f"Failed to read {config_file}: {e}")
 
         if env_vars:
-            logger.info(f"Loaded {len(env_vars)} env vars from shell config")
-        else:
-            logger.warning("No ANTHROPIC_*/CLAUDE_* env vars found in shell config")
+            logger.debug(f"Loaded {len(env_vars)} env vars from shell config (fallback)")
 
         return env_vars
 
@@ -237,9 +288,9 @@ class ClaudeFixer:
             session_id = str(uuid.uuid4())
             logger.info(f"Executing Claude fix (timeout={self.timeout}s, session={session_id[:8]}...)...")
 
-            # 构建环境变量，从用户的 shell 配置文件读取 ANTHROPIC_* 变量
+            # 构建环境变量，优先使用 yaml 配置，其次从 shell 配置文件读取
             env = os.environ.copy()
-            env.update(self._load_shell_env())
+            env.update(self._build_claude_env())
             # 禁用 thinking 模式以加速响应
             env['MAX_THINKING_TOKENS'] = '0'
 
@@ -306,11 +357,18 @@ class ClaudeFixer:
         prompt_file.write(prompt)
         prompt_file.close()
 
+        # 构建环境变量导出命令
+        env_exports = []
+        claude_env = self._build_claude_env()
+        for key, value in claude_env.items():
+            env_exports.append(f"export {key}='{value}'")
+        env_export_cmd = ' && '.join(env_exports) if env_exports else 'true'
+
         # 使用 AppleScript 打开 Terminal 并执行 claude
         script = f'''
         tell application "Terminal"
             activate
-            do script "echo '🔧 正在修复中，不要关闭本窗口...' && echo '' && cd '{self.project_root}' && claude -p \\"$(cat '{prompt_file.name}')\\" --allowedTools Read,Edit && rm -f '{prompt_file.name}' && echo '' && echo '✅ 修复完成！'"
+            do script "echo '🔧 正在修复中，不要关闭本窗口...' && echo '' && cd '{self.project_root}' && {env_export_cmd} && claude -p \\"$(cat '{prompt_file.name}')\\" --allowedTools Read,Edit && rm -f '{prompt_file.name}' && echo '' && echo '✅ 修复完成！'"
         end tell
         '''
 

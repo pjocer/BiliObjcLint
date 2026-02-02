@@ -21,9 +21,6 @@ build/
 *.xcuserdata/
 .DS_Store
 
-# OCLint build artifacts
-oclint/build/
-
 # Test outputs
 *.log
 logs/

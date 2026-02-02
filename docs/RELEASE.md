@@ -109,5 +109,4 @@ brew update && brew upgrade biliobjclint
 
 - 初始版本
 - Python 规则引擎
-- OCLint 集成
 - Xcode Build Phase 集成

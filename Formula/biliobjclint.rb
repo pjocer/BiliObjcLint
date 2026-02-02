@@ -61,7 +61,7 @@ class Biliobjclint < Formula
     EOS
 
     # Run lint on test file
-    output = shell_output("#{bin}/biliobjclint --files #{testpath}/test.m --no-oclint 2>&1", 0)
+    output = shell_output("#{bin}/biliobjclint --files #{testpath}/test.m 2>&1", 0)
     assert_match(/BiliObjCLint|violations|Checking/, output)
   end
 end

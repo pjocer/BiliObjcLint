@@ -12,12 +12,10 @@
 
 - **增量检查**: 仅检查 Git 变更的代码，快速高效
 - **Xcode 集成**: 输出原生 Xcode 警告/错误格式
-- **双引擎架构**:
-  - OCLint: 70+ 内置规则，深度 AST 分析
-  - Python 规则引擎: 轻量、快速、易扩展
+- **Python 规则引擎**: 轻量、快速、易扩展
 - **Claude AI 自动修复**: 使用 Claude Code CLI 自动修复代码问题
 - **高度可配置**: YAML 配置文件，灵活的规则定制
-- **易于扩展**: 支持 Python 和 C++ 自定义规则
+- **易于扩展**: 支持 Python 自定义规则
 
 ## 环境要求
 
@@ -149,14 +147,6 @@ cp $(brew --prefix)/share/biliobjclint/scripts/bin/bootstrap.sh /path/to/your/pr
 > - 如需强制立即检测更新，可删除状态文件：`rm -f ~/.biliobjclint_update_state`
 > - 更新完成后会通过 macOS 系统通知提示新版本号和更新内容
 
-### 5. 安装 OCLint（可选）
-
-如果需要 OCLint 的深度 AST 分析：
-
-```bash
-brew install oclint
-```
-
 ## 配置
 
 在项目根目录创建 `.biliobjclint.yaml`：
@@ -190,15 +180,6 @@ python_rules:
     params:
       max_length: 120
 
-# OCLint 设置
-oclint:
-  enabled: true
-  rule_configurations:
-    - key: LONG_METHOD
-      value: 80
-    - key: CYCLOMATIC_COMPLEXITY
-      value: 10
-
 # Claude 自动修复设置
 claude_autofix:
   trigger: "any"     # any | error | disable
@@ -218,6 +199,7 @@ claude_autofix:
 | `property_naming` | 属性命名（小驼峰） | warning |
 | `constant_naming` | 常量命名检查 | warning |
 | `method_naming` | 方法命名检查 | warning |
+| `method_parameter` | 方法参数数量检查（默认最大 4 个） | warning |
 | `line_length` | 行长度限制 | warning |
 | `method_length` | 方法长度限制 | warning |
 | `todo_fixme` | TODO/FIXME 检测 | warning |
@@ -230,10 +212,6 @@ claude_autofix:
 | `hardcoded_credentials` | 硬编码凭据检测 | error |
 | `insecure_random` | 不安全随机数生成检测 | warning |
 | `file_header` | 文件头注释检查 | warning |
-
-### OCLint 规则
-
-OCLint 提供 70+ 规则，涵盖：Basic、Convention、Empty、Naming、Redundant、Size、Unused 等类别。
 
 ## 命令行选项
 
@@ -250,7 +228,6 @@ biliobjclint [options]
   --files, -f FILE...     指定检查的文件
   --xcode-output, -x      Xcode 格式输出（默认）
   --json-output, -j       JSON 格式输出
-  --no-oclint             禁用 OCLint
   --no-python-rules       禁用 Python 规则
   --verbose, -v           详细输出
 ```
@@ -294,14 +271,6 @@ excluded:
   - "Legacy/**"
 ```
 
-### Q: OCLint 编译失败？
-
-仅使用 Python 规则：
-
-```bash
-biliobjclint --no-oclint
-```
-
 ### Q: 如何使用 Claude 自动修复？
 
 1. 安装 [Claude Code CLI](https://claude.ai/code)
@@ -342,5 +311,3 @@ claude_autofix:
 ## 许可证
 
 本项目基于 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
-
-本项目包含 OCLint，其基于 BSD 3-Clause 许可证。

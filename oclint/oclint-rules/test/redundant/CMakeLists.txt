@@ -1,9 +1,0 @@
-BUILD_TEST(RedundantTests
-    RedundantConditionalOperatorRuleTest.cpp
-    RedundantIfStatementRuleTest.cpp
-    RedundantLocalVariableRuleTest.cpp
-    RedundantNilCheckRuleTest.cpp
-    UnnecessaryElseStatementRuleTest.cpp
-    UnnecessaryNullCheckForCXXDeallocRuleTest.cpp
-    UselessParenthesesRuleTest.cpp
-)

@@ -12,12 +12,10 @@
 
 - **Incremental Check**: Only check Git-changed code for fast and efficient linting
 - **Xcode Integration**: Output native Xcode warning/error format
-- **Dual Engine Architecture**:
-  - OCLint: 70+ built-in rules with deep AST analysis
-  - Python Rule Engine: Lightweight, fast, and easy to extend
+- **Python Rule Engine**: Lightweight, fast, and easy to extend
 - **Claude AI Auto-fix**: Automatically fix code issues with Claude Code CLI
 - **Highly Configurable**: YAML configuration file for flexible rule customization
-- **Easy to Extend**: Support both Python and C++ custom rules
+- **Easy to Extend**: Support custom Python rules
 
 ## Requirements
 
@@ -149,14 +147,6 @@ cp $(brew --prefix)/share/biliobjclint/scripts/bin/bootstrap.sh /path/to/your/pr
 > - To force an immediate update check, delete the state file: `rm -f ~/.biliobjclint_update_state`
 > - After update completes, a macOS system notification will show the new version and changelog
 
-### 5. Install OCLint (Optional)
-
-If you need OCLint's deep AST analysis:
-
-```bash
-brew install oclint
-```
-
 ## Configuration
 
 Create `.biliobjclint.yaml` in your project root:
@@ -190,15 +180,6 @@ python_rules:
     params:
       max_length: 120
 
-# OCLint settings
-oclint:
-  enabled: true
-  rule_configurations:
-    - key: LONG_METHOD
-      value: 80
-    - key: CYCLOMATIC_COMPLEXITY
-      value: 10
-
 # Claude auto-fix settings
 claude_autofix:
   trigger: "any"     # any | error | disable
@@ -218,6 +199,7 @@ See `config/default.yaml` for a complete example.
 | `property_naming` | Property naming (lowerCamelCase) | warning |
 | `constant_naming` | Constant naming check | warning |
 | `method_naming` | Method naming check | warning |
+| `method_parameter` | Method parameter count check (default max: 4) | warning |
 | `line_length` | Line length limit | warning |
 | `method_length` | Method length limit | warning |
 | `todo_fixme` | TODO/FIXME detection | warning |
@@ -230,10 +212,6 @@ See `config/default.yaml` for a complete example.
 | `hardcoded_credentials` | Hardcoded credentials detection | error |
 | `insecure_random` | Insecure random number generation detection | warning |
 | `file_header` | File header comment check | warning |
-
-### OCLint Rules
-
-OCLint provides 70+ rules in categories: Basic, Convention, Empty, Naming, Redundant, Size, Unused.
 
 ## Command Line Options
 
@@ -250,7 +228,6 @@ Options:
   --files, -f FILE...     Specific files to check
   --xcode-output, -x      Xcode format output (default)
   --json-output, -j       JSON format output
-  --no-oclint             Disable OCLint
   --no-python-rules       Disable Python rules
   --verbose, -v           Verbose output
 ```
@@ -294,14 +271,6 @@ excluded:
   - "Legacy/**"
 ```
 
-### Q: OCLint build fails?
-
-Use Python rules only:
-
-```bash
-biliobjclint --no-oclint
-```
-
 ### Q: How to use Claude auto-fix?
 
 1. Install [Claude Code CLI](https://claude.ai/code)
@@ -342,5 +311,3 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-This project includes OCLint, which is licensed under the BSD 3-Clause License.

@@ -2,7 +2,7 @@
 """
 BiliObjCLint - Bilibili Objective-C 代码规范检查工具
 
-支持增量检查，集成 OCLint + Python 规则引擎
+支持增量检查，使用 Python 规则引擎
 
 Usage:
     python3 biliobjclint.py [options]
@@ -15,8 +15,6 @@ Options:
     --files FILE [FILE...] 指定要检查的文件
     --xcode-output         输出 Xcode 兼容格式
     --json-output          输出 JSON 格式
-    --no-oclint            禁用 OCLint
-    --no-python-rules      禁用 Python 规则
     --verbose              详细输出
     --help                 显示帮助
 """
@@ -35,7 +33,6 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from core.config import ConfigLoader, LintConfig
 from core.git_diff import GitDiffAnalyzer, is_git_repo
 from core.reporter import Reporter, Violation, Severity
-from core.oclint_runner import OCLintRunner
 from core.rule_engine import RuleEngine
 from core.logger import get_logger, LogContext, log_lint_start, log_lint_end
 from core.local_pods import LocalPodsAnalyzer
@@ -117,14 +114,7 @@ class BiliObjCLint:
 
                 self.logger.debug(f"Changed lines map: {len(changed_lines_map)} files")
 
-        # 4. 执行 OCLint 检查
-        if not self.args.no_oclint and self.config.oclint.enabled:
-            with LogContext(self.logger, "oclint_check"):
-                oclint_violations = self._run_oclint(files)
-                self.reporter.add_violations(oclint_violations)
-                self.logger.info(f"OCLint violations: {len(oclint_violations)}")
-
-        # 5. 执行 Python 规则检查
+        # 4. 执行 Python 规则检查
         if not self.args.no_python_rules:
             with LogContext(self.logger, "python_rules_check"):
                 python_violations = self._run_python_rules(files, changed_lines_map)
@@ -338,24 +328,6 @@ class BiliObjCLint:
 
         return result
 
-    def _run_oclint(self, files: List[str]) -> List[Violation]:
-        """运行 OCLint 检查"""
-        runner = OCLintRunner(str(self.project_root), self.config.oclint)
-
-        if not runner.is_available():
-            self.logger.warning("OCLint not found, skipping OCLint checks")
-            if self.args.verbose:
-                print("OCLint not found, skipping OCLint checks.", file=sys.stderr)
-            return []
-
-        self.logger.info(f"Running OCLint on {len(files)} files")
-        if self.args.verbose:
-            print("Running OCLint checks...", file=sys.stderr)
-
-        violations = runner.run(files)
-        self.logger.debug(f"OCLint found {len(violations)} violations")
-        return violations
-
     def _run_python_rules(self, files: List[str], changed_lines_map: dict) -> List[Violation]:
         """运行 Python 规则检查"""
         engine = RuleEngine(str(self.project_root))
@@ -431,12 +403,6 @@ def parse_args() -> argparse.Namespace:
         "--json-output", "-j",
         action="store_true",
         help="输出 JSON 格式"
-    )
-
-    parser.add_argument(
-        "--no-oclint",
-        action="store_true",
-        help="禁用 OCLint"
     )
 
     parser.add_argument(

@@ -116,60 +116,6 @@ class HardcodedStringRule(BaseRule):
         return violations
 ```
 
-## C++ 规则
-
-C++ 规则需要重新编译 OCLint，但可以进行更深层次的 AST 分析。
-
-### 创建规则
-
-在 `custom_rules/cpp/` 目录下创建 `.cpp` 文件：
-
-```cpp
-#include "oclint/AbstractASTVisitorRule.h"
-#include "oclint/RuleSet.h"
-
-using namespace std;
-using namespace clang;
-using namespace oclint;
-
-class MyCustomCppRule : public AbstractASTVisitorRule<MyCustomCppRule>
-{
-public:
-    virtual const string name() const override
-    {
-        return "my custom cpp rule";
-    }
-
-    virtual int priority() const override
-    {
-        return 3;  // 1=error, 2=warning, 3=info
-    }
-
-    virtual const string category() const override
-    {
-        return "custom";
-    }
-
-    bool VisitObjCMethodDecl(ObjCMethodDecl *node)
-    {
-        // 你的检查逻辑
-        if (/* 违规条件 */) {
-            addViolation(node, this, "违规描述");
-        }
-        return true;
-    }
-};
-
-static RuleSet rules(new MyCustomCppRule());
-```
-
-### 编译规则
-
-```bash
-# 重新编译 OCLint（包含自定义规则）
-./scripts/build_oclint.sh
-```
-
 ## 规则最佳实践
 
 1. **明确的规则 ID**: 使用 `snake_case` 命名，确保唯一
@@ -186,8 +132,7 @@ static RuleSet rules(new MyCustomCppRule());
 # 详细输出模式
 .venv/bin/python3 scripts/biliobjclint.py \
     --files tests/TestFile.m \
-    --verbose \
-    --no-oclint
+    --verbose
 ```
 
 查看日志：
