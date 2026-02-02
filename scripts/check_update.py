@@ -213,8 +213,14 @@ def background_upgrade(
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / 'background_upgrade.log'
 
-        # 清空旧日志
-        log_file.write_text(f"=== Background upgrade started: {local_ver} -> {remote_ver} ===\n")
+        # 清空旧日志，写入调试信息
+        debug_info = f"""=== Background upgrade started: {local_ver} -> {remote_ver} ===
+scripts_dir: {scripts_dir}
+project_path: {project_path}
+target_name: {target_name}
+project_name: {project_name}
+"""
+        log_file.write_text(debug_info)
 
         # 获取 venv Python 路径（brew upgrade 后需要使用新版本的 venv）
         # 由于 brew upgrade 会更新 symlink，这里获取的是当前（旧版本）的 venv
@@ -240,6 +246,11 @@ def background_upgrade(
         log_path = shlex.quote(str(log_file))
         python_quoted = shlex.quote(python_path)
         shell_cmd = f'nohup {python_quoted} {script_path} {args_quoted} >> {log_path} 2>&1 &'
+
+        # 将 shell 命令也写入日志文件，便于调试
+        with open(log_file, 'a') as f:
+            f.write(f"shell_cmd: {shell_cmd}\n")
+            f.write("---\n")
 
         logger.info(f"Shell command: {shell_cmd}")
 

@@ -110,21 +110,61 @@ Claude AI 自动修复模块，包含以下文件：
 
 ## 日志系统
 
-日志文件位于 `logs/` 目录：
+### 日志文件位置
+
+**开发模式**（本地运行）：
+- 日志位于项目根目录的 `logs/` 目录
+
+**Homebrew 安装后**：
+- 日志位于 brew 安装目录：`$(brew --prefix biliobjclint)/libexec/logs/`
 
 ```bash
-# 查看最新日志
-ls -lt logs/ | head -5
+# 获取 Homebrew 安装后的日志目录
+brew_logs="$(brew --prefix biliobjclint)/libexec/logs"
 
-# 实时查看日志
-tail -f logs/biliobjclint_*.log
+# 查看最新日志
+ls -lt "$brew_logs" | head -10
+
+# 实时查看 background_upgrade 日志
+tail -f "$brew_logs"/background_upgrade_*.log
+
+# 实时查看 check_update 日志
+tail -f "$brew_logs"/check_update_*.log
 ```
 
-日志级别：
+**后台升级调试日志**：
+- 位于用户目录：`~/.biliobjclint/background_upgrade.log`
+- 包含 shell 命令和参数信息
+
+```bash
+# 查看后台升级调试日志
+cat ~/.biliobjclint/background_upgrade.log
+```
+
+### 日志文件类型
+
+| 文件模式 | 说明 |
+|---------|------|
+| `biliobjclint_*.log` | 主 lint 日志 |
+| `check_update_*.log` | 版本检查日志 |
+| `background_upgrade_*.log` | 后台升级日志 |
+| `xcode_*.log` | Xcode 集成日志 |
+| `claude_fix_*.log` | Claude 修复日志 |
+
+### 日志级别
+
 - `DEBUG`: 详细调试信息
 - `INFO`: 一般运行信息
 - `WARNING`: 警告信息
 - `ERROR`: 错误信息
+
+### 启用详细日志输出
+
+设置环境变量可在控制台输出 INFO 级别日志：
+
+```bash
+export BILIOBJCLINT_VERBOSE=1
+```
 
 ## 测试
 

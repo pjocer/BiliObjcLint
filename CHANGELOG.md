@@ -2,6 +2,15 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.1.40 (2026-02-02)
+
+### 修复
+- 修复 CHANGELOG.md 未被安装到 brew prefix 的问题
+- 增强后台升级调试日志，记录所有参数到 `~/.biliobjclint/background_upgrade.log`
+
+### 文档
+- 在 DEVELOPMENT.md 中添加 Homebrew 安装后日志文件位置说明
+
 ## v1.1.39 (2026-02-02)
 
 ### 测试
