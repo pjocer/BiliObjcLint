@@ -2,6 +2,12 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.1.20 (2026-02-02)
+
+### 修复
+- 修复 Lint Phase 检测逻辑误将 Package Manager phase 识别为 Lint Phase 的问题
+- 修复 bootstrap 流程中 Package Manager phase 被错误移除的问题
+
 ## v1.1.19 (2026-02-02)
 
 ### 改进

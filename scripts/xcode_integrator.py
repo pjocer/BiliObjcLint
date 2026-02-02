@@ -334,11 +334,17 @@ class XcodeIntegrator:
         for phase_id in build_phases:
             phase = self.project.objects[phase_id]
             if phase.isa == 'PBXShellScriptBuildPhase':
-                if hasattr(phase, 'name') and phase.name == PHASE_NAME:
+                # 排除 Package Manager phase
+                phase_name = getattr(phase, 'name', '')
+                if phase_name == BOOTSTRAP_PHASE_NAME:
+                    continue
+                if phase_name == PHASE_NAME:
                     return True
-                # 也检查脚本内容
-                if hasattr(phase, 'shellScript') and 'BiliObjCLint' in str(phase.shellScript):
-                    return True
+                # 也检查脚本内容（排除 Package Manager）
+                if hasattr(phase, 'shellScript'):
+                    script = str(phase.shellScript)
+                    if 'Code Style Check' in script or '# Version:' in script:
+                        return True
         return False
 
     def get_lint_phase_version(self, target) -> Optional[str]:
@@ -348,14 +354,20 @@ class XcodeIntegrator:
         for phase_id in build_phases:
             phase = self.project.objects[phase_id]
             if phase.isa == 'PBXShellScriptBuildPhase':
-                if hasattr(phase, 'shellScript') and 'BiliObjCLint' in str(phase.shellScript):
+                # 排除 Package Manager phase
+                phase_name = getattr(phase, 'name', '')
+                if phase_name == BOOTSTRAP_PHASE_NAME:
+                    continue
+                if hasattr(phase, 'shellScript'):
                     script = str(phase.shellScript)
-                    # 匹配 "# Version: x.x.x"
-                    match = re.search(r'# Version: (\d+\.\d+\.\d+)', script)
-                    if match:
-                        return match.group(1)
-                    # 旧版本没有版本号
-                    return "0.0.0"
+                    # 只检查 Code Style Check phase
+                    if 'Code Style Check' in script or '# Version:' in script:
+                        # 匹配 "# Version: x.x.x"
+                        match = re.search(r'# Version: (\d+\.\d+\.\d+)', script)
+                        if match:
+                            return match.group(1)
+                        # 旧版本没有版本号
+                        return "0.0.0"
         return None
 
     def check_update_needed(self, target) -> tuple:
@@ -452,11 +464,19 @@ class XcodeIntegrator:
         for phase_id in build_phases:
             phase = self.project.objects[phase_id]
             if phase.isa == 'PBXShellScriptBuildPhase':
+                # 排除 Package Manager phase
+                phase_name = getattr(phase, 'name', '')
+                if phase_name == BOOTSTRAP_PHASE_NAME:
+                    continue
+
                 should_remove = False
-                if hasattr(phase, 'name') and phase.name == PHASE_NAME:
+                if phase_name == PHASE_NAME:
                     should_remove = True
-                elif hasattr(phase, 'shellScript') and 'BiliObjCLint' in str(phase.shellScript):
-                    should_remove = True
+                elif hasattr(phase, 'shellScript'):
+                    script = str(phase.shellScript)
+                    # 只移除 Code Style Check phase，不移除 Package Manager
+                    if 'Code Style Check' in script or '# Version:' in script:
+                        should_remove = True
 
                 if should_remove:
                     phases_to_remove.append(phase_id)
