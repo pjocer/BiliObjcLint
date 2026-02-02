@@ -263,25 +263,42 @@ version_gt() {
 get_changelog_for_version() {
     local version="$1"
     local changelog
+    local brew_prefix
 
-    # 从 GitHub 获取 CHANGELOG
-    changelog=$(curl -s --connect-timeout 3 --max-time 5 \
-        "https://raw.githubusercontent.com/pjocer/BiliObjcLint/main/CHANGELOG.md" 2>/dev/null)
+    # 方法1: 从本地 brew 安装目录读取（更新后 CHANGELOG 已是最新）
+    brew_prefix=$(brew --prefix biliobjclint 2>/dev/null)
+    if [ -f "$brew_prefix/libexec/CHANGELOG.md" ]; then
+        changelog=$(cat "$brew_prefix/libexec/CHANGELOG.md" 2>/dev/null)
+    fi
+
+    # 方法2: 回退到 GitHub（可能在沙盒环境中失败）
+    if [ -z "$changelog" ]; then
+        changelog=$(curl -s --connect-timeout 3 --max-time 5 \
+            "https://raw.githubusercontent.com/pjocer/BiliObjcLint/main/CHANGELOG.md" 2>/dev/null)
+    fi
 
     if [ -z "$changelog" ]; then
-        echo "查看: github.com/pjocer/BiliObjcLint/releases"
+        echo "查看详情: github.com/pjocer/BiliObjcLint/releases"
         return
     fi
 
-    # 提取指定版本的更新内容（简化版，取前几条）
-    echo "$changelog" | awk -v ver="$version" '
+    # 提取指定版本的更新内容（包括子标题和条目）
+    local result
+    result=$(echo "$changelog" | awk -v ver="$version" '
         /^## / {
             if (found) exit
             if (index($0, ver)) found=1
             next
         }
-        found && /^- / { gsub(/^- /, "• "); print }
-    ' | head -5
+        found && /^### / { gsub(/^### /, ""); print }
+        found && /^- / { gsub(/^- /, "  • "); print }
+    ' | head -8)
+
+    if [ -n "$result" ]; then
+        echo "$result"
+    else
+        echo "查看详情: github.com/pjocer/BiliObjcLint/releases"
+    fi
 }
 
 # 静默执行更新

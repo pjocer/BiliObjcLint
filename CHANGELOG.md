@@ -2,6 +2,43 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.1.26 (2026-02-02)
+
+### 修复
+- 修复 Xcode 沙盒环境中获取远端版本失败的问题
+- 优先使用 brew info 获取远端版本
+- 将 brew update 移到版本检查阶段
+
+## v1.1.25 (2026-02-02)
+
+### 改进
+- 迁移 release 文档到 RELEASE.md
+- 添加 bootstrap 调试日志功能
+
+## v1.1.24 (2026-02-02)
+
+### 改进
+- 优化 commit.sh 和 release.sh 脚本文档
+- 添加典型开发流程说明
+
+## v1.1.23 (2026-02-02)
+
+### 改进
+- commit.sh 支持 Conventional Commits 格式
+- 新增交互式输入和 CLI 参数支持
+
+## v1.1.22 (2026-02-02)
+
+### 改进
+- release.sh 支持非交互式模式 (-y/--yes)
+- 修复 Homebrew tap 同步冲突问题
+
+## v1.1.21 (2026-02-02)
+
+### 新增
+- 新增 method_parameter 规则：检查方法参数数量
+- Claude API 配置支持：api_base_url, api_token, api_key, model
+
 ## v1.1.20 (2026-02-02)
 
 ### 修复
