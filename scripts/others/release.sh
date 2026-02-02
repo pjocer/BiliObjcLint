@@ -19,7 +19,6 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-FORMULA_FILE="$PROJECT_ROOT/Formula/biliobjclint.rb"
 VERSION_FILE="$PROJECT_ROOT/VERSION"
 REPO_URL="https://github.com/pjocer/BiliObjcLint"
 
@@ -45,7 +44,7 @@ show_help() {
     cat << EOF
 Usage: $0 [OPTIONS] [VERSION_TYPE|VERSION]
 
-发布新版本，自动更新 VERSION 文件、创建 Git tag、更新 Formula 并同步到 Homebrew tap
+发布新版本，自动更新 VERSION 文件、创建 Git tag、更新 Homebrew tap Formula
 
 Arguments:
   VERSION_TYPE   版本递增类型: patch (默认), minor, major
@@ -67,6 +66,7 @@ Examples:
 Note:
   - 脚本会检查是否有未提交的改动，如有则拒绝发布
   - 如果不提供 -y/--yes 参数，脚本会在发布前要求确认
+  - Formula 只在 homebrew-biliobjclint tap 仓库维护
 EOF
     exit 0
 }
@@ -168,33 +168,18 @@ update_version_file() {
     info "VERSION file updated to ${version_num}"
 }
 
-# Update Formula file
-update_formula() {
+# Update homebrew tap Formula and sync
+update_homebrew_tap() {
     local version=$1
     local sha256=$2
 
-    info "Updating Formula file..."
-
-    # Update URL
-    sed -i '' "s|archive/refs/tags/v[0-9]*\.[0-9]*\.[0-9]*\.tar\.gz|archive/refs/tags/${version}.tar.gz|g" "$FORMULA_FILE"
-
-    # Update SHA256
-    sed -i '' "s|sha256 \"[a-f0-9]*\"|sha256 \"${sha256}\"|g" "$FORMULA_FILE"
-
-    info "Formula updated to ${version}"
-}
-
-# Sync Formula to homebrew tap repository
-sync_homebrew_tap() {
-    local version=$1
-
     if [ ! -d "$HOMEBREW_TAP_DIR" ]; then
         warn "Homebrew tap directory not found: $HOMEBREW_TAP_DIR"
-        warn "Skipping homebrew tap sync. Please manually update the tap repository."
+        warn "Skipping homebrew tap update. Please manually update the tap repository."
         return 1
     fi
 
-    info "Syncing Formula to homebrew tap repository..."
+    info "Updating homebrew tap Formula..."
 
     cd "$HOMEBREW_TAP_DIR"
 
@@ -206,8 +191,14 @@ sync_homebrew_tap() {
         git reset --hard origin/main
     fi
 
-    # Copy Formula file
-    cp "$FORMULA_FILE" "$HOMEBREW_TAP_FORMULA"
+    # Update Formula file directly in tap repository
+    # Update URL
+    sed -i '' "s|archive/refs/tags/v[0-9]*\.[0-9]*\.[0-9]*\.tar\.gz|archive/refs/tags/${version}.tar.gz|g" "$HOMEBREW_TAP_FORMULA"
+
+    # Update SHA256
+    sed -i '' "s|sha256 \"[a-f0-9]*\"|sha256 \"${sha256}\"|g" "$HOMEBREW_TAP_FORMULA"
+
+    info "Formula updated to ${version}"
 
     # Check if there are changes
     if git diff --quiet "$HOMEBREW_TAP_FORMULA" 2>/dev/null; then
@@ -222,7 +213,7 @@ sync_homebrew_tap() {
 Co-Authored-By: Claude (claude-4.5-opus) <noreply@anthropic.com>"
     git push
 
-    info "Homebrew tap synced successfully"
+    info "Homebrew tap updated successfully"
     cd "$PROJECT_ROOT"
 }
 
@@ -266,7 +257,7 @@ main() {
         fi
     fi
 
-    # Step 1: Update VERSION file first (so tag includes correct version)
+    # Step 1: Update VERSION file
     update_version_file "$new_version"
 
     # Step 2: Commit VERSION update
@@ -277,7 +268,7 @@ main() {
 Co-Authored-By: Claude (claude-4.5-opus) <noreply@anthropic.com>"
     git push
 
-    # Step 3: Create and push tag (now tag includes correct VERSION)
+    # Step 3: Create and push tag
     info "Creating tag $new_version ..."
     git tag "$new_version"
     git push origin "$new_version"
@@ -287,19 +278,8 @@ Co-Authored-By: Claude (claude-4.5-opus) <noreply@anthropic.com>"
     sha256=$(calculate_sha256 "$new_version")
     info "SHA256: $sha256"
 
-    # Step 5: Update Formula with new SHA256
-    update_formula "$new_version" "$sha256"
-
-    # Step 6: Commit Formula update
-    info "Committing Formula update..."
-    git add "$FORMULA_FILE"
-    git commit -m "Update Formula for ${new_version}
-
-Co-Authored-By: Claude (claude-4.5-opus) <noreply@anthropic.com>"
-    git push
-
-    # Step 7: Sync to homebrew tap repository
-    sync_homebrew_tap "$new_version"
+    # Step 5: Update homebrew tap Formula
+    update_homebrew_tap "$new_version" "$sha256"
 
     echo ""
     info "=========================================="
