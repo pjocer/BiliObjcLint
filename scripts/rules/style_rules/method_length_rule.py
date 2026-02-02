@@ -48,16 +48,31 @@ class MethodLengthRule(BaseRule):
                     method_length = line_num - method_start_line + 1
 
                     if method_length > max_lines:
-                        # 检查方法起始行是否在变更范围内
-                        if not changed_lines or method_start_line in changed_lines or any(
-                            l in changed_lines for l in range(method_start_line, line_num + 1)
-                        ):
+                        # 检查方法内是否有变更
+                        if not changed_lines:
+                            # 全量模式：在方法起始行报告
+                            report_line = method_start_line
                             violations.append(self.create_violation(
                                 file_path=file_path,
-                                line=method_start_line,
+                                line=report_line,
                                 column=1,
                                 message=f"方法 '{method_name}' 共 {method_length} 行，超过限制 {max_lines} 行"
                             ))
+                        else:
+                            # 增量模式：找到方法内第一个变更行
+                            changed_in_method = [
+                                l for l in range(method_start_line, line_num + 1)
+                                if l in changed_lines
+                            ]
+                            if changed_in_method:
+                                report_line = changed_in_method[0]
+                                violations.append(self.create_violation(
+                                    file_path=file_path,
+                                    line=report_line,
+                                    column=1,
+                                    message=f"方法 '{method_name}' 共 {method_length} 行，超过限制 {max_lines} 行（方法定义在第 {method_start_line} 行）"
+                                ))
+                            # 方法内没有变更，跳过不报告
 
                     in_method = False
 
