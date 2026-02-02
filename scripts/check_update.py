@@ -162,6 +162,20 @@ def show_update_dialog(version: str, changelog: str):
         logger.debug(f"Failed to show dialog: {e}")
 
 
+def show_lint_phase_update_dialog(old_version: str, new_version: str):
+    """显示 Lint Phase 版本更新弹窗"""
+    title = "BiliObjCLint"
+    message = f"已同步 Code Style Lint 版本号 {old_version} ~ {new_version}"
+
+    try:
+        script = f'''
+        display dialog "{message}" with title "{title}" buttons {{"OK"}} default button "OK"
+        '''
+        subprocess.run(['osascript', '-e', script], capture_output=True, timeout=30)
+    except Exception as e:
+        logger.debug(f"Failed to show lint phase update dialog: {e}")
+
+
 def background_upgrade(local_ver: str, remote_ver: str, scripts_dir: Optional[Path] = None):
     """
     后台执行 brew upgrade
@@ -305,7 +319,7 @@ def do_check_and_inject(
 
     # 4. 导入 xcode_integrator 并注入 Build Phase
     try:
-        from xcode_integrator import XcodeIntegrator, PHASE_NAME
+        from xcode_integrator import XcodeIntegrator, PHASE_NAME, SCRIPT_VERSION
 
         # 获取 lint_path
         brew_prefix = get_brew_prefix()
@@ -323,10 +337,10 @@ def do_check_and_inject(
             return False
 
         # 5. 检查并注入/更新 Code Style Check Build Phase
+        current_version = None  # 用于记录旧版本，判断是否为版本更新
         if integrator.has_lint_phase(target):
             # 检查版本是否需要更新
             current_version = integrator.get_lint_phase_version(target)
-            from xcode_integrator import SCRIPT_VERSION
             if current_version and current_version != SCRIPT_VERSION:
                 logger.info(f"Lint phase version mismatch: {current_version} -> {SCRIPT_VERSION}")
                 print(f"[BiliObjCLint] 更新 Lint Phase 版本: {current_version} -> {SCRIPT_VERSION}")
@@ -355,6 +369,10 @@ def do_check_and_inject(
         if success and not dry_run:
             integrator.save()
             print(f"[BiliObjCLint] 已为 Target '{target.name}' 注入 Code Style Lint Phase")
+
+            # 如果是版本更新（而非首次注入），弹出提示
+            if current_version and current_version != SCRIPT_VERSION:
+                show_lint_phase_update_dialog(current_version, SCRIPT_VERSION)
 
         return success
 
