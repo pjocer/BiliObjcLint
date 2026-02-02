@@ -247,17 +247,137 @@ def check(self, file_path, content, lines, changed_lines):
 - 添加文档字符串
 - 错误处理要完善
 
-## 提交规范
+## 提交和发布
+
+BiliObjCLint 提供了两个脚本来简化提交和发布流程：
+
+### commit.sh - 提交脚本
+
+同时提交改动到主仓库和 Homebrew tap 仓库，支持 Conventional Commits 格式。
 
 ```bash
-# 提交格式
-<type>: <description>
+# 脚本位置
+./scripts/others/commit.sh
 
-# 类型
-feat:     新功能
-fix:      Bug 修复
-docs:     文档更新
-refactor: 代码重构
-test:     测试相关
-chore:    构建/工具更新
+# 查看帮助
+./scripts/others/commit.sh -h
 ```
+
+**参数说明：**
+
+| 参数 | 说明 |
+|------|------|
+| `-t, --type` | 提交类型: feat/fix/docs/style/refactor/perf/test/chore |
+| `-s, --scope` | 作用域（可选）: 如 规则, 配置, 脚本, Claude |
+| `-d, --desc` | 简短描述（必填） |
+| `-b, --body` | 详细说明（可选） |
+| `-m, --message` | 完整提交信息（跳过格式化） |
+| `-y, --yes` | 非交互式模式（跳过确认） |
+
+**使用示例：**
+
+```bash
+# 交互式输入（会依次提示选择类型、输入作用域、描述、详情）
+./scripts/others/commit.sh
+
+# CLI 参数指定
+./scripts/others/commit.sh -t feat -s "规则" -d "新增 method_parameter 规则"
+
+# 非交互式提交
+./scripts/others/commit.sh -y -t fix -d "修复增量检查失效问题"
+
+# 带详细说明
+./scripts/others/commit.sh -t feat -s "Claude" -d "添加 API 配置支持" \
+    -b "- 支持内部网关配置
+- 支持官方 API 配置"
+
+# 直接指定完整信息（兼容旧方式）
+./scripts/others/commit.sh -m "feat: 新增功能"
+```
+
+**提交格式：**
+
+```
+<type>[(<scope>)]: <description>
+
+[body]
+
+Co-Authored-By: Claude (claude-4.5-opus) <noreply@anthropic.com>
+```
+
+### release.sh - 发布脚本
+
+发布新版本，自动完成以下操作：
+1. 更新 VERSION 文件
+2. 提交并推送到远程
+3. 创建 Git tag
+4. 计算 SHA256 并更新 Formula
+5. 同步 Formula 到 Homebrew tap 仓库
+
+```bash
+# 脚本位置
+./scripts/others/release.sh
+
+# 查看帮助
+./scripts/others/release.sh -h
+```
+
+**参数说明：**
+
+| 参数 | 说明 |
+|------|------|
+| `-y, --yes` | 非交互式模式（跳过确认） |
+| `patch` | 递增修订版本（默认）: v1.0.0 → v1.0.1 |
+| `minor` | 递增次版本: v1.0.0 → v1.1.0 |
+| `major` | 递增主版本: v1.0.0 → v2.0.0 |
+| `vX.Y.Z` | 指定精确版本号 |
+
+**使用示例：**
+
+```bash
+# 交互式发布（递增 patch 版本）
+./scripts/others/release.sh
+
+# 非交互式发布
+./scripts/others/release.sh -y
+
+# 递增 minor 版本
+./scripts/others/release.sh minor
+
+# 非交互式递增 minor 版本
+./scripts/others/release.sh -y minor
+
+# 指定精确版本
+./scripts/others/release.sh v2.0.0
+```
+
+**注意事项：**
+- 发布前必须先提交所有改动（可使用 commit.sh）
+- 如有未提交改动，脚本会报错并提示
+- Homebrew tap 仓库需要与主仓库在同一目录下
+
+### 典型开发流程
+
+```bash
+# 1. 开发完成后，提交改动
+./scripts/others/commit.sh -t feat -s "规则" -d "新增 xxx 规则"
+
+# 2. 发布新版本
+./scripts/others/release.sh -y
+
+# 或者非交互式一键完成
+./scripts/others/commit.sh -y -t feat -d "新增功能" && ./scripts/others/release.sh -y
+```
+
+## 提交类型说明
+
+| 类型 | 说明 |
+|------|------|
+| `feat` | 新功能 |
+| `fix` | Bug 修复 |
+| `docs` | 文档更新 |
+| `style` | 代码格式（不影响功能） |
+| `refactor` | 重构（既不是新功能也不是修复） |
+| `perf` | 性能优化 |
+| `test` | 测试相关 |
+| `chore` | 构建/工具/依赖等杂项 |
