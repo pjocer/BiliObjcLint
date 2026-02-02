@@ -92,51 +92,6 @@ show_help() {
     exit 0
 }
 
-show_manual() {
-    echo ""
-    echo "=========================================="
-    echo "     手动配置 Xcode Build Phase"
-    echo "=========================================="
-    echo ""
-    echo "推荐使用 --bootstrap 自动配置，或手动执行以下步骤："
-    echo ""
-    echo "1. 创建 scripts 目录（与 .xcworkspace/.xcodeproj 同级）"
-    echo ""
-    echo "2. 复制脚本到 scripts 目录:"
-    echo "   BREW_PREFIX=\$(brew --prefix biliobjclint)"
-    echo "   cp \"\$BREW_PREFIX/libexec/config/bootstrap.sh\" scripts/"
-    echo "   cp \"\$BREW_PREFIX/libexec/config/code_style_check.sh\" scripts/"
-    echo "   chmod +x scripts/*.sh"
-    echo ""
-    echo "3. 打开 Xcode 项目 → 选择 Target → Build Phases"
-    echo ""
-    echo "4. 添加 Package Manager Phase（点击 '+' → New Run Script Phase）:"
-    echo "   - 重命名为: [BiliObjcLint] Package Manager"
-    echo "   - 拖动到 Build Phases 最前面"
-    echo "   - 粘贴脚本:"
-    echo ""
-    echo "----------------------------------------"
-    echo '#!/bin/bash'
-    echo '"${SRCROOT}/../scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "${PROJECT_FILE_PATH}" -t "${TARGET_NAME}"'
-    echo "----------------------------------------"
-    echo ""
-    echo "5. 添加 Code Style Check Phase（点击 '+' → New Run Script Phase）:"
-    echo "   - 重命名为: [BiliObjcLint] Code Style Check"
-    echo "   - 放在 Package Manager 后面，Compile Sources 前面"
-    echo "   - 粘贴脚本:"
-    echo ""
-    echo "----------------------------------------"
-    echo '#!/bin/bash'
-    echo '"${SRCROOT}/../scripts/code_style_check.sh"'
-    echo "----------------------------------------"
-    echo ""
-    echo "6. 复制配置文件到项目根目录:"
-    echo "   BREW_PREFIX=\$(brew --prefix biliobjclint)"
-    echo "   cp \"\$BREW_PREFIX/libexec/config/default.yaml\" /你的项目根目录/.biliobjclint.yaml"
-    echo ""
-    exit 0
-}
-
 # 解析参数
 PROJECT_PATH=""
 PROJECT_NAME=""
@@ -146,7 +101,6 @@ SCRIPTS_DIR=""
 ACTION="add"
 DRY_RUN=""
 OVERRIDE=""
-MANUAL_MODE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -154,7 +108,7 @@ while [[ $# -gt 0 ]]; do
             show_help
             ;;
         --manual)
-            MANUAL_MODE=true
+            ACTION="manual"
             shift
             ;;
         --project|-p)
@@ -222,11 +176,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 手动模式
-if [ "$MANUAL_MODE" = true ]; then
-    show_manual
-fi
-
 # 检查项目路径
 if [ -z "$PROJECT_PATH" ]; then
     print_error "请指定项目路径"
@@ -287,6 +236,8 @@ else
         CMD_ARGS+=("--list-projects")
     elif [ "$ACTION" = "list-targets" ]; then
         CMD_ARGS+=("--list-targets")
+    elif [ "$ACTION" = "manual" ]; then
+        CMD_ARGS+=("--manual")
     fi
 
     if [ -n "$DRY_RUN" ]; then

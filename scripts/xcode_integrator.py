@@ -738,6 +738,66 @@ class XcodeIntegrator:
         # 6. 保存项目
         return self.save(dry_run)
 
+    def show_manual(self) -> None:
+        """显示手动配置说明（使用自动计算的路径）"""
+        # 计算 scripts 目录相对于 SRCROOT 的路径
+        scripts_dir = self.project_path.parent / "scripts"
+        srcroot = self.get_project_srcroot()
+
+        if srcroot:
+            relative_path = os.path.relpath(scripts_dir, srcroot)
+            scripts_path = "${SRCROOT}/" + relative_path
+        else:
+            # 默认值
+            scripts_path = "${SRCROOT}/../scripts"
+
+        print("")
+        print("==========================================")
+        print("     手动配置 Xcode Build Phase")
+        print("==========================================")
+        print("")
+        print("推荐使用 --bootstrap 自动配置，或手动执行以下步骤：")
+        print("")
+        print("1. 创建 scripts 目录（与 .xcworkspace/.xcodeproj 同级）")
+        print(f"   mkdir -p {scripts_dir}")
+        print("")
+        print("2. 复制脚本到 scripts 目录:")
+        print("   BREW_PREFIX=$(brew --prefix biliobjclint)")
+        print('   cp "$BREW_PREFIX/libexec/config/bootstrap.sh" scripts/')
+        print('   cp "$BREW_PREFIX/libexec/config/code_style_check.sh" scripts/')
+        print("   chmod +x scripts/*.sh")
+        print("")
+        print("3. 打开 Xcode 项目 → 选择 Target → Build Phases")
+        print("")
+        print("4. 添加 Package Manager Phase（点击 '+' → New Run Script Phase）:")
+        print(f"   - 重命名为: {BOOTSTRAP_PHASE_NAME}")
+        print("   - 拖动到 Build Phases 最前面")
+        print("   - 粘贴脚本:")
+        print("")
+        print("----------------------------------------")
+        print("#!/bin/bash")
+        print(f'"{scripts_path}/bootstrap.sh" -w "${{WORKSPACE_PATH}}" -p "${{PROJECT_FILE_PATH}}" -t "${{TARGET_NAME}}"')
+        print("----------------------------------------")
+        print("")
+        print("5. 添加 Code Style Lint Phase（点击 '+' → New Run Script Phase）:")
+        print(f"   - 重命名为: {PHASE_NAME}")
+        print("   - 放在 Package Manager 后面，Compile Sources 前面")
+        print("   - 粘贴脚本:")
+        print("")
+        print("----------------------------------------")
+        print("#!/bin/bash")
+        print(f'"{scripts_path}/code_style_check.sh"')
+        print("----------------------------------------")
+        print("")
+        print("6. 复制配置文件到项目根目录:")
+        print("   BREW_PREFIX=$(brew --prefix biliobjclint)")
+        print(f'   cp "$BREW_PREFIX/libexec/config/default.yaml" {self.project_path.parent}/.biliobjclint.yaml')
+        print("")
+        print(f"注意: 以上路径基于您的项目结构自动计算")
+        print(f"      SRCROOT = {srcroot}")
+        print(f"      Scripts 相对路径 = {relative_path if srcroot else '../scripts'}")
+        print("")
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -810,6 +870,12 @@ def parse_args():
         help='强制覆盖已存在的 Lint Phase'
     )
 
+    parser.add_argument(
+        '--manual',
+        action='store_true',
+        help='显示手动配置说明（使用自动计算的路径）'
+    )
+
     return parser.parse_args()
 
 
@@ -850,6 +916,12 @@ def main():
         sys.exit(1)
 
     print(f"项目: {integrator.xcodeproj_path}")
+
+    # 显示手动配置说明
+    if args.manual:
+        integrator.show_manual()
+        logger.log_separator("Xcode Integration Session End")
+        sys.exit(0)
 
     # 列出 targets
     if args.list_targets:
