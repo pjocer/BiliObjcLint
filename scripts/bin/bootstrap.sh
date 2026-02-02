@@ -286,16 +286,21 @@ silent_update() {
         local changelog
         changelog=$(get_changelog_for_version "$remote_ver")
 
-        # 构建通知消息
+        # 构建弹窗消息
         local message
         if [ -n "$changelog" ]; then
-            message="更新内容:\n$changelog"
+            message="版本: $remote_ver
+
+更新内容:
+$changelog"
         else
-            message="查看更新详情: github.com/pjocer/BiliObjcLint/releases"
+            message="版本: $remote_ver
+
+查看更新详情: github.com/pjocer/BiliObjcLint/releases"
         fi
 
-        # 显示系统通知
-        osascript -e "display notification \"$message\" with title \"BiliObjCLint 已更新\" subtitle \"版本 $remote_ver\"" >/dev/null 2>&1 &
+        # 显示弹窗对话框（不阻塞，独立进程）
+        osascript -e "display dialog \"$message\" with title \"BiliObjCLint 已更新\" buttons {\"确定\"} default button \"确定\"" >/dev/null 2>&1 &
     fi
 }
 
@@ -306,18 +311,18 @@ check_and_update_background() {
         return 0
     fi
 
-    # 更新检测时间戳
-    save_update_state
-
     # 获取版本信息
     local local_ver remote_ver
     local_ver=$(get_local_version)
     remote_ver=$(get_remote_version)
 
-    # 版本检测失败则跳过
+    # 版本检测失败则跳过（不保存状态，下次继续尝试）
     if [ -z "$remote_ver" ] || [ -z "$local_ver" ]; then
         return 0
     fi
+
+    # 成功获取版本后才保存检测时间戳
+    save_update_state
 
     # 已是最新
     if [ "$local_ver" = "$remote_ver" ]; then
@@ -339,8 +344,9 @@ main() {
         install_biliobjclint
     else
         info "BiliObjCLint 已安装"
-        # 后台静默检测更新（完全不阻塞编译）
+        # 后台静默检测更新（使用 disown 确保进程不被 Xcode 终止）
         check_and_update_background &
+        disown
     fi
 
     # Step 2: Check lint phase status

@@ -143,6 +143,12 @@ cp $(brew --prefix)/share/biliobjclint/scripts/bin/bootstrap.sh /path/to/your/pr
 4. Check if Lint Build Phase exists, inject if not
 5. Check Lint Build Phase version, auto-upgrade script if outdated
 
+> 💡 **About auto-update detection:**
+> - State file is located at `~/.biliobjclint_update_state`, recording the last check time
+> - By default, checks for new versions every 24 hours to avoid frequent GitHub API requests
+> - To force an immediate update check, delete the state file: `rm -f ~/.biliobjclint_update_state`
+> - After update completes, a macOS system notification will show the new version and changelog
+
 ### 5. Install OCLint (Optional)
 
 If you need OCLint's deep AST analysis:

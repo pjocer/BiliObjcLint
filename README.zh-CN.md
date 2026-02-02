@@ -143,6 +143,12 @@ cp $(brew --prefix)/share/biliobjclint/scripts/bin/bootstrap.sh /path/to/your/pr
 4. 检查 Lint Build Phase 是否存在，不存在则自动注入
 5. 检查 Lint Build Phase 版本，有更新时自动升级脚本
 
+> 💡 **关于自动更新检测**：
+> - 状态文件位于 `~/.biliobjclint_update_state`，记录上次检测时间
+> - 默认每 24 小时检测一次新版本，避免频繁请求 GitHub API
+> - 如需强制立即检测更新，可删除状态文件：`rm -f ~/.biliobjclint_update_state`
+> - 更新完成后会通过 macOS 系统通知提示新版本号和更新内容
+
 ### 5. 安装 OCLint（可选）
 
 如果需要 OCLint 的深度 AST 分析：
