@@ -46,33 +46,18 @@ class MethodLengthRule(BaseRule):
                 # 方法结束
                 if brace_count <= 0 and '{' in content[sum(len(l)+1 for l in lines[:method_start_line]):]:
                     method_length = line_num - method_start_line + 1
+                    method_end_line = line_num
 
                     if method_length > max_lines:
-                        # 检查方法内是否有变更
-                        if not changed_lines:
-                            # 全量模式：在方法起始行报告
-                            report_line = method_start_line
-                            violations.append(self.create_violation(
-                                file_path=file_path,
-                                line=report_line,
-                                column=1,
-                                message=f"方法 '{method_name}' 共 {method_length} 行，超过限制 {max_lines} 行"
-                            ))
-                        else:
-                            # 增量模式：找到方法内第一个变更行
-                            changed_in_method = [
-                                l for l in range(method_start_line, line_num + 1)
-                                if l in changed_lines
-                            ]
-                            if changed_in_method:
-                                report_line = changed_in_method[0]
-                                violations.append(self.create_violation(
-                                    file_path=file_path,
-                                    line=report_line,
-                                    column=1,
-                                    message=f"方法 '{method_name}' 共 {method_length} 行，超过限制 {max_lines} 行（方法定义在第 {method_start_line} 行）"
-                                ))
-                            # 方法内没有变更，跳过不报告
+                        # 始终在方法定义行报告违规，设置 related_lines 为方法范围
+                        # 增量过滤时会检查 related_lines 与 changed_lines 是否有交集
+                        violations.append(self.create_violation(
+                            file_path=file_path,
+                            line=method_start_line,
+                            column=1,
+                            message=f"方法 '{method_name}' 共 {method_length} 行，超过限制 {max_lines} 行",
+                            related_lines=(method_start_line, method_end_line)
+                        ))
 
                     in_method = False
 

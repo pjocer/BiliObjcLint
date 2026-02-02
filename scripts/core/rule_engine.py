@@ -5,7 +5,7 @@ import os
 import sys
 import importlib.util
 from pathlib import Path
-from typing import List, Dict, Set, Type, Optional
+from typing import List, Dict, Set, Type, Optional, Tuple
 from abc import ABC, abstractmethod
 
 from .reporter import Violation, Severity
@@ -57,8 +57,18 @@ class BaseRule(ABC):
             return True
         return line_num in changed_lines
 
-    def create_violation(self, file_path: str, line: int, column: int, message: str) -> Violation:
-        """创建违规记录"""
+    def create_violation(self, file_path: str, line: int, column: int, message: str,
+                         related_lines: Optional[Tuple[int, int]] = None) -> Violation:
+        """
+        创建违规记录
+
+        Args:
+            file_path: 文件路径
+            line: 违规行号
+            column: 违规列号
+            message: 违规消息
+            related_lines: 关联行范围 (start, end)，用于增量过滤时判断是否保留
+        """
         return Violation(
             file_path=file_path,
             line=line,
@@ -66,7 +76,8 @@ class BaseRule(ABC):
             severity=self.severity,
             message=message,
             rule_id=self.identifier,
-            source='biliobjclint'
+            source='biliobjclint',
+            related_lines=related_lines
         )
 
 

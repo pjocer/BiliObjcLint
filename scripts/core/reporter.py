@@ -5,7 +5,7 @@ import json
 import sys
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Set, Tuple
 from pathlib import Path
 
 from .logger import get_logger
@@ -29,6 +29,7 @@ class Violation:
     rule_id: str
     source: str = "biliobjclint"  # biliobjclint | oclint
     pod_name: Optional[str] = None  # 所属本地 Pod 名称（None 表示主工程）
+    related_lines: Optional[Tuple[int, int]] = None  # 关联行范围 (start, end)，用于增量过滤
 
     def to_xcode_format(self) -> str:
         """
@@ -88,8 +89,15 @@ class Reporter:
             if v.file_path in changed_lines_map:
                 changed_lines = changed_lines_map[v.file_path]
                 # 如果没有指定变更行（新文件），保留所有
-                if not changed_lines or v.line in changed_lines:
+                if not changed_lines:
                     filtered.append(v)
+                elif v.line in changed_lines:
+                    filtered.append(v)
+                elif v.related_lines:
+                    # 检查关联行范围是否与变更行有交集
+                    start, end = v.related_lines
+                    if any(line in changed_lines for line in range(start, end + 1)):
+                        filtered.append(v)
             # 如果文件不在变更列表中，丢弃
 
         self.violations = filtered

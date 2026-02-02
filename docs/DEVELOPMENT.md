@@ -154,6 +154,100 @@ tail -f logs/biliobjclint_*.log
 3. 在 `config/default.yaml` 中添加默认配置
 4. 更新 README 的规则列表
 
+## 规则开发 API
+
+### create_violation 方法
+
+所有规则都继承自 `BaseRule`，可以使用 `create_violation` 方法创建违规记录：
+
+```python
+def create_violation(
+    self,
+    file_path: str,                              # 文件路径
+    line: int,                                   # 违规行号（从 1 开始）
+    column: int,                                 # 违规列号（从 1 开始）
+    message: str,                                # 违规消息
+    related_lines: Optional[Tuple[int, int]] = None  # 关联行范围（可选）
+) -> Violation
+```
+
+### related_lines 参数
+
+`related_lines` 是一个可选的元组 `(start_line, end_line)`，用于指定违规相关的行范围。
+
+**用途**：在增量检查模式下，`filter_by_changed_lines` 会检查以下条件之一是否满足：
+1. `violation.line` 在 `changed_lines` 中
+2. `violation.related_lines` 范围内有任意一行在 `changed_lines` 中
+
+**适用场景**：
+- **method_length** - 方法过长时，警告报告在方法定义行，但需要检查整个方法范围内是否有改动
+- **class_length** - 类过长检查
+- **block_retain_cycle** - block 跨多行时的循环引用检查
+- 任何需要检查「代码块整体」的规则
+
+### 使用示例
+
+**基本用法**（不使用 related_lines）：
+
+```python
+def check(self, file_path, content, lines, changed_lines):
+    violations = []
+    for line_num, line in enumerate(lines, 1):
+        if self.detect_issue(line):
+            violations.append(self.create_violation(
+                file_path=file_path,
+                line=line_num,
+                column=1,
+                message="发现问题"
+            ))
+    return violations
+```
+
+**使用 related_lines**（检查代码块整体）：
+
+```python
+def check(self, file_path, content, lines, changed_lines):
+    violations = []
+
+    # 假设检测到一个方法从第 10 行到第 100 行
+    method_start = 10
+    method_end = 100
+    method_length = method_end - method_start + 1
+
+    if method_length > 80:
+        # 警告报告在方法定义行（第 10 行）
+        # 但增量过滤时会检查整个方法范围（10-100 行）是否有改动
+        violations.append(self.create_violation(
+            file_path=file_path,
+            line=method_start,  # 报告位置：方法定义行
+            column=1,
+            message=f"方法过长，共 {method_length} 行",
+            related_lines=(method_start, method_end)  # 关联范围：整个方法
+        ))
+
+    return violations
+```
+
+### 增量过滤流程
+
+1. 规则检查生成 `Violation` 列表
+2. `reporter.filter_by_changed_lines()` 过滤违规：
+   - 如果 `violation.line` 在 `changed_lines` 中 → 保留
+   - 如果 `violation.related_lines` 与 `changed_lines` 有交集 → 保留
+   - 否则 → 过滤掉
+
+```
+示例：
+- 方法定义在第 10 行
+- 方法结束在第 100 行
+- 用户修改了第 50 行
+- related_lines = (10, 100)
+
+过滤检查：
+- violation.line (10) 不在 changed_lines → 继续检查
+- related_lines (10-100) 包含 50，与 changed_lines 有交集 → 保留违规
+```
+
 ## 代码规范
 
 - Python: 遵循 PEP 8

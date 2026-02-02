@@ -2,7 +2,7 @@
 Base Rule - 规则基类
 """
 from abc import ABC, abstractmethod
-from typing import List, Set, Optional
+from typing import List, Set, Optional, Tuple
 import sys
 
 # 添加路径以便导入
@@ -90,7 +90,8 @@ class BaseRule(ABC):
             return True
         return line_num in changed_lines
 
-    def create_violation(self, file_path: str, line: int, column: int, message: str) -> Violation:
+    def create_violation(self, file_path: str, line: int, column: int, message: str,
+                         related_lines: Optional[Tuple[int, int]] = None) -> Violation:
         """
         创建违规记录
 
@@ -99,6 +100,7 @@ class BaseRule(ABC):
             line: 行号（从 1 开始）
             column: 列号（从 1 开始）
             message: 违规消息
+            related_lines: 关联行范围 (start, end)，用于增量过滤时判断是否保留
         Returns:
             Violation 对象
         """
@@ -109,7 +111,8 @@ class BaseRule(ABC):
             severity=self.severity,
             message=message,
             rule_id=self.identifier,
-            source='biliobjclint'
+            source='biliobjclint',
+            related_lines=related_lines
         )
 
     def __repr__(self):
