@@ -27,12 +27,16 @@ try:
     from core.logger import get_logger
     logger = get_logger("background_upgrade")
 except Exception:
-    # 如果导入失败，使用简单的打印日志
+    # 如果导入失败，使用简单的打印日志（带时间戳）
+    import datetime
     class DummyLogger:
-        def info(self, msg): print(f"[INFO] {msg}")
-        def error(self, msg): print(f"[ERROR] {msg}")
-        def debug(self, msg): pass
-        def exception(self, msg): print(f"[EXCEPTION] {msg}")
+        def _log(self, level, msg):
+            ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{ts}] [{level}] {msg}", flush=True)
+        def info(self, msg): self._log("INFO", msg)
+        def error(self, msg): self._log("ERROR", msg)
+        def debug(self, msg): self._log("DEBUG", msg)
+        def exception(self, msg): self._log("EXCEPTION", msg)
     logger = DummyLogger()
 
 

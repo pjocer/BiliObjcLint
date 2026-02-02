@@ -16,6 +16,7 @@ import sys
 import subprocess
 import json
 import shutil
+import shlex
 import stat
 from pathlib import Path
 from typing import Optional, Tuple
@@ -193,33 +194,61 @@ def background_upgrade(
 
     # 构建命令参数
     upgrade_script = SCRIPT_DIR / 'background_upgrade.py'
-    cmd = [
-        'python3', str(upgrade_script),
+    args = [
         '--local-ver', local_ver,
         '--remote-ver', remote_ver,
     ]
     if scripts_dir:
-        cmd.extend(['--scripts-dir', str(scripts_dir)])
+        args.extend(['--scripts-dir', str(scripts_dir)])
     if project_path:
-        cmd.extend(['--project-path', project_path])
+        args.extend(['--project-path', project_path])
     if target_name:
-        cmd.extend(['--target-name', target_name])
+        args.extend(['--target-name', target_name])
     if project_name:
-        cmd.extend(['--project-name', project_name])
+        args.extend(['--project-name', project_name])
 
     try:
-        # 创建日志目录和文件
+        # 创建日志目录
         log_dir = Path.home() / '.biliobjclint'
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / 'background_upgrade.log'
 
-        # 启动独立的 Python 进程执行升级
-        # start_new_session=True 使进程独立于父进程，父进程退出后仍能继续运行
+        # 清空旧日志
+        log_file.write_text(f"=== Background upgrade started: {local_ver} -> {remote_ver} ===\n")
+
+        # 获取 venv Python 路径（brew upgrade 后需要使用新版本的 venv）
+        # 由于 brew upgrade 会更新 symlink，这里获取的是当前（旧版本）的 venv
+        # 但旧版本的 venv 也有 pbxproj，所以可以用来启动脚本
+        # 脚本执行时会动态导入新版本的 xcode_integrator
+        brew_prefix = get_brew_prefix()
+        if brew_prefix:
+            venv_python = brew_prefix / 'libexec' / '.venv' / 'bin' / 'python3'
+            if venv_python.exists():
+                python_path = str(venv_python)
+            else:
+                python_path = 'python3'
+                logger.info(f"Venv python not found at {venv_python}, using system python3")
+        else:
+            python_path = 'python3'
+            logger.info("brew prefix not found, using system python3")
+
+        # 使用 shell 命令启动后台进程，确保日志重定向正确工作
+        # nohup + & 确保进程完全脱离父进程
+        # 使用 shlex.quote 确保所有参数正确转义（处理空格等特殊字符）
+        args_quoted = ' '.join(shlex.quote(arg) for arg in args)
+        script_path = shlex.quote(str(upgrade_script))
+        log_path = shlex.quote(str(log_file))
+        python_quoted = shlex.quote(python_path)
+        shell_cmd = f'nohup {python_quoted} {script_path} {args_quoted} >> {log_path} 2>&1 &'
+
+        logger.info(f"Shell command: {shell_cmd}")
+
         subprocess.Popen(
-            cmd,
-            stdout=open(log_file, 'a'),
-            stderr=subprocess.STDOUT,
+            shell_cmd,
+            shell=True,
             stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
         logger.info(f"Background upgrade process started, log: {log_file}")
