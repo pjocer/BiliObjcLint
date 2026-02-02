@@ -436,14 +436,69 @@ class XcodeIntegrator:
             self.logger.error("No project loaded, cannot save")
             return False
 
+        # 获取 pbxproj 文件路径
+        pbxproj_path = self.xcodeproj_path / "project.pbxproj"
+        backup_path = self.xcodeproj_path / "project.pbxproj.backup"
+
         try:
+            # 创建备份
+            if pbxproj_path.exists():
+                import shutil
+                shutil.copy2(pbxproj_path, backup_path)
+                original_size = pbxproj_path.stat().st_size
+                self.logger.info(f"Created backup: {backup_path} (size: {original_size})")
+
+            # 保存项目
             self.project.save()
+
+            # 验证保存结果
+            if pbxproj_path.exists():
+                new_size = pbxproj_path.stat().st_size
+                self.logger.info(f"Saved file size: {new_size}")
+
+                # 检查文件是否被清空
+                if new_size == 0:
+                    self.logger.error("CRITICAL: Project file became empty after save!")
+                    # 从备份恢复
+                    if backup_path.exists():
+                        shutil.copy2(backup_path, pbxproj_path)
+                        self.logger.info("Restored from backup")
+                        print(f"Error: 项目文件保存异常，已从备份恢复", file=sys.stderr)
+                    return False
+
+                # 验证文件格式
+                import subprocess
+                result = subprocess.run(
+                    ['plutil', '-lint', str(pbxproj_path)],
+                    capture_output=True, text=True
+                )
+                if result.returncode != 0:
+                    self.logger.error(f"Project file validation failed: {result.stderr}")
+                    # 从备份恢复
+                    if backup_path.exists():
+                        shutil.copy2(backup_path, pbxproj_path)
+                        self.logger.info("Restored from backup due to validation failure")
+                        print(f"Error: 项目文件格式无效，已从备份恢复", file=sys.stderr)
+                    return False
+
+            # 删除备份
+            if backup_path.exists():
+                backup_path.unlink()
+
             self.logger.info(f"Project saved successfully: {self.xcodeproj_path}")
             print(f"✓ 项目已保存: {self.xcodeproj_path}")
             return True
 
         except Exception as e:
             self.logger.exception(f"Failed to save project: {e}")
+            # 尝试从备份恢复
+            if backup_path.exists():
+                try:
+                    import shutil
+                    shutil.copy2(backup_path, pbxproj_path)
+                    self.logger.info("Restored from backup after exception")
+                except Exception:
+                    pass
             print(f"Error: 保存项目失败: {e}", file=sys.stderr)
             return False
 
