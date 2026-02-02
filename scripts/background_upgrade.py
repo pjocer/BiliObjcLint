@@ -52,6 +52,9 @@ class FileLogger:
 
 logger = FileLogger()
 
+# 导入 scripts_path 工具模块
+from core import scripts_path_utils
+
 
 def get_brew_prefix() -> Optional[Path]:
     """获取 biliobjclint 的 brew 安装路径"""
@@ -212,13 +215,14 @@ def update_build_phase(
                 logger.info(f"Build Phase already at version {SCRIPT_VERSION}")
                 return True
 
-        # 计算 scripts_path 相对于 SRCROOT 的路径
-        srcroot = integrator.get_project_srcroot()
-        if srcroot and scripts_dir:
-            relative_path = os.path.relpath(scripts_dir, srcroot)
-            scripts_path_in_phase = "${SRCROOT}/" + relative_path
+        # 从持久化存储获取 scripts_path
+        saved_path = scripts_path_utils.get(project_path, project_name, target_name)
+        if saved_path:
+            scripts_path_in_phase = scripts_path_utils.get_srcroot_path(saved_path)
+            logger.info(f"Loaded scripts path from store: {saved_path}")
         else:
-            scripts_path_in_phase = "${SRCROOT}/../scripts"
+            logger.error("No scripts path found in store, please run --bootstrap first")
+            return False
 
         # 更新 Build Phase
         success = integrator.add_lint_phase(
@@ -316,13 +320,14 @@ def update_build_phase_with_new_version(
             current_version = integrator.get_lint_phase_version(target)
             logger.info(f"Current Build Phase version: {current_version}")
 
-        # 计算 scripts_path 相对于 SRCROOT 的路径
-        srcroot = integrator.get_project_srcroot()
-        if srcroot and scripts_dir:
-            relative_path = os.path.relpath(scripts_dir, srcroot)
-            scripts_path_in_phase = "${SRCROOT}/" + relative_path
+        # 从持久化存储获取 scripts_path
+        saved_path = scripts_path_utils.get(project_path, project_name, target_name)
+        if saved_path:
+            scripts_path_in_phase = scripts_path_utils.get_srcroot_path(saved_path)
+            logger.info(f"Loaded scripts path from store: {saved_path}")
         else:
-            scripts_path_in_phase = "${SRCROOT}/../scripts"
+            logger.error("No scripts path found in store, please run --bootstrap first")
+            return False
 
         # 更新 Build Phase
         success = integrator.add_lint_phase(

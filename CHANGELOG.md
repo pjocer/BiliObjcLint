@@ -2,6 +2,17 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.2.2 (2026-02-02)
+
+### 修复
+- 修复 `add_lint_phase()` 中 scripts_path 默认值计算错误的问题
+  - `--bootstrap` 执行时自动计算并持久化 scripts 相对路径
+  - 路径存储在 `~/.biliobjclint/scripts_paths.json`
+  - 后续更新 Build Phase 时从持久化存储读取，确保路径一致
+
+### 改进
+- 增强 `copy_config` 日志输出，显示配置文件目标路径和状态
+
 ## v1.2.1 (2026-02-02)
 
 ### 修复

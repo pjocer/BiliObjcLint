@@ -141,6 +141,17 @@ tail -f "$brew_logs"/check_update_*.log
 cat ~/.biliobjclint/background_upgrade.log
 ```
 
+**scripts 路径持久化存储**：
+- 位于用户目录：`~/.biliobjclint/scripts_paths.json`
+- 存储 `--bootstrap` 执行时计算的 scripts 相对路径
+- Key 格式：`{project_path}|{project_name}|{target_name}`
+- Value：scripts 目录相对于 SRCROOT 的路径
+
+```bash
+# 查看 scripts 路径配置
+cat ~/.biliobjclint/scripts_paths.json
+```
+
 ### 日志文件类型
 
 | 文件模式 | 说明 |

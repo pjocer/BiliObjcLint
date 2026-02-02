@@ -69,6 +69,9 @@ BOOTSTRAP_SCRIPT_TEMPLATE = '''#!/bin/bash
 "{scripts_path}/bootstrap.sh" -w "${{WORKSPACE_PATH}}" -p "${{PROJECT_FILE_PATH}}" -t "${{TARGET_NAME}}"
 '''
 
+# 导入 scripts_path 工具模块
+from core import scripts_path_utils
+
 
 class XcodeIntegrator:
     """Xcode 项目集成器"""
@@ -315,16 +318,22 @@ class XcodeIntegrator:
                 print(f"Target '{target.name}' 已存在 Lint Phase，跳过（使用 --override 强制覆盖）")
                 return True
 
-        # 计算 scripts_path（如果未提供）
+        # 获取 scripts_path（如果未提供）
         if not scripts_path:
-            srcroot = self.get_project_srcroot()
-            if srcroot:
-                # 假设 scripts 目录在 project_path 的同级
-                scripts_dir = self.project_path.parent / "scripts"
-                scripts_path = "${SRCROOT}/" + os.path.relpath(scripts_dir, srcroot)
+            # 从持久化存储读取
+            saved_path = scripts_path_utils.get(
+                str(self.project_path),
+                self.project_name,
+                target.name
+            )
+            if saved_path:
+                scripts_path = scripts_path_utils.get_srcroot_path(saved_path)
+                self.logger.debug(f"Loaded scripts path from store: {saved_path}")
             else:
-                # 默认值
-                scripts_path = "${SRCROOT}/../scripts"
+                # 没有保存的路径，需要先执行 --bootstrap
+                self.logger.error("No scripts path found in store, please run --bootstrap first")
+                print("Error: 未找到 scripts 路径配置，请先执行 --bootstrap", file=sys.stderr)
+                return False
 
         script_content = LINT_SCRIPT_TEMPLATE.format(
             version=SCRIPT_VERSION,
@@ -505,6 +514,7 @@ class XcodeIntegrator:
     def copy_config(self, dry_run: bool = False) -> bool:
         """复制配置文件到项目目录（传入路径的父目录）"""
         self.logger.info("Copying config file...")
+        print("正在检查配置文件...")
 
         # 使用传入路径的父目录，而不是解析出的 xcodeproj 的父目录
         # 这样可以正确处理 .xcworkspace 和 .xcodeproj 的情况
@@ -515,12 +525,13 @@ class XcodeIntegrator:
         config_dest = config_dir / '.biliobjclint.yaml'
         config_src = self.lint_path / 'config' / 'default.yaml'
 
-        self.logger.debug(f"Config source: {config_src}")
-        self.logger.debug(f"Config destination: {config_dest}")
+        self.logger.info(f"Config source: {config_src}")
+        self.logger.info(f"Config destination: {config_dest}")
+        print(f"  配置文件目标路径: {config_dest}")
 
         if config_dest.exists():
             self.logger.info(f"Config file already exists: {config_dest}")
-            print(f"配置文件已存在: {config_dest}")
+            print(f"✓ 配置文件已存在: {config_dest}")
             return True
 
         if dry_run:
@@ -785,6 +796,16 @@ class XcodeIntegrator:
         print(f"SRCROOT: {srcroot}")
         print(f"Scripts 相对路径: {relative_path}")
         print()
+
+        # 4.5 保存 scripts 相对路径到持久化存储
+        if not dry_run:
+            scripts_path_utils.save(
+                str(self.project_path),
+                self.project_name,
+                target.name,
+                relative_path
+            )
+            self.logger.info(f"Saved scripts path to store: {relative_path}")
 
         # 5. 添加 Bootstrap Build Phase
         if not self.add_bootstrap_phase(target, relative_path, dry_run):

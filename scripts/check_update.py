@@ -35,6 +35,9 @@ GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/tags"
 
 logger = get_logger("check_update")
 
+# 导入 scripts_path 工具模块
+from core import scripts_path_utils
+
 
 def get_local_version() -> Optional[str]:
     """从本地 VERSION 文件读取版本号"""
@@ -409,13 +412,15 @@ def do_check_and_inject(
                 print(f"[BiliObjCLint] Target '{target.name}' 已存在 Lint Phase (v{current_version})")
                 return True
 
-        # 计算 scripts_path 相对于 SRCROOT 的路径
-        srcroot = integrator.get_project_srcroot()
-        if srcroot and scripts_dir:
-            relative_path = os.path.relpath(scripts_dir, srcroot)
-            scripts_path_in_phase = "${SRCROOT}/" + relative_path
+        # 从持久化存储获取 scripts_path
+        saved_path = scripts_path_utils.get(project_path, project_name, target_name)
+        if saved_path:
+            scripts_path_in_phase = scripts_path_utils.get_srcroot_path(saved_path)
+            logger.info(f"Loaded scripts path from store: {saved_path}")
         else:
-            scripts_path_in_phase = "${SRCROOT}/../scripts"
+            logger.error("No scripts path found in store, please run --bootstrap first")
+            print("[BiliObjCLint] Error: 未找到 scripts 路径配置，请先执行 --bootstrap", file=sys.stderr)
+            return False
 
         # 注入 Build Phase
         success = integrator.add_lint_phase(
