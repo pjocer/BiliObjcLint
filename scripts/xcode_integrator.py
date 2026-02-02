@@ -644,6 +644,7 @@ class XcodeIntegrator:
             创建的 phase 的 ID
         """
         from pbxproj import PBXGenericObject
+        from pbxproj.PBXKey import PBXKey
 
         # 生成唯一 ID
         import hashlib
@@ -665,6 +666,8 @@ class XcodeIntegrator:
         }
 
         phase = PBXGenericObject().parse(phase_data)
+        # 必须在添加到 project.objects 之前设置 _id，否则排序比较会失败
+        phase._id = PBXKey(phase_id, self.project.objects)
         self.project.objects[phase_id] = phase
 
         return phase_id
