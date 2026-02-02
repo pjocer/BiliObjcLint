@@ -277,11 +277,20 @@ silent_update() {
     local local_ver="$1"
     local remote_ver="$2"
 
+    log_update "silent_update: Starting brew update..."
+
     # 静默执行 brew upgrade（重定向所有输出）
     brew update >/dev/null 2>&1
-    brew upgrade biliobjclint >/dev/null 2>&1
+    local brew_update_exit=$?
+    log_update "silent_update: brew update exit code: $brew_update_exit"
 
-    if [ $? -eq 0 ]; then
+    brew upgrade biliobjclint >/dev/null 2>&1
+    local brew_upgrade_exit=$?
+    log_update "silent_update: brew upgrade exit code: $brew_upgrade_exit"
+
+    if [ $brew_upgrade_exit -eq 0 ]; then
+        log_update "silent_update: brew upgrade succeeded, preparing dialog..."
+
         # 获取更新内容
         local changelog
         changelog=$(get_changelog_for_version "$remote_ver")
@@ -299,39 +308,67 @@ $changelog"
 查看更新详情: github.com/pjocer/BiliObjcLint/releases"
         fi
 
+        log_update "silent_update: Showing dialog with message: ${message:0:100}..."
+
         # 显示弹窗对话框（不阻塞，独立进程）
         osascript -e "display dialog \"$message\" with title \"BiliObjCLint 已更新\" buttons {\"确定\"} default button \"确定\"" >/dev/null 2>&1 &
+        log_update "silent_update: osascript launched"
+    else
+        log_update "silent_update: brew upgrade failed with exit code $brew_upgrade_exit"
     fi
+}
+
+# 更新日志文件
+UPDATE_LOG_FILE="$HOME/.biliobjclint_update.log"
+
+# 写入更新日志
+log_update() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$UPDATE_LOG_FILE"
 }
 
 # 后台检测并更新
 check_and_update_background() {
+    log_update "=== Update check started ==="
+
     # 检查是否需要检测
     if ! should_check_update; then
+        log_update "Skipped: within 24h cooldown"
         return 0
     fi
+
+    log_update "Passed cooldown check, fetching versions..."
 
     # 获取版本信息
     local local_ver remote_ver
     local_ver=$(get_local_version)
     remote_ver=$(get_remote_version)
 
+    log_update "Local version: $local_ver"
+    log_update "Remote version: $remote_ver"
+
     # 版本检测失败则跳过（不保存状态，下次继续尝试）
     if [ -z "$remote_ver" ] || [ -z "$local_ver" ]; then
+        log_update "Skipped: version fetch failed (local=$local_ver, remote=$remote_ver)"
         return 0
     fi
 
     # 成功获取版本后才保存检测时间戳
     save_update_state
+    log_update "Saved update state"
 
     # 已是最新
     if [ "$local_ver" = "$remote_ver" ]; then
+        log_update "Already up to date"
         return 0
     fi
 
     # 比较版本，确认远端更新
     if version_gt "$remote_ver" "$local_ver"; then
+        log_update "Update available: $local_ver -> $remote_ver, starting silent_update..."
         silent_update "$local_ver" "$remote_ver"
+        log_update "silent_update completed"
+    else
+        log_update "Local version is newer or equal"
     fi
 }
 
