@@ -54,25 +54,38 @@ def get_changelog_for_version(version: str) -> str:
     """获取指定版本的 CHANGELOG"""
     try:
         brew_prefix = get_brew_prefix()
+        logger.info(f"Looking for changelog, brew_prefix: {brew_prefix}, version: {version}")
         if brew_prefix:
             changelog_file = brew_prefix / 'libexec' / 'CHANGELOG.md'
+            logger.info(f"Changelog file path: {changelog_file}, exists: {changelog_file.exists()}")
             if changelog_file.exists():
                 content = changelog_file.read_text()
                 lines = content.split('\n')
                 in_version = False
                 changelog_lines = []
+                search_pattern = f'## v{version}'
+                logger.info(f"Searching for pattern: {search_pattern}")
                 for line in lines:
                     if line.startswith(f'## v{version}') or line.startswith(f'## [{version}'):
                         in_version = True
+                        logger.info(f"Found version header: {line}")
                         continue
                     elif line.startswith('## ') and in_version:
                         break
                     elif in_version:
                         changelog_lines.append(line)
                 if changelog_lines:
-                    return '\n'.join(changelog_lines).strip()
+                    result = '\n'.join(changelog_lines).strip()
+                    logger.info(f"Found changelog content, length: {len(result)}")
+                    return result
+                else:
+                    logger.info("No changelog content found for this version")
+            else:
+                logger.info("Changelog file does not exist")
+        else:
+            logger.info("brew_prefix is None")
     except Exception as e:
-        logger.debug(f"Failed to get changelog: {e}")
+        logger.exception(f"Failed to get changelog: {e}")
     return ""
 
 
@@ -135,7 +148,84 @@ def copy_scripts_to_project(scripts_dir: Path, force: bool = False) -> bool:
     return success
 
 
-def do_upgrade(local_ver: str, remote_ver: str, scripts_dir: Optional[str] = None) -> bool:
+def update_build_phase(
+    project_path: str,
+    target_name: Optional[str] = None,
+    project_name: Optional[str] = None,
+    scripts_dir: Optional[str] = None
+) -> bool:
+    """
+    更新 Build Phase 到最新版本
+
+    Args:
+        project_path: Xcode 项目路径
+        target_name: Target 名称
+        project_name: 项目名称（用于 workspace）
+        scripts_dir: scripts 目录路径
+
+    Returns:
+        是否成功
+    """
+    try:
+        import os
+        from xcode_integrator import XcodeIntegrator, SCRIPT_VERSION
+
+        brew_prefix = get_brew_prefix()
+        lint_path = str(brew_prefix / 'libexec') if brew_prefix else str(SCRIPT_DIR.parent)
+
+        integrator = XcodeIntegrator(project_path, lint_path, project_name)
+
+        if not integrator.load_project():
+            logger.error("Failed to load project")
+            return False
+
+        target = integrator.get_target(target_name)
+        if not target:
+            logger.error(f"Target not found: {target_name}")
+            return False
+
+        current_version = None
+        if integrator.has_lint_phase(target):
+            current_version = integrator.get_lint_phase_version(target)
+            if current_version == SCRIPT_VERSION:
+                logger.info(f"Build Phase already at version {SCRIPT_VERSION}")
+                return True
+
+        # 计算 scripts_path 相对于 SRCROOT 的路径
+        srcroot = integrator.get_project_srcroot()
+        if srcroot and scripts_dir:
+            relative_path = os.path.relpath(scripts_dir, srcroot)
+            scripts_path_in_phase = "${SRCROOT}/" + relative_path
+        else:
+            scripts_path_in_phase = "${SRCROOT}/../scripts"
+
+        # 更新 Build Phase
+        success = integrator.add_lint_phase(
+            target,
+            dry_run=False,
+            override=True,
+            scripts_path=scripts_path_in_phase
+        )
+
+        if success:
+            integrator.save()
+            logger.info(f"Build Phase updated: {current_version} -> {SCRIPT_VERSION}")
+
+        return success
+
+    except Exception as e:
+        logger.exception(f"Failed to update build phase: {e}")
+        return False
+
+
+def do_upgrade(
+    local_ver: str,
+    remote_ver: str,
+    scripts_dir: Optional[str] = None,
+    project_path: Optional[str] = None,
+    target_name: Optional[str] = None,
+    project_name: Optional[str] = None
+) -> bool:
     """
     执行 brew upgrade
 
@@ -143,6 +233,9 @@ def do_upgrade(local_ver: str, remote_ver: str, scripts_dir: Optional[str] = Non
         local_ver: 当前本地版本
         remote_ver: 远端最新版本
         scripts_dir: 目标工程 scripts 目录路径
+        project_path: Xcode 项目路径
+        target_name: Target 名称
+        project_name: 项目名称
 
     Returns:
         是否成功
@@ -171,7 +264,12 @@ def do_upgrade(local_ver: str, remote_ver: str, scripts_dir: Optional[str] = Non
             if scripts_dir:
                 copy_scripts_to_project(Path(scripts_dir), force=True)
 
-            # 4. 显示弹窗
+            # 4. 更新 Build Phase
+            if project_path:
+                logger.info("Updating Build Phase...")
+                update_build_phase(project_path, target_name, project_name, scripts_dir)
+
+            # 5. 显示弹窗
             changelog = get_changelog_for_version(remote_ver)
             show_update_dialog(remote_ver, changelog)
 
@@ -216,6 +314,24 @@ def parse_args():
         help='目标工程 scripts 目录路径'
     )
 
+    parser.add_argument(
+        '--project-path',
+        default=None,
+        help='Xcode 项目路径'
+    )
+
+    parser.add_argument(
+        '--target-name',
+        default=None,
+        help='Target 名称'
+    )
+
+    parser.add_argument(
+        '--project-name',
+        default=None,
+        help='项目名称（用于 workspace）'
+    )
+
     return parser.parse_args()
 
 
@@ -225,8 +341,19 @@ def main():
     logger.info(f"Background upgrade started: {args.local_ver} -> {args.remote_ver}")
     if args.scripts_dir:
         logger.info(f"Scripts dir: {args.scripts_dir}")
+    if args.project_path:
+        logger.info(f"Project path: {args.project_path}")
+    if args.target_name:
+        logger.info(f"Target name: {args.target_name}")
 
-    success = do_upgrade(args.local_ver, args.remote_ver, args.scripts_dir)
+    success = do_upgrade(
+        args.local_ver,
+        args.remote_ver,
+        args.scripts_dir,
+        args.project_path,
+        args.target_name,
+        args.project_name
+    )
 
     logger.info(f"Background upgrade finished: success={success}")
     sys.exit(0 if success else 1)

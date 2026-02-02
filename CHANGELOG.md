@@ -2,6 +2,16 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.1.34 (2026-02-02)
+
+### 修复
+- 修复 brew upgrade 完成后 Build Phase 版本号不更新的问题
+- brew upgrade 完成后自动更新 Build Phase 到最新版本
+- 修复弹窗被 Xcode 中断时的 KeyboardInterrupt 异常
+
+### 改进
+- 添加 CHANGELOG 读取调试日志，便于排查问题
+
 ## v1.1.33 (2026-02-02)
 
 ### 改进

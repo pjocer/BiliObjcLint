@@ -172,16 +172,26 @@ def show_lint_phase_update_dialog(old_version: str, new_version: str):
         display dialog "{message}" with title "{title}" buttons {{"OK"}} default button "OK"
         '''
         subprocess.run(['osascript', '-e', script], capture_output=True, timeout=30)
+    except KeyboardInterrupt:
+        logger.debug("Dialog interrupted by user")
     except Exception as e:
         logger.debug(f"Failed to show lint phase update dialog: {e}")
 
 
-def background_upgrade(local_ver: str, remote_ver: str, scripts_dir: Optional[Path] = None):
+def background_upgrade(
+    local_ver: str,
+    remote_ver: str,
+    scripts_dir: Optional[Path] = None,
+    project_path: Optional[str] = None,
+    target_name: Optional[str] = None,
+    project_name: Optional[str] = None
+):
     """
     后台执行 brew upgrade
 
     使用独立子进程执行更新，确保主进程退出后更新仍能继续。
     调用同级目录的 background_upgrade.py 脚本执行实际升级操作。
+    升级完成后会更新 Build Phase。
     """
     logger.info(f"Starting background upgrade: {local_ver} -> {remote_ver}")
 
@@ -194,6 +204,12 @@ def background_upgrade(local_ver: str, remote_ver: str, scripts_dir: Optional[Pa
     ]
     if scripts_dir:
         cmd.extend(['--scripts-dir', str(scripts_dir)])
+    if project_path:
+        cmd.extend(['--project-path', project_path])
+    if target_name:
+        cmd.extend(['--target-name', target_name])
+    if project_name:
+        cmd.extend(['--project-name', project_name])
 
     try:
         # 创建日志目录和文件
@@ -308,9 +324,15 @@ def do_check_and_inject(
         logger.info(f"Update available: {local_ver} -> {remote_ver}")
         print(f"[BiliObjCLint] 发现新版本: {local_ver} -> {remote_ver}")
 
-        # 2. 后台执行 brew upgrade
+        # 2. 后台执行 brew upgrade，传递项目信息以便升级后更新 Build Phase
         scripts_path = Path(scripts_dir) if scripts_dir else None
-        background_upgrade(local_ver, remote_ver, scripts_path)
+        background_upgrade(
+            local_ver, remote_ver, scripts_path,
+            project_path=project_path,
+            target_name=target_name,
+            project_name=project_name
+        )
+        return True
 
     # 3. 复制脚本到目标工程（如果不存在）
     if scripts_dir:
