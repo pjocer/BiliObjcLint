@@ -27,7 +27,7 @@ fi
 # 检查 venv 是否存在
 if [ ! -f "$VENV_PYTHON" ]; then
     echo "Error: Python virtual environment not found" >&2
-    echo "Please run: $PROJECT_ROOT/scripts/bin/setup_env.sh" >&2
+    echo "Please run: $PROJECT_ROOT/setup_env.sh" >&2
     exit 1
 fi
 

@@ -13,9 +13,7 @@ BiliObjCLint/
 │   ├── xcode_integrator.py   # Xcode 集成工具
 │   ├── bin/                  # 可执行脚本
 │   │   ├── biliobjclint.sh   # biliobjclint 命令入口
-│   │   ├── biliobjclint-xcode.sh  # Xcode 集成命令入口
-│   │   ├── bootstrap.sh      # Bootstrap 脚本（自动安装/更新）
-│   │   └── setup_env.sh      # 环境初始化脚本
+│   │   └── biliobjclint-xcode.sh  # Xcode 集成命令入口
 │   ├── claude/               # Claude AI 自动修复模块
 │   │   ├── fixer.py          # 修复器主逻辑
 │   │   ├── http_server.py    # HTTP 服务器（处理浏览器请求）
@@ -36,12 +34,15 @@ BiliObjCLint/
 │   │   └── commit.sh         # 提交脚本
 │   └── lib/
 │       └── logging.sh        # Shell 日志库
+├── config/
+│   ├── default.yaml          # 默认配置模板
+│   ├── bootstrap.sh          # Bootstrap 脚本（自动安装/更新）
+│   └── code_style_check.sh   # 代码规范审查脚本
 ├── custom_rules/
 │   └── python/               # 自定义 Python 规则
-├── config/
-│   └── default.yaml          # 默认配置模板
 ├── docs/                     # 开发文档
 ├── logs/                     # 运行日志（gitignore）
+├── setup_env.sh              # 环境初始化脚本
 └── VERSION                   # 版本号文件
 ```
 
@@ -53,7 +54,7 @@ git clone https://github.com/pjocer/BiliObjcLint.git
 cd BiliObjcLint
 
 # 初始化 Python 虚拟环境
-./scripts/bin/setup_env.sh
+./setup_env.sh
 
 # 激活虚拟环境（可选，用于开发调试）
 source .venv/bin/activate

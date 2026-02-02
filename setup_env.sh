@@ -3,7 +3,7 @@
 # 环境初始化脚本
 #
 # 用法:
-#   ./scripts/bin/setup_env.sh
+#   ./setup_env.sh
 #
 # 此脚本会:
 # 1. 创建 Python 虚拟环境
@@ -25,9 +25,9 @@ print_warn() {
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
-# 获取脚本所在目录
+# 获取脚本所在目录（现在位于项目根目录）
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+PROJECT_ROOT="$SCRIPT_DIR"
 
 cd "$PROJECT_ROOT"
 

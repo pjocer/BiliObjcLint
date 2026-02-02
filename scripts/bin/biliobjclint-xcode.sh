@@ -15,6 +15,8 @@
 #   --remove             移除已添加的 Lint Phase
 #   --override           强制覆盖已存在的 Lint Phase
 #   --check-update       检查已注入脚本是否需要更新
+#   --check-and-inject   检查版本更新并注入 Code Style Check Build Phase（由 bootstrap.sh 调用）
+#   --scripts-dir PATH   项目 scripts 目录路径（与 --check-and-inject 配合使用）
 #   --bootstrap          自动复制 bootstrap.sh 并注入 Package Manager Build Phase
 #   --list-projects      列出 workspace 中所有项目
 #   --list-targets       列出所有可用的 Targets
@@ -90,81 +92,47 @@ show_help() {
     exit 0
 }
 
-# TODO: 优化 show_manual 功能
-# 1. 生成的脚本应该使用 Homebrew 安装路径而非开发路径
-# 2. 考虑支持生成适配不同安装方式的脚本模板
 show_manual() {
-    local LINT_PATH="$PROJECT_ROOT"
-
     echo ""
     echo "=========================================="
     echo "     手动配置 Xcode Build Phase"
     echo "=========================================="
     echo ""
-    echo "1. 打开 Xcode 项目"
-    echo "2. 选择 Target → Build Phases"
-    echo "3. 点击 '+' → New Run Script Phase"
-    echo "4. 将此 Phase 拖动到 'Compile Sources' 之前"
-    echo "5. 粘贴以下脚本:"
+    echo "推荐使用 --bootstrap 自动配置，或手动执行以下步骤："
+    echo ""
+    echo "1. 创建 scripts 目录（与 .xcworkspace/.xcodeproj 同级）"
+    echo ""
+    echo "2. 复制脚本到 scripts 目录:"
+    echo "   BREW_PREFIX=\$(brew --prefix biliobjclint)"
+    echo "   cp \"\$BREW_PREFIX/libexec/config/bootstrap.sh\" scripts/"
+    echo "   cp \"\$BREW_PREFIX/libexec/config/code_style_check.sh\" scripts/"
+    echo "   chmod +x scripts/*.sh"
+    echo ""
+    echo "3. 打开 Xcode 项目 → 选择 Target → Build Phases"
+    echo ""
+    echo "4. 添加 Package Manager Phase（点击 '+' → New Run Script Phase）:"
+    echo "   - 重命名为: [BiliObjcLint] Package Manager"
+    echo "   - 拖动到 Build Phases 最前面"
+    echo "   - 粘贴脚本:"
     echo ""
     echo "----------------------------------------"
-    cat << SCRIPT
-#!/bin/bash
-
-# BiliObjCLint - Objective-C 代码规范检查
-
-LINT_PATH="${LINT_PATH}"
-CONFIG_PATH="\${SRCROOT}/.biliobjclint.yaml"
-PYTHON_BIN="\${LINT_PATH}/.venv/bin/python3"
-
-# Release 模式跳过
-if [ "\${CONFIGURATION}" == "Release" ]; then
-    echo "Release 模式，跳过 Lint 检查"
-    exit 0
-fi
-
-# 检查 venv
-if [ ! -f "\$PYTHON_BIN" ]; then
-    echo "warning: BiliObjCLint venv 未初始化"
-    exit 0
-fi
-
-# 创建临时文件存储 JSON 输出
-VIOLATIONS_FILE=\$(mktemp)
-
-# 执行 Lint 检查，输出 JSON 格式到临时文件
-"\$PYTHON_BIN" "\${LINT_PATH}/scripts/biliobjclint.py" \\
-    --config "\$CONFIG_PATH" \\
-    --project-root "\${SRCROOT}" \\
-    --incremental \\
-    --json-output > "\$VIOLATIONS_FILE" 2>/dev/null
-
-# 执行 Lint 检查，输出 Xcode 格式
-"\$PYTHON_BIN" "\${LINT_PATH}/scripts/biliobjclint.py" \\
-    --config "\$CONFIG_PATH" \\
-    --project-root "\${SRCROOT}" \\
-    --incremental \\
-    --xcode-output
-
-LINT_EXIT=\$?
-
-# 如果有违规，调用 Claude 修复模块
-if [ -s "\$VIOLATIONS_FILE" ] && [ \$LINT_EXIT -ne 0 ]; then
-    "\$PYTHON_BIN" "\${LINT_PATH}/scripts/claude_fixer.py" \\
-        --violations "\$VIOLATIONS_FILE" \\
-        --config "\$CONFIG_PATH" \\
-        --project-root "\${SRCROOT}" &
-fi
-
-# 清理临时文件
-(sleep 5 && rm -f "\$VIOLATIONS_FILE") &
-
-exit \$LINT_EXIT
-SCRIPT
+    echo '#!/bin/bash'
+    echo '"${SRCROOT}/../scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "${PROJECT_FILE_PATH}" -t "${TARGET_NAME}"'
+    echo "----------------------------------------"
+    echo ""
+    echo "5. 添加 Code Style Check Phase（点击 '+' → New Run Script Phase）:"
+    echo "   - 重命名为: [BiliObjcLint] Code Style Check"
+    echo "   - 放在 Package Manager 后面，Compile Sources 前面"
+    echo "   - 粘贴脚本:"
+    echo ""
+    echo "----------------------------------------"
+    echo '#!/bin/bash'
+    echo '"${SRCROOT}/../scripts/code_style_check.sh"'
     echo "----------------------------------------"
     echo ""
     echo "6. 复制配置文件到项目根目录:"
-    echo "   cp ${LINT_PATH}/config/default.yaml /你的项目路径/.biliobjclint.yaml"
+    echo "   BREW_PREFIX=\$(brew --prefix biliobjclint)"
+    echo "   cp \"\$BREW_PREFIX/libexec/config/default.yaml\" /你的项目根目录/.biliobjclint.yaml"
     echo ""
     exit 0
 }
@@ -174,6 +142,7 @@ PROJECT_PATH=""
 PROJECT_NAME=""
 TARGET_NAME=""
 LINT_PATH=""
+SCRIPTS_DIR=""
 ACTION="add"
 DRY_RUN=""
 OVERRIDE=""
@@ -211,6 +180,14 @@ while [[ $# -gt 0 ]]; do
         --check-update)
             ACTION="check-update"
             shift
+            ;;
+        --check-and-inject)
+            ACTION="check-and-inject"
+            shift
+            ;;
+        --scripts-dir)
+            SCRIPTS_DIR="$2"
+            shift 2
             ;;
         --bootstrap)
             ACTION="bootstrap"
@@ -269,7 +246,7 @@ fi
 PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python3"
 if [ ! -f "$PYTHON_BIN" ]; then
     print_error "venv 未初始化，请先运行:"
-    echo "  $PROJECT_ROOT/scripts/bin/setup_env.sh"
+    echo "  $PROJECT_ROOT/setup_env.sh"
     exit 1
 fi
 
@@ -289,32 +266,43 @@ if [ -n "$TARGET_NAME" ]; then
     CMD_ARGS+=("--target" "$TARGET_NAME")
 fi
 
-if [ "$ACTION" = "remove" ]; then
-    CMD_ARGS+=("--remove")
-elif [ "$ACTION" = "check-update" ]; then
-    CMD_ARGS+=("--check-update")
-elif [ "$ACTION" = "bootstrap" ]; then
-    CMD_ARGS+=("--bootstrap")
-elif [ "$ACTION" = "list-projects" ]; then
-    CMD_ARGS+=("--list-projects")
-elif [ "$ACTION" = "list-targets" ]; then
-    CMD_ARGS+=("--list-targets")
-fi
+# check-and-inject 使用 check_update.py
+if [ "$ACTION" = "check-and-inject" ]; then
+    if [ -n "$SCRIPTS_DIR" ]; then
+        CMD_ARGS+=("--scripts-dir" "$SCRIPTS_DIR")
+    fi
+    if [ -n "$DRY_RUN" ]; then
+        CMD_ARGS+=("$DRY_RUN")
+    fi
+    "$PYTHON_BIN" "$PROJECT_ROOT/scripts/check_update.py" "${CMD_ARGS[@]}"
+else
+    # 其他操作使用 xcode_integrator.py
+    if [ "$ACTION" = "remove" ]; then
+        CMD_ARGS+=("--remove")
+    elif [ "$ACTION" = "check-update" ]; then
+        CMD_ARGS+=("--check-update")
+    elif [ "$ACTION" = "bootstrap" ]; then
+        CMD_ARGS+=("--bootstrap")
+    elif [ "$ACTION" = "list-projects" ]; then
+        CMD_ARGS+=("--list-projects")
+    elif [ "$ACTION" = "list-targets" ]; then
+        CMD_ARGS+=("--list-targets")
+    fi
 
-if [ -n "$DRY_RUN" ]; then
-    CMD_ARGS+=("$DRY_RUN")
-fi
+    if [ -n "$DRY_RUN" ]; then
+        CMD_ARGS+=("$DRY_RUN")
+    fi
 
-if [ -n "$OVERRIDE" ]; then
-    CMD_ARGS+=("$OVERRIDE")
-fi
+    if [ -n "$OVERRIDE" ]; then
+        CMD_ARGS+=("$OVERRIDE")
+    fi
 
-if [ -n "$LINT_PATH" ]; then
-    CMD_ARGS+=("--lint-path" "$LINT_PATH")
-fi
+    if [ -n "$LINT_PATH" ]; then
+        CMD_ARGS+=("--lint-path" "$LINT_PATH")
+    fi
 
-# 执行 Python 脚本
-"$PYTHON_BIN" "$PROJECT_ROOT/scripts/xcode_integrator.py" "${CMD_ARGS[@]}"
+    "$PYTHON_BIN" "$PROJECT_ROOT/scripts/xcode_integrator.py" "${CMD_ARGS[@]}"
+fi
 
 EXIT_CODE=$?
 

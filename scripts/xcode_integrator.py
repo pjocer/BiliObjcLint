@@ -48,115 +48,17 @@ def get_version() -> str:
 # 脚本版本号（动态读取）
 SCRIPT_VERSION = get_version()
 
-# Build Phase 脚本模板
+# Build Phase 脚本模板（调用外部脚本）
+# 用于 --bootstrap 模式，调用复制到项目中的 code_style_check.sh
 LINT_SCRIPT_TEMPLATE = '''#!/bin/bash
-
-# BiliObjCLint - Objective-C 代码规范检查
+# [BiliObjcLint] Code Style Check
+# 代码规范审查
 # Version: {version}
-# 自动生成，请勿手动修改
 
-LINT_PATH="{lint_path}"
-CONFIG_PATH="${{SRCROOT}}/.biliobjclint.yaml"
-PYTHON_BIN="${{LINT_PATH}}/.venv/bin/python3"
-
-# 加载日志库
-if [ -f "${{LINT_PATH}}/scripts/lib/logging.sh" ]; then
-    source "${{LINT_PATH}}/scripts/lib/logging.sh"
-    init_logging "xcode_build_phase"
-    log_script_start "Build Phase Lint Check"
-    log_info "Project: ${{SRCROOT}}"
-    log_info "Configuration: ${{CONFIGURATION}}"
-else
-    # 如果日志库不存在，定义空函数
-    log_info() {{ :; }}
-    log_debug() {{ :; }}
-    log_warn() {{ :; }}
-    log_error() {{ :; }}
-fi
-
-# Release 模式跳过
-if [ "${{CONFIGURATION}}" == "Release" ]; then
-    log_info "Release mode, skipping lint check"
-    echo "Release 模式，跳过 Lint 检查"
-    exit 0
-fi
-
-# 检查 venv
-if [ ! -f "$PYTHON_BIN" ]; then
-    log_warn "BiliObjCLint venv not initialized"
-    echo "warning: BiliObjCLint venv 未初始化，请运行 ${{LINT_PATH}}/scripts/setup_env.sh"
-    exit 0
-fi
-
-log_info "Python binary: $PYTHON_BIN"
-
-# 创建临时文件存储 JSON 输出
-VIOLATIONS_FILE=$(mktemp)
-log_debug "Violations temp file: $VIOLATIONS_FILE"
-
-# 执行 Lint 检查，输出 JSON 格式到临时文件
-log_info "Running lint check (JSON output)..."
-"$PYTHON_BIN" "${{LINT_PATH}}/scripts/biliobjclint.py" \\
-    --config "$CONFIG_PATH" \\
-    --project-root "${{SRCROOT}}" \\
-    --incremental \\
-    --json-output > "$VIOLATIONS_FILE" 2>/dev/null
-
-# 执行 Lint 检查，输出 Xcode 格式（用于在 Xcode 中显示警告/错误）
-log_info "Running lint check (Xcode output)..."
-"$PYTHON_BIN" "${{LINT_PATH}}/scripts/biliobjclint.py" \\
-    --config "$CONFIG_PATH" \\
-    --project-root "${{SRCROOT}}" \\
-    --incremental \\
-    --xcode-output
-
-LINT_EXIT=$?
-log_info "Lint exit code: $LINT_EXIT"
-
-# 如果有违规，调用 Claude 修复模块
-# claude_fixer.py 会根据配置文件中的 claude_autofix.trigger 决定是否显示对话框：
-#   - trigger: "any" → 任何违规都弹窗
-#   - trigger: "error" → 只有 error 级别违规才弹窗
-#   - trigger: "disable" → 禁用自动弹窗
-if [ -s "$VIOLATIONS_FILE" ]; then
-    # 保存违规信息到固定位置
-    VIOLATIONS_COPY="/tmp/biliobjclint_violations_$$.json"
-    cp "$VIOLATIONS_FILE" "$VIOLATIONS_COPY"
-    log_debug "Violations copied to: $VIOLATIONS_COPY"
-
-    # 在进入后台子进程前，先保存所有需要的变量值
-    # 因为 Xcode 环境变量在后台子进程中可能不可用
-    _PYTHON_BIN="$PYTHON_BIN"
-    _LINT_PATH="{lint_path}"
-    _CONFIG_PATH="$CONFIG_PATH"
-    _PROJECT_ROOT="${{SRCROOT}}"
-    _VIOLATIONS_COPY="$VIOLATIONS_COPY"
-
-    log_info "Launching Claude fixer in background..."
-
-    # 在后台调用 claude_fixer.py，它会：
-    # 1. 根据 trigger 配置决定是否触发
-    # 2. 显示对话框询问用户
-    # 3. 执行修复（如果用户同意）
-    (
-        "$_PYTHON_BIN" "$_LINT_PATH/scripts/claude_fixer.py" \\
-            --violations "$_VIOLATIONS_COPY" \\
-            --config "$_CONFIG_PATH" \\
-            --project-root "$_PROJECT_ROOT"
-
-        rm -f "$_VIOLATIONS_COPY"
-    ) &
-fi
-
-# 清理临时文件
-rm -f "$VIOLATIONS_FILE"
-log_debug "Temp file cleaned up"
-
-log_info "Build phase completed with exit code: $LINT_EXIT"
-exit $LINT_EXIT
+"{scripts_path}/code_style_check.sh"
 '''
 
-PHASE_NAME = "[BiliObjCLint] Code Style Check"
+PHASE_NAME = "[BiliObjcLint] Code Style Lint"
 BOOTSTRAP_PHASE_NAME = "[BiliObjcLint] Package Manager"
 
 # Bootstrap Build Phase 脚本模板
@@ -386,13 +288,20 @@ class XcodeIntegrator:
         needs_update = version_tuple(current_version) < version_tuple(SCRIPT_VERSION)
         return (needs_update, current_version, SCRIPT_VERSION)
 
-    def add_lint_phase(self, target, dry_run: bool = False, override: bool = False) -> bool:
+    def add_lint_phase(self, target, dry_run: bool = False, override: bool = False,
+                       scripts_path: Optional[str] = None) -> bool:
         """
         添加 Lint Build Phase
 
         注入位置规则：
         1. 如果存在 [BiliObjcLint] Package Manager，则插入到它后面
         2. 如果不存在 Package Manager，则插入到 Compile Sources 前面
+
+        Args:
+            target: Target 对象
+            dry_run: 是否仅模拟运行
+            override: 是否强制覆盖
+            scripts_path: scripts 目录相对于 SRCROOT 的路径（用于 bootstrap 模式）
         """
         self.logger.info(f"Adding lint phase to target: {target.name}")
 
@@ -406,11 +315,23 @@ class XcodeIntegrator:
                 print(f"Target '{target.name}' 已存在 Lint Phase，跳过（使用 --override 强制覆盖）")
                 return True
 
+        # 计算 scripts_path（如果未提供）
+        if not scripts_path:
+            srcroot = self.get_project_srcroot()
+            if srcroot:
+                # 假设 scripts 目录在 project_path 的同级
+                scripts_dir = self.project_path.parent / "scripts"
+                scripts_path = "${SRCROOT}/" + os.path.relpath(scripts_dir, srcroot)
+            else:
+                # 默认值
+                scripts_path = "${SRCROOT}/../scripts"
+
         script_content = LINT_SCRIPT_TEMPLATE.format(
             version=SCRIPT_VERSION,
-            lint_path=str(self.lint_path)
+            scripts_path=scripts_path
         )
         self.logger.debug(f"Generated script content ({len(script_content)} chars)")
+        self.logger.debug(f"Scripts path: {scripts_path}")
 
         # 确定插入位置
         bootstrap_index = self._get_bootstrap_phase_index(target)
@@ -562,25 +483,25 @@ class XcodeIntegrator:
             print(f"Error: 复制配置文件失败: {e}", file=sys.stderr)
             return False
 
-    def copy_bootstrap_script(self, target_scripts_dir: Path, dry_run: bool = False) -> bool:
-        """复制 bootstrap.sh 到目标 scripts 目录"""
-        self.logger.info(f"Copying bootstrap.sh to: {target_scripts_dir}")
+    def _copy_script(self, source_name: str, target_scripts_dir: Path, dry_run: bool = False) -> bool:
+        """复制脚本到目标 scripts 目录"""
+        self.logger.info(f"Copying {source_name} to: {target_scripts_dir}")
 
-        # 源文件位置
-        source_bootstrap = self.lint_path / "scripts" / "bin" / "bootstrap.sh"
-        target_bootstrap = target_scripts_dir / "bootstrap.sh"
+        # 源文件位置（bootstrap.sh 和 code_style_check.sh 现在在 config 目录）
+        source_path = self.lint_path / "config" / source_name
+        target_path = target_scripts_dir / source_name
 
-        self.logger.debug(f"Source: {source_bootstrap}")
-        self.logger.debug(f"Target: {target_bootstrap}")
+        self.logger.debug(f"Source: {source_path}")
+        self.logger.debug(f"Target: {target_path}")
 
-        if not source_bootstrap.exists():
-            self.logger.error(f"Source bootstrap.sh not found: {source_bootstrap}")
-            print(f"Error: 源文件不存在: {source_bootstrap}", file=sys.stderr)
+        if not source_path.exists():
+            self.logger.error(f"Source {source_name} not found: {source_path}")
+            print(f"Error: 源文件不存在: {source_path}", file=sys.stderr)
             return False
 
         if dry_run:
-            self.logger.info(f"[DRY RUN] Would copy bootstrap.sh to: {target_bootstrap}")
-            print(f"[DRY RUN] 将复制 bootstrap.sh 到: {target_bootstrap}")
+            self.logger.info(f"[DRY RUN] Would copy {source_name} to: {target_path}")
+            print(f"[DRY RUN] 将复制 {source_name} 到: {target_path}")
             return True
 
         try:
@@ -588,21 +509,29 @@ class XcodeIntegrator:
             target_scripts_dir.mkdir(parents=True, exist_ok=True)
 
             # 复制文件
-            shutil.copy2(source_bootstrap, target_bootstrap)
+            shutil.copy2(source_path, target_path)
 
             # 设置执行权限
-            target_bootstrap.chmod(
-                target_bootstrap.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+            target_path.chmod(
+                target_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
             )
 
-            self.logger.info(f"Successfully copied bootstrap.sh to: {target_bootstrap}")
-            print(f"✓ 已复制 bootstrap.sh 到: {target_bootstrap}")
+            self.logger.info(f"Successfully copied {source_name} to: {target_path}")
+            print(f"✓ 已复制 {source_name} 到: {target_path}")
             return True
 
         except Exception as e:
-            self.logger.exception(f"Failed to copy bootstrap.sh: {e}")
-            print(f"Error: 复制 bootstrap.sh 失败: {e}", file=sys.stderr)
+            self.logger.exception(f"Failed to copy {source_name}: {e}")
+            print(f"Error: 复制 {source_name} 失败: {e}", file=sys.stderr)
             return False
+
+    def copy_bootstrap_script(self, target_scripts_dir: Path, dry_run: bool = False) -> bool:
+        """复制 bootstrap.sh 到目标 scripts 目录"""
+        return self._copy_script("bootstrap.sh", target_scripts_dir, dry_run)
+
+    def copy_code_style_check_script(self, target_scripts_dir: Path, dry_run: bool = False) -> bool:
+        """复制 code_style_check.sh 到目标 scripts 目录"""
+        return self._copy_script("code_style_check.sh", target_scripts_dir, dry_run)
 
     def get_project_srcroot(self) -> Optional[Path]:
         """获取项目的 SRCROOT（即 .xcodeproj 的父目录）"""

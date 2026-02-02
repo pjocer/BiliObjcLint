@@ -2,6 +2,19 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.1.28 (2026-02-02)
+
+### 重构
+- 将 Code Style Check 脚本抽离为独立的 `code_style_check.sh`
+- `--bootstrap` 模式只复制 `bootstrap.sh`，首次编译时动态注入 Code Style Check
+- 简化 Build Phase 脚本，改为调用外部脚本文件
+- 更新 `--manual` 帮助文档，提供清晰的手动配置步骤
+
+### 改进
+- `bootstrap.sh` 首次运行时自动复制 `code_style_check.sh` 到项目 scripts 目录
+- `code_style_check.sh` 通过 `brew --prefix` 自动定位 biliobjclint 安装路径
+- 支持 Homebrew 安装方式，无需硬编码路径
+
 ## v1.1.27 (2026-02-02)
 
 ### 修复
