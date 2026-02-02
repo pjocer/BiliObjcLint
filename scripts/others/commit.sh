@@ -6,7 +6,13 @@
 # Usage:
 #   ./scripts/others/commit.sh "commit message"
 #   ./scripts/others/commit.sh -m "commit message"
-#   ./scripts/others/commit.sh                      # 交互式输入 commit message
+#   ./scripts/others/commit.sh -y -m "commit message"   # 非交互式（跳过确认）
+#   ./scripts/others/commit.sh                          # 交互式输入 commit message
+#
+# Options:
+#   -m, --message    Commit message
+#   -y, --yes        跳过确认提示（非交互式模式）
+#   -h, --help       显示帮助信息
 #
 # 保持BILIOBJCLINT工程和BILIOBJCLINT Homebrew Tap工程在同一目录下
 set -e
@@ -25,6 +31,10 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# 全局变量
+SKIP_CONFIRM=false
+COMMIT_MESSAGE=""
+
 info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1" >&2; exit 1; }
@@ -36,7 +46,7 @@ check_changes() {
     local repo_name="$2"
 
     cd "$repo_path"
-    if git diff --quiet && git diff --cached --quiet; then
+    if git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
         return 1  # 没有改动
     fi
     return 0  # 有改动
@@ -89,44 +99,61 @@ Co-Authored-By: Claude (claude-4.5-opus) <noreply@anthropic.com>"
     echo ""
 }
 
+show_help() {
+    cat << EOF
+Usage: $0 [OPTIONS] [commit message]
+
+同时提交改动到主仓库和 Homebrew tap 仓库
+
+Options:
+  -m, --message MSG    指定 commit message
+  -y, --yes            跳过确认提示（非交互式模式）
+  -h, --help           显示帮助信息
+
+Examples:
+  $0 "Fix bug in lint check"
+  $0 -m "Fix bug in lint check"
+  $0 -y -m "Add new feature"           # 非交互式
+  $0 --yes --message "Add new feature" # 非交互式
+
+Note:
+  如果不提供 -y/--yes 参数，脚本会在提交前要求确认。
+  如果不提供 commit message，脚本会交互式提示输入。
+EOF
+    exit 0
+}
+
 # 解析参数
 parse_args() {
-    local message=""
-
     while [[ $# -gt 0 ]]; do
         case $1 in
             -m|--message)
-                message="$2"
+                COMMIT_MESSAGE="$2"
                 shift 2
                 ;;
+            -y|--yes)
+                SKIP_CONFIRM=true
+                shift
+                ;;
             -h|--help)
-                echo "Usage: $0 [-m \"commit message\"] [commit message]"
-                echo ""
-                echo "Options:"
-                echo "  -m, --message    Commit message"
-                echo "  -h, --help       Show this help"
-                echo ""
-                echo "Examples:"
-                echo "  $0 \"Fix bug in lint check\""
-                echo "  $0 -m \"Fix bug in lint check\""
-                exit 0
+                show_help
+                ;;
+            -*)
+                error "未知选项: $1\n使用 -h 或 --help 查看帮助"
                 ;;
             *)
                 # 非选项参数作为 commit message
-                if [ -z "$message" ]; then
-                    message="$1"
+                if [ -z "$COMMIT_MESSAGE" ]; then
+                    COMMIT_MESSAGE="$1"
                 fi
                 shift
                 ;;
         esac
     done
-
-    echo "$message"
 }
 
 main() {
-    local commit_message
-    commit_message=$(parse_args "$@")
+    parse_args "$@"
 
     # 检查两个仓库是否都存在
     if [ ! -d "$MAIN_REPO/.git" ]; then
@@ -161,37 +188,41 @@ main() {
         exit 0
     fi
 
-    # 如果没有提供 commit message，交互式输入
-    if [ -z "$commit_message" ]; then
+    # 如果没有提供 commit message
+    if [ -z "$COMMIT_MESSAGE" ]; then
+        if [ "$SKIP_CONFIRM" = true ]; then
+            error "非交互式模式下必须提供 commit message (-m 参数)"
+        fi
         echo ""
-        read -p "请输入 commit message: " commit_message
-        if [ -z "$commit_message" ]; then
+        read -p "请输入 commit message: " COMMIT_MESSAGE
+        if [ -z "$COMMIT_MESSAGE" ]; then
             error "Commit message 不能为空"
         fi
     fi
 
     echo ""
-    info "Commit message: $commit_message"
+    info "Commit message: $COMMIT_MESSAGE"
     echo ""
 
-    # 确认
-    read -p "确认提交? (y/N) " -n 1 -r
-    echo ""
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        info "已取消"
-        exit 0
+    # 确认（除非指定了 -y）
+    if [ "$SKIP_CONFIRM" = false ]; then
+        read -p "确认提交? (y/N) " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            info "已取消"
+            exit 0
+        fi
+        echo ""
     fi
-
-    echo ""
 
     # 提交主仓库
     if [ "$main_has_changes" = true ]; then
-        commit_repo "$MAIN_REPO" "BiliObjCLint" "$commit_message"
+        commit_repo "$MAIN_REPO" "BiliObjCLint" "$COMMIT_MESSAGE"
     fi
 
     # 提交 tap 仓库
     if [ "$tap_has_changes" = true ]; then
-        commit_repo "$HOMEBREW_TAP_REPO" "homebrew-biliobjclint" "$commit_message"
+        commit_repo "$HOMEBREW_TAP_REPO" "homebrew-biliobjclint" "$COMMIT_MESSAGE"
     fi
 
     echo ""
