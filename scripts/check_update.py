@@ -14,7 +14,6 @@ import argparse
 import os
 import sys
 import subprocess
-import threading
 import json
 import shutil
 import stat
@@ -164,38 +163,42 @@ def show_update_dialog(version: str, changelog: str):
 
 
 def background_upgrade(local_ver: str, remote_ver: str, scripts_dir: Optional[Path] = None):
-    """后台执行 brew upgrade"""
-    def upgrade():
-        try:
-            logger.info(f"Starting background upgrade: {local_ver} -> {remote_ver}")
+    """
+    后台执行 brew upgrade
 
-            # brew update
-            subprocess.run(['brew', 'update'], capture_output=True, timeout=120)
+    使用独立子进程执行更新，确保主进程退出后更新仍能继续。
+    调用同级目录的 background_upgrade.py 脚本执行实际升级操作。
+    """
+    logger.info(f"Starting background upgrade: {local_ver} -> {remote_ver}")
 
-            # brew upgrade
-            result = subprocess.run(
-                ['brew', 'upgrade', 'biliobjclint'],
-                capture_output=True, timeout=300
-            )
+    # 构建命令参数
+    upgrade_script = SCRIPT_DIR / 'background_upgrade.py'
+    cmd = [
+        'python3', str(upgrade_script),
+        '--local-ver', local_ver,
+        '--remote-ver', remote_ver,
+    ]
+    if scripts_dir:
+        cmd.extend(['--scripts-dir', str(scripts_dir)])
 
-            if result.returncode == 0:
-                logger.info("Upgrade completed successfully")
+    try:
+        # 创建日志目录和文件
+        log_dir = Path.home() / '.biliobjclint'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / 'background_upgrade.log'
 
-                # 强制覆盖脚本到目标工程
-                if scripts_dir:
-                    copy_scripts_to_project(scripts_dir, force=True)
-
-                # 显示弹窗
-                changelog = get_changelog_for_version(remote_ver)
-                show_update_dialog(remote_ver, changelog)
-            else:
-                logger.error(f"Upgrade failed: {result.stderr}")
-
-        except Exception as e:
-            logger.exception(f"Upgrade failed: {e}")
-
-    thread = threading.Thread(target=upgrade, daemon=True)
-    thread.start()
+        # 启动独立的 Python 进程执行升级
+        # start_new_session=True 使进程独立于父进程，父进程退出后仍能继续运行
+        subprocess.Popen(
+            cmd,
+            stdout=open(log_file, 'a'),
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        logger.info(f"Background upgrade process started, log: {log_file}")
+    except Exception as e:
+        logger.exception(f"Failed to start background upgrade: {e}")
 
 
 def get_brew_prefix() -> Optional[Path]:
