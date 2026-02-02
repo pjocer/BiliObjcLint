@@ -2,6 +2,12 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.1.46 (2026-02-02)
+
+### 修复
+- 修复 brew upgrade 后更新 Build Phase 失败的问题（No module named 'pbxproj'）
+- 在动态导入 xcode_integrator 前添加新版本 venv 的 site-packages 到 sys.path
+
 ## v1.1.45 (2026-02-02)
 
 ### 测试

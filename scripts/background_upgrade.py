@@ -265,12 +265,21 @@ def update_build_phase_with_new_version(
     try:
         import os
         import importlib.util
+        import glob
 
         # 获取新版本的 brew prefix
         brew_prefix = get_brew_prefix()
         if not brew_prefix:
             logger.error("Cannot get brew prefix for new version")
             return False
+
+        # 添加新版本 venv 的 site-packages 到 sys.path（解决 pbxproj 等依赖问题）
+        new_venv_site_packages = glob.glob(str(brew_prefix / 'libexec' / '.venv' / 'lib' / 'python*' / 'site-packages'))
+        if new_venv_site_packages:
+            for sp in new_venv_site_packages:
+                if sp not in sys.path:
+                    sys.path.insert(0, sp)
+                    logger.info(f"Added new venv site-packages to sys.path: {sp}")
 
         new_scripts_path = brew_prefix / 'libexec' / 'scripts'
         logger.info(f"Loading xcode_integrator from new version: {new_scripts_path}")
