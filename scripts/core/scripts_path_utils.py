@@ -16,6 +16,23 @@ from typing import Optional
 SCRIPTS_PATH_STORE = Path.home() / '.biliobjclint' / 'scripts_paths.json'
 
 
+def normalize_path(path: str) -> str:
+    """
+    规范化路径：解析符号链接、去除尾部斜杠、转换为绝对路径
+
+    Args:
+        path: 原始路径
+
+    Returns:
+        规范化后的路径字符串
+    """
+    try:
+        return str(Path(path).resolve())
+    except Exception:
+        # 如果路径无效，至少去除尾部斜杠
+        return path.rstrip('/')
+
+
 def make_key(project_path: str, project_name: Optional[str], target_name: str) -> str:
     """
     生成 scripts_path 存储的 key
@@ -28,7 +45,9 @@ def make_key(project_path: str, project_name: Optional[str], target_name: str) -
     Returns:
         格式化的 key 字符串
     """
-    return f"{project_path}|{project_name or ''}|{target_name}"
+    # 规范化路径，确保不同格式的相同路径生成相同的 key
+    normalized_path = normalize_path(project_path)
+    return f"{normalized_path}|{project_name or ''}|{target_name}"
 
 
 def save(project_path: str, project_name: Optional[str], target_name: str,

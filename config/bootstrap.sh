@@ -101,6 +101,14 @@ fi
 # 2. 如果 PROJECT 是有效的 .xcodeproj 路径，使用它
 # 3. 否则尝试从名称构建路径
 
+# 标准化路径：使用 realpath 获取规范化的绝对路径（解析符号链接、去除尾部斜杠等）
+if [ -n "$WORKSPACE" ]; then
+    WORKSPACE="$(realpath "$WORKSPACE" 2>/dev/null || echo "$WORKSPACE")"
+fi
+if [ -n "$PROJECT" ]; then
+    PROJECT="$(realpath "$PROJECT" 2>/dev/null || echo "$PROJECT")"
+fi
+
 if [ -n "$WORKSPACE" ] && [[ "$WORKSPACE" == *.xcworkspace ]]; then
     # WORKSPACE 是完整路径
     XCODE_PATH="$WORKSPACE"
