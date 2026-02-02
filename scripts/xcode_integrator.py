@@ -320,9 +320,9 @@ class XcodeIntegrator:
 
         # 获取 scripts_path（如果未提供）
         if not scripts_path:
-            # 从持久化存储读取
+            # 从持久化存储读取（使用 xcodeproj_path 作为 key）
             saved_path = scripts_path_utils.get(
-                str(self.project_path),
+                str(self.xcodeproj_path),
                 self.project_name,
                 target.name
             )
@@ -331,7 +331,7 @@ class XcodeIntegrator:
                 self.logger.debug(f"Loaded scripts path from store: {saved_path}")
             else:
                 # 没有保存的路径，需要先执行 --bootstrap
-                self.logger.error("No scripts path found in store, please run --bootstrap first")
+                self.logger.error(f"No scripts path found in store for key: {self.xcodeproj_path}|{self.project_name}|{target.name}")
                 print("Error: 未找到 scripts 路径配置，请先执行 --bootstrap", file=sys.stderr)
                 return False
 
@@ -798,14 +798,15 @@ class XcodeIntegrator:
         print()
 
         # 4.5 保存 scripts 相对路径到持久化存储
+        # 使用 xcodeproj_path 作为 key（因为 ${PROJECT_FILE_PATH} 始终可用，而 ${WORKSPACE_PATH} 可能为空）
         if not dry_run:
             scripts_path_utils.save(
-                str(self.project_path),
+                str(self.xcodeproj_path),
                 self.project_name,
                 target.name,
                 relative_path
             )
-            self.logger.info(f"Saved scripts path to store: {relative_path}")
+            self.logger.info(f"Saved scripts path to store: {relative_path} (key: {self.xcodeproj_path})")
 
         # 5. 添加 Bootstrap Build Phase
         if not self.add_bootstrap_phase(target, relative_path, dry_run):

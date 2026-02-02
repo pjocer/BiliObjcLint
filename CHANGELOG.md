@@ -2,6 +2,14 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.2.5 (2026-02-02)
+
+### 修复
+- 修复 scripts_path 存储 key 使用 workspace 路径导致查找失败的问题
+  - Xcode 环境变量中不存在 `WORKSPACE_PATH`，只有 `WORKSPACE_DIR`
+  - 统一使用 `xcodeproj_path`（对应 `${PROJECT_FILE_PATH}`）作为存储 key
+  - 确保 `--bootstrap` 保存和编译时查找使用相同的 key
+
 ## v1.2.4 (2026-02-02)
 
 ### 修复

@@ -215,13 +215,13 @@ def update_build_phase(
                 logger.info(f"Build Phase already at version {SCRIPT_VERSION}")
                 return True
 
-        # 从持久化存储获取 scripts_path
-        saved_path = scripts_path_utils.get(project_path, project_name, target_name)
+        # 从持久化存储获取 scripts_path（使用 xcodeproj_path 作为 key）
+        saved_path = scripts_path_utils.get(str(integrator.xcodeproj_path), project_name, target_name)
         if saved_path:
             scripts_path_in_phase = scripts_path_utils.get_srcroot_path(saved_path)
             logger.info(f"Loaded scripts path from store: {saved_path}")
         else:
-            logger.error("No scripts path found in store, please run --bootstrap first")
+            logger.error(f"No scripts path found in store for key: {integrator.xcodeproj_path}|{project_name}|{target_name}")
             return False
 
         # 更新 Build Phase
@@ -320,13 +320,13 @@ def update_build_phase_with_new_version(
             current_version = integrator.get_lint_phase_version(target)
             logger.info(f"Current Build Phase version: {current_version}")
 
-        # 从持久化存储获取 scripts_path
-        saved_path = scripts_path_utils.get(project_path, project_name, target_name)
+        # 从持久化存储获取 scripts_path（使用 xcodeproj_path 作为 key）
+        saved_path = scripts_path_utils.get(str(integrator.xcodeproj_path), project_name, target_name)
         if saved_path:
             scripts_path_in_phase = scripts_path_utils.get_srcroot_path(saved_path)
             logger.info(f"Loaded scripts path from store: {saved_path}")
         else:
-            logger.error("No scripts path found in store, please run --bootstrap first")
+            logger.error(f"No scripts path found in store for key: {integrator.xcodeproj_path}|{project_name}|{target_name}")
             return False
 
         # 更新 Build Phase
