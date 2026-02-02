@@ -155,7 +155,7 @@ def update_build_phase(
     scripts_dir: Optional[str] = None
 ) -> bool:
     """
-    更新 Build Phase 到最新版本
+    更新 Build Phase 到最新版本（使用当前脚本路径）
 
     Args:
         project_path: Xcode 项目路径
@@ -218,6 +218,101 @@ def update_build_phase(
         return False
 
 
+def update_build_phase_with_new_version(
+    project_path: str,
+    target_name: Optional[str] = None,
+    project_name: Optional[str] = None,
+    scripts_dir: Optional[str] = None,
+    new_version: Optional[str] = None
+) -> bool:
+    """
+    更新 Build Phase 到最新版本（从新版本的 brew prefix 导入模块）
+
+    关键：brew upgrade 完成后，需要从新安装的路径导入 xcode_integrator，
+    而不是从当前运行脚本的路径（旧版本）导入。
+
+    Args:
+        project_path: Xcode 项目路径
+        target_name: Target 名称
+        project_name: 项目名称（用于 workspace）
+        scripts_dir: scripts 目录路径
+        new_version: 新版本号
+
+    Returns:
+        是否成功
+    """
+    try:
+        import os
+        import importlib.util
+
+        # 获取新版本的 brew prefix
+        brew_prefix = get_brew_prefix()
+        if not brew_prefix:
+            logger.error("Cannot get brew prefix for new version")
+            return False
+
+        new_scripts_path = brew_prefix / 'libexec' / 'scripts'
+        logger.info(f"Loading xcode_integrator from new version: {new_scripts_path}")
+
+        # 从新版本路径动态导入 xcode_integrator
+        xcode_integrator_path = new_scripts_path / 'xcode_integrator.py'
+        if not xcode_integrator_path.exists():
+            logger.error(f"xcode_integrator.py not found at {xcode_integrator_path}")
+            return False
+
+        spec = importlib.util.spec_from_file_location("xcode_integrator_new", xcode_integrator_path)
+        xcode_integrator_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(xcode_integrator_module)
+
+        XcodeIntegrator = xcode_integrator_module.XcodeIntegrator
+        SCRIPT_VERSION = xcode_integrator_module.SCRIPT_VERSION
+
+        logger.info(f"Loaded SCRIPT_VERSION from new version: {SCRIPT_VERSION}")
+
+        lint_path = str(brew_prefix / 'libexec')
+        integrator = XcodeIntegrator(project_path, lint_path, project_name)
+
+        if not integrator.load_project():
+            logger.error("Failed to load project")
+            return False
+
+        target = integrator.get_target(target_name)
+        if not target:
+            logger.error(f"Target not found: {target_name}")
+            return False
+
+        current_version = None
+        if integrator.has_lint_phase(target):
+            current_version = integrator.get_lint_phase_version(target)
+            logger.info(f"Current Build Phase version: {current_version}")
+
+        # 计算 scripts_path 相对于 SRCROOT 的路径
+        srcroot = integrator.get_project_srcroot()
+        if srcroot and scripts_dir:
+            relative_path = os.path.relpath(scripts_dir, srcroot)
+            scripts_path_in_phase = "${SRCROOT}/" + relative_path
+        else:
+            scripts_path_in_phase = "${SRCROOT}/../scripts"
+
+        # 更新 Build Phase
+        success = integrator.add_lint_phase(
+            target,
+            dry_run=False,
+            override=True,
+            scripts_path=scripts_path_in_phase
+        )
+
+        if success:
+            integrator.save()
+            logger.info(f"Build Phase updated: {current_version} -> {SCRIPT_VERSION}")
+
+        return success
+
+    except Exception as e:
+        logger.exception(f"Failed to update build phase with new version: {e}")
+        return False
+
+
 def show_updating_notification():
     """显示正在更新的系统通知"""
     title = "BiliObjCLint"
@@ -241,11 +336,11 @@ def do_upgrade(
     执行 brew upgrade
 
     流程：
-    1. brew update
-    2. 显示系统通知 "检测到BiliObjcLint需要更新，正在后台更新中..."
+    1. 显示系统通知 "检测到BiliObjcLint需要更新，正在后台更新中..."
+    2. brew update
     3. brew upgrade biliobjclint（同步执行）
     4. 复制脚本到目标工程
-    5. 强制更新 Build Phase
+    5. 强制更新 Build Phase（使用新版本的脚本）
     6. 获取 CHANGELOG 内容
     7. 显示更新完成弹窗
     8. 用户点击 OK 后进程结束
@@ -264,17 +359,17 @@ def do_upgrade(
     logger.info(f"Starting background upgrade: {local_ver} -> {remote_ver}")
 
     try:
-        # 1. brew update
+        # 1. 先显示系统通知（让用户立即知道正在更新）
+        logger.info("Showing updating notification...")
+        show_updating_notification()
+
+        # 2. brew update
         logger.info("Running brew update...")
         result = subprocess.run(['brew', 'update'], capture_output=True, timeout=120)
         if result.returncode != 0:
             stderr = result.stderr.decode() if isinstance(result.stderr, bytes) else result.stderr
             logger.error(f"brew update failed: {stderr}")
             # 继续执行 upgrade，update 失败不阻塞
-
-        # 2. 显示系统通知：正在更新中
-        logger.info("Showing updating notification...")
-        show_updating_notification()
 
         # 3. brew upgrade（同步执行）
         logger.info("Running brew upgrade biliobjclint...")
@@ -300,9 +395,12 @@ def do_upgrade(
             copy_scripts_to_project(Path(scripts_dir), force=True)
 
         # 5. 强制更新 Build Phase
+        # 重要：使用新版本的 brew prefix 路径，而不是当前脚本的路径
         if project_path:
             logger.info("Force updating Build Phase...")
-            update_build_phase(project_path, target_name, project_name, scripts_dir)
+            update_build_phase_with_new_version(
+                project_path, target_name, project_name, scripts_dir, remote_ver
+            )
 
         # 6. 获取 CHANGELOG 内容（从新版本读取）
         logger.info(f"Getting changelog for version {remote_ver}...")
