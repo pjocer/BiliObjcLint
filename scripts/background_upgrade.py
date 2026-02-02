@@ -23,21 +23,34 @@ from typing import Optional
 SCRIPT_DIR = Path(__file__).parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-try:
-    from core.logger import get_logger
-    logger = get_logger("background_upgrade")
-except Exception:
-    # 如果导入失败，使用简单的打印日志（带时间戳）
-    import datetime
-    class DummyLogger:
-        def _log(self, level, msg):
-            ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"[{ts}] [{level}] {msg}", flush=True)
-        def info(self, msg): self._log("INFO", msg)
-        def error(self, msg): self._log("ERROR", msg)
-        def debug(self, msg): self._log("DEBUG", msg)
-        def exception(self, msg): self._log("EXCEPTION", msg)
-    logger = DummyLogger()
+import datetime
+
+# 日志文件路径（固定位置，不会被 brew upgrade 删除）
+LOG_FILE = Path.home() / '.biliobjclint' / 'background_upgrade.log'
+
+
+def log_to_file(level: str, msg: str):
+    """直接写入日志文件（确保 nohup 能捕获）"""
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_line = f"[{ts}] [{level}] {msg}"
+    # 同时输出到 stdout（nohup 捕获）和日志文件
+    print(log_line, flush=True)
+    try:
+        with open(LOG_FILE, 'a') as f:
+            f.write(log_line + '\n')
+    except Exception:
+        pass
+
+
+class FileLogger:
+    """直接写入文件的 logger，确保日志不会随旧版本被删除"""
+    def info(self, msg): log_to_file("INFO", msg)
+    def error(self, msg): log_to_file("ERROR", msg)
+    def debug(self, msg): log_to_file("DEBUG", msg)
+    def exception(self, msg): log_to_file("EXCEPTION", msg)
+
+
+logger = FileLogger()
 
 
 def get_brew_prefix() -> Optional[Path]:
@@ -55,7 +68,7 @@ def get_brew_prefix() -> Optional[Path]:
 
 
 def get_changelog_for_version(version: str) -> str:
-    """获取指定版本的 CHANGELOG"""
+    """获取指定版本的 CHANGELOG（仅保留 bullet points，去除 markdown 标题）"""
     try:
         brew_prefix = get_brew_prefix()
         logger.info(f"Looking for changelog, brew_prefix: {brew_prefix}, version: {version}")
@@ -78,9 +91,12 @@ def get_changelog_for_version(version: str) -> str:
                     elif line.startswith('## ') and in_version:
                         break
                     elif in_version:
-                        changelog_lines.append(line)
+                        # 只保留 bullet points (- 开头的行)，跳过 ### 标题和空行
+                        stripped = line.strip()
+                        if stripped.startswith('- '):
+                            changelog_lines.append(stripped)
                 if changelog_lines:
-                    result = '\n'.join(changelog_lines).strip()
+                    result = '\n'.join(changelog_lines)
                     logger.info(f"Found changelog content, length: {len(result)}")
                     return result
                 else:
