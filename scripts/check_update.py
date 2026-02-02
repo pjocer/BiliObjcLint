@@ -162,20 +162,16 @@ def show_update_dialog(version: str, changelog: str):
         logger.debug(f"Failed to show dialog: {e}")
 
 
-def show_lint_phase_update_dialog(old_version: str, new_version: str):
-    """显示 Lint Phase 版本更新弹窗"""
+def show_lint_phase_update_notification(old_version: str, new_version: str):
+    """显示 Lint Phase 版本更新系统通知"""
     title = "BiliObjCLint"
     message = f"已同步 Code Style Lint 版本号 {old_version} ~ {new_version}"
 
     try:
-        script = f'''
-        display dialog "{message}" with title "{title}" buttons {{"OK"}} default button "OK"
-        '''
-        subprocess.run(['osascript', '-e', script], capture_output=True, timeout=30)
-    except KeyboardInterrupt:
-        logger.debug("Dialog interrupted by user")
+        script = f'display notification "{message}" with title "{title}"'
+        subprocess.run(['osascript', '-e', script], capture_output=True, timeout=10)
     except Exception as e:
-        logger.debug(f"Failed to show lint phase update dialog: {e}")
+        logger.debug(f"Failed to show lint phase update notification: {e}")
 
 
 def background_upgrade(
@@ -392,10 +388,10 @@ def do_check_and_inject(
             integrator.save()
             print(f"[BiliObjCLint] 已为 Target '{target.name}' 注入 Code Style Lint Phase")
 
-            # 如果是版本更新（而非首次注入），且 brew 不需要更新，弹出提示
+            # 如果是版本更新（而非首次注入），且 brew 不需要更新，显示系统通知
             # brew 需要更新时，弹窗由 background_upgrade.py 处理
             if current_version and current_version != SCRIPT_VERSION and not needs_update:
-                show_lint_phase_update_dialog(current_version, SCRIPT_VERSION)
+                show_lint_phase_update_notification(current_version, SCRIPT_VERSION)
 
         return success
 
