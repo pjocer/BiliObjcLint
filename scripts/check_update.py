@@ -370,8 +370,9 @@ def do_check_and_inject(
             integrator.save()
             print(f"[BiliObjCLint] 已为 Target '{target.name}' 注入 Code Style Lint Phase")
 
-            # 如果是版本更新（而非首次注入），弹出提示
-            if current_version and current_version != SCRIPT_VERSION:
+            # 如果是版本更新（而非首次注入），且 brew 不需要更新，弹出提示
+            # brew 需要更新时，弹窗由 background_upgrade.py 处理
+            if current_version and current_version != SCRIPT_VERSION and not needs_update:
                 show_lint_phase_update_dialog(current_version, SCRIPT_VERSION)
 
         return success
