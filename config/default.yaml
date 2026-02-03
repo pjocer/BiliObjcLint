@@ -23,8 +23,8 @@ included:
 # 排除的文件/目录模式
 excluded:
   - "Pods/**"
-  - "Vendor/**"
-  - "ThirdParty/**"
+  - "**/Vendor/**"
+  - "**/ThirdParty/**"
   - "**/Generated/**"
   - "**/*Test*.m"
   - "**/*Tests.m"
