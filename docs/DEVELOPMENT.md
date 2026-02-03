@@ -191,6 +191,65 @@ export BILIOBJCLINT_VERBOSE=1
     --json-output
 ```
 
+## 本地调试
+
+开发 BiliObjCLint 时，可以使用调试模式在目标 Xcode 项目中直接测试本地代码，无需发布新版本到 Homebrew。
+
+### 启用调试模式
+
+```bash
+# 1. 初始化本地开发环境
+./setup_env.sh
+
+# 2. 对目标 Xcode 项目启用调试模式
+biliobjclint-xcode /path/to/App.xcodeproj --bootstrap \
+    --debug /path/to/BiliObjCLint
+```
+
+### 调试模式 vs 正常模式
+
+| 特性 | 正常模式 | 调试模式 |
+|------|----------|----------|
+| 代码来源 | Homebrew 安装目录 | 本地开发目录 |
+| Python 环境 | `$(brew --prefix)/libexec/.venv` | 本地 `.venv` |
+| 版本检查 | 自动检查 GitHub 更新 | 跳过（避免覆盖本地代码） |
+| 脚本复制 | 从 brew prefix 复制 | 从本地目录复制 |
+| 配置文件 | 目标项目的 `.biliobjclint.yaml` | 同左 |
+| 标记文件 | 无 | `scripts/.biliobjclint_debug` |
+
+### 退出调试模式
+
+```bash
+# 方式 1: 删除标记文件
+rm /path/to/App/scripts/.biliobjclint_debug
+
+# 方式 2: 重新执行 bootstrap（不带 --debug）
+biliobjclint-xcode /path/to/App.xcodeproj --bootstrap
+```
+
+### 开发工作流
+
+```bash
+# 1. 在 BiliObjCLint 项目中修改代码
+
+# 2. 在目标 Xcode 项目中编译，直接测试修改效果
+#    Xcode: Product -> Build
+
+# 3. 测试通过后提交代码，发布新版本
+./scripts/others/commit.sh -y -t feat -d "新功能"
+./scripts/others/release.sh -y
+
+# 4. 退出调试模式，验证 Homebrew 安装版本
+rm /path/to/App/scripts/.biliobjclint_debug
+```
+
+### 注意事项
+
+1. **venv 必须先初始化**: 调试模式使用本地 `.venv`，必须先执行 `./setup_env.sh`
+2. **跳过版本检查**: 调试模式会跳过版本更新检查，避免后台升级覆盖本地代码
+3. **gitignore**: `.biliobjclint_debug` 文件应加入目标项目的 `.gitignore`
+4. **日志位置**: 调试模式下日志写入本地 `logs/` 目录
+
 ## 添加新的内置规则
 
 1. 在 `scripts/rules/` 下创建或修改规则文件

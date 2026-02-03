@@ -199,3 +199,14 @@ local_pods:
   excluded_pods:
     - "*Test*"
     - "*Mock*"
+
+# ==================== 性能优化配置 ====================
+performance:
+  # 是否启用并行检查（多文件并行执行规则检查）
+  parallel: true
+  # 最大工作线程数
+  # - 0: 自动（min(32, CPU核心数 * 2)）
+  # - >0: 指定线程数
+  max_workers: 0
+  # 文件内容缓存最大容量（MB）
+  file_cache_size_mb: 100

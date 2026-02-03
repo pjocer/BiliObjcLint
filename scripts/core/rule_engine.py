@@ -1,16 +1,22 @@
 """
 Rule Engine Module - Python 规则引擎
+
+支持:
+- 文件内容缓存
+- 多文件并行检查
 """
-import os
 import sys
 import importlib.util
 from pathlib import Path
-from typing import List, Dict, Set, Type, Optional, Tuple
+from typing import List, Dict, Set, Optional, Tuple
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 from .reporter import Violation, Severity
 from .config import RuleConfig
 from .logger import get_logger
+from .file_cache import get_file_cache
 
 
 class BaseRule(ABC):
@@ -82,13 +88,24 @@ class BaseRule(ABC):
 
 
 class RuleEngine:
-    """规则引擎 - 管理和执行规则"""
+    """规则引擎 - 管理和执行规则（性能优化版）"""
 
-    def __init__(self, project_root: str):
+    def __init__(self, project_root: str, parallel: bool = True, max_workers: int = 0,
+                 file_cache_size_mb: int = 100):
+        """
+        Args:
+            project_root: 项目根目录
+            parallel: 是否启用并行执行
+            max_workers: 最大工作线程数（0 表示自动：min(32, cpu_count * 2)）
+            file_cache_size_mb: 文件缓存最大容量（MB）
+        """
         self.project_root = Path(project_root)
         self.rules: List[BaseRule] = []
         self.logger = get_logger("biliobjclint")
-        self.logger.debug(f"RuleEngine initialized: project_root={project_root}")
+        self.parallel = parallel
+        self.max_workers = max_workers
+        self._file_cache = get_file_cache(file_cache_size_mb)
+        self.logger.debug(f"RuleEngine initialized: project_root={project_root}, parallel={parallel}")
 
     def load_builtin_rules(self, rules_config: Dict[str, RuleConfig]):
         """加载内置规则"""
@@ -175,12 +192,12 @@ class RuleEngine:
         """
         violations = []
 
-        try:
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
-                lines = content.split('\n')
-        except Exception as e:
+        # 使用缓存读取文件
+        cached = self._file_cache.get(file_path)
+        if cached is None:
             return violations
+
+        content, lines = cached
 
         for rule in self.rules:
             if not rule.enabled:
@@ -195,13 +212,14 @@ class RuleEngine:
                 )
                 violations.extend(rule_violations)
             except Exception as e:
+                self.logger.warning(f"Rule {rule.identifier} failed on {file_path}: {e}")
                 print(f"Warning: Rule {rule.identifier} failed on {file_path}: {e}", file=sys.stderr)
 
         return violations
 
     def check_files(self, files: List[str], changed_lines_map: Dict[str, Set[int]] = None) -> List[Violation]:
         """
-        对多个文件执行检查
+        对多个文件执行检查（支持并行）
 
         Args:
             files: 文件路径列表
@@ -209,7 +227,15 @@ class RuleEngine:
         Returns:
             所有违规列表
         """
-        self.logger.info(f"Checking {len(files)} files with {len(self.rules)} rules")
+        self.logger.info(f"Checking {len(files)} files with {len(self.rules)} rules (parallel={self.parallel})")
+
+        if not self.parallel or len(files) <= 1:
+            return self._check_files_sequential(files, changed_lines_map)
+
+        return self._check_files_parallel(files, changed_lines_map)
+
+    def _check_files_sequential(self, files: List[str], changed_lines_map: Dict[str, Set[int]] = None) -> List[Violation]:
+        """串行检查文件"""
         all_violations = []
 
         for i, file_path in enumerate(files):
@@ -220,4 +246,52 @@ class RuleEngine:
                 self.logger.debug(f"File {i+1}/{len(files)} ({Path(file_path).name}): {len(violations)} violations")
 
         self.logger.info(f"Total violations found: {len(all_violations)}")
+        return all_violations
+
+    def _check_files_parallel(self, files: List[str], changed_lines_map: Dict[str, Set[int]] = None) -> List[Violation]:
+        """并行检查文件"""
+        all_violations = []
+        violations_lock = Lock()
+        completed_count = 0
+        total_files = len(files)
+
+        def check_single_file(file_path: str) -> Tuple[str, List[Violation]]:
+            """单文件检查任务"""
+            changed_lines = changed_lines_map.get(file_path, set()) if changed_lines_map else None
+            return file_path, self.check_file(file_path, changed_lines)
+
+        # 确定工作线程数
+        workers = self.max_workers
+        if workers <= 0:
+            import os
+            workers = min(32, (os.cpu_count() or 1) * 2)
+        workers = min(workers, len(files))
+
+        self.logger.debug(f"Starting parallel check with {workers} workers")
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(check_single_file, f): f for f in files}
+
+            for future in as_completed(futures):
+                file_path = futures[future]
+                try:
+                    _, violations = future.result()
+                    with violations_lock:
+                        all_violations.extend(violations)
+                        completed_count += 1
+                        if violations:
+                            self.logger.debug(f"File {completed_count}/{total_files} ({Path(file_path).name}): {len(violations)} violations")
+                except Exception as e:
+                    self.logger.error(f"Failed to check {file_path}: {e}")
+                    with violations_lock:
+                        completed_count += 1
+
+        self.logger.info(f"Total violations found: {len(all_violations)}")
+
+        # 输出缓存统计
+        cache_stats = self._file_cache.get_stats()
+        self.logger.debug(f"File cache stats: hit_rate={cache_stats['hit_rate']:.1f}%, "
+                         f"cached_files={cache_stats['cached_files']}, "
+                         f"size={cache_stats['cache_size_mb']:.2f}MB")
+
         return all_violations

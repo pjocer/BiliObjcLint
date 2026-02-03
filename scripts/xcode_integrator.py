@@ -77,10 +77,12 @@ from core import project_config
 class XcodeIntegrator:
     """Xcode 项目集成器"""
 
-    def __init__(self, project_path: str, lint_path: str, project_name: Optional[str] = None):
+    def __init__(self, project_path: str, lint_path: str, project_name: Optional[str] = None,
+                 debug_path: Optional[str] = None):
         self.project_path = Path(project_path).resolve()
         self.lint_path = Path(lint_path).resolve()
         self.project_name = project_name  # 用于 workspace 中指定项目
+        self.debug_path = Path(debug_path).resolve() if debug_path else None  # 本地开发目录
         self.xcodeproj_path: Optional[Path] = None
         self.project: Optional[XcodeProject] = None
         self.logger = get_logger("xcode")
@@ -89,6 +91,8 @@ class XcodeIntegrator:
         self.logger.debug(f"Project path: {self.project_path}")
         self.logger.debug(f"Lint path: {self.lint_path}")
         self.logger.debug(f"Project name filter: {self.project_name}")
+        if self.debug_path:
+            self.logger.info(f"[DEBUG MODE] Using local dev path: {self.debug_path}")
 
     def load_project(self) -> bool:
         """加载 Xcode 项目"""
@@ -551,8 +555,14 @@ class XcodeIntegrator:
         """复制脚本到目标 scripts 目录"""
         self.logger.info(f"Copying {source_name} to: {target_scripts_dir}")
 
-        # 源文件位置（bootstrap.sh 和 code_style_check.sh 现在在 config 目录）
-        source_path = self.lint_path / "config" / source_name
+        # 源文件位置
+        # 调试模式：从本地开发目录复制
+        # 正常模式：从 brew prefix 复制（bootstrap.sh 和 code_style_check.sh 在 config 目录）
+        if self.debug_path:
+            source_path = self.debug_path / "config" / source_name
+            self.logger.info(f"[DEBUG MODE] Using local source: {source_path}")
+        else:
+            source_path = self.lint_path / "config" / source_name
         target_path = target_scripts_dir / source_name
 
         self.logger.debug(f"Source: {source_path}")
@@ -757,16 +767,41 @@ class XcodeIntegrator:
     def do_bootstrap(self, target_name: Optional[str], dry_run: bool = False) -> bool:
         """执行 bootstrap 操作：复制脚本并注入 Build Phase"""
         self.logger.info("Executing bootstrap operation")
+        if self.debug_path:
+            self.logger.info(f"[DEBUG MODE] Debug path: {self.debug_path}")
+            print(f"[DEBUG MODE] 启用调试模式，使用本地目录: {self.debug_path}")
 
         # 1. 确定 scripts 目录位置（输入路径的同级目录）
         scripts_dir = self.project_path.parent / "scripts"
         self.logger.debug(f"Target scripts directory: {scripts_dir}")
 
-        # 2. 复制 bootstrap.sh
+        # 2. 处理调试模式标记文件
+        debug_file = scripts_dir / ".biliobjclint_debug"
+        if self.debug_path:
+            # 调试模式：创建标记文件
+            if not dry_run:
+                scripts_dir.mkdir(parents=True, exist_ok=True)
+                debug_file.write_text(str(self.debug_path))
+                self.logger.info(f"[DEBUG MODE] Created debug marker: {debug_file}")
+                print(f"✓ 已创建调试标记文件: {debug_file}")
+            else:
+                print(f"[DRY RUN] 将创建调试标记文件: {debug_file}")
+        else:
+            # 非调试模式：删除标记文件（如果存在）
+            if debug_file.exists() and not dry_run:
+                debug_file.unlink()
+                self.logger.info(f"Removed debug marker: {debug_file}")
+                print(f"✓ 已移除调试标记文件（恢复正常模式）")
+
+        # 3. 复制 bootstrap.sh
         if not self.copy_bootstrap_script(scripts_dir, dry_run):
             return False
 
-        # 3. 获取 target
+        # 4. 复制 code_style_check.sh
+        if not self.copy_code_style_check_script(scripts_dir, dry_run):
+            return False
+
+        # 6. 获取 target
         target = self.get_target(target_name)
         if not target:
             if target_name:
@@ -781,7 +816,7 @@ class XcodeIntegrator:
         self.logger.info(f"Selected target: {target.name}")
         print(f"Target: {target.name}")
 
-        # 4. 获取 SRCROOT 并计算相对路径
+        # 7. 获取 SRCROOT 并计算相对路径
         srcroot = self.get_project_srcroot()
         if not srcroot:
             self.logger.error("Cannot determine SRCROOT")
@@ -795,7 +830,7 @@ class XcodeIntegrator:
         print(f"Scripts 相对路径: {relative_path}")
         print()
 
-        # 4.5 保存完整项目配置到持久化存储
+        # 8. 保存完整项目配置到持久化存储
         # Key = normalize(xcodeproj_path)|target_name
         # 这样在 Xcode Build Phase 中可以通过 ${PROJECT_FILE_PATH} 和 ${TARGET_NAME} 构建 key
         if not dry_run:
@@ -811,11 +846,11 @@ class XcodeIntegrator:
             key = project_config.save(config)
             self.logger.info(f"Saved project config (key: {key})")
 
-        # 5. 添加 Bootstrap Build Phase
+        # 9. 添加 Bootstrap Build Phase
         if not self.add_bootstrap_phase(target, relative_path, dry_run):
             return False
 
-        # 6. 保存项目
+        # 10. 保存项目
         return self.save(dry_run)
 
     def show_manual(self) -> None:
@@ -956,6 +991,12 @@ def parse_args():
         help='显示手动配置说明（使用自动计算的路径）'
     )
 
+    parser.add_argument(
+        '--debug',
+        help='启用调试模式，使用指定的本地开发目录（与 --bootstrap 配合使用）',
+        default=None
+    )
+
     return parser.parse_args()
 
 
@@ -973,8 +1014,17 @@ def main():
         lint_path = str(Path(__file__).parent.parent)
     logger.debug(f"Lint path: {lint_path}")
 
+    # 检查 debug 路径
+    debug_path = args.debug
+    if debug_path:
+        logger.info(f"[DEBUG MODE] Using local dev path: {debug_path}")
+        # 验证 debug 路径存在
+        if not Path(debug_path).is_dir():
+            print(f"Error: 调试路径不存在: {debug_path}", file=sys.stderr)
+            sys.exit(1)
+
     # 创建集成器（传入 project 参数用于 workspace）
-    integrator = XcodeIntegrator(args.project_path, lint_path, args.project)
+    integrator = XcodeIntegrator(args.project_path, lint_path, args.project, debug_path)
 
     # 如果是 workspace，先处理 --list-projects
     if args.list_projects:

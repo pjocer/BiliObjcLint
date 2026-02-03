@@ -27,6 +27,7 @@ logs/
 
 # Claude Code local settings
 .claude/
+CLAUDE.md
 
 # Temporary files
 *.tmp

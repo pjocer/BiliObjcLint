@@ -73,6 +73,7 @@ show_help() {
     echo "  --project, -p NAME  指定项目名称（用于 workspace 中指定项目）"
     echo "  --target, -t NAME   指定 Target 名称（默认：主 Target）"
     echo "  --lint-path PATH    指定 BiliObjCLint 安装路径（默认：自动检测）"
+    echo "  --debug PATH        启用调试模式，使用指定的本地开发目录（与 --bootstrap 配合使用）"
     echo "  --remove            移除已添加的 Lint Phase"
     echo "  --override          强制覆盖已存在的 Lint Phase"
     echo "  --check-update      检查已注入脚本是否需要更新"
@@ -89,6 +90,9 @@ show_help() {
     echo "  $0 /path/to/MyApp.xcodeproj --target MyApp"
     echo "  $0 /path/to/MyApp.xcodeproj --list-targets"
     echo "  $0 /path/to/MyApp.xcodeproj --remove"
+    echo ""
+    echo "调试模式示例:"
+    echo "  $0 /path/to/MyApp.xcodeproj --bootstrap --debug /path/to/BiliObjCLint"
     exit 0
 }
 
@@ -99,6 +103,7 @@ PROJECT_NAME=""
 TARGET_NAME=""
 LINT_PATH=""
 SCRIPTS_DIR=""
+DEBUG_PATH=""
 ACTION="add"
 DRY_RUN=""
 OVERRIDE=""
@@ -151,6 +156,10 @@ while [[ $# -gt 0 ]]; do
         --bootstrap)
             ACTION="bootstrap"
             shift
+            ;;
+        --debug)
+            DEBUG_PATH="$2"
+            shift 2
             ;;
         --list-projects)
             ACTION="list-projects"
@@ -265,6 +274,10 @@ else
 
     if [ -n "$LINT_PATH" ]; then
         CMD_ARGS+=("--lint-path" "$LINT_PATH")
+    fi
+
+    if [ -n "$DEBUG_PATH" ]; then
+        CMD_ARGS+=("--debug" "$DEBUG_PATH")
     fi
 
     "$PYTHON_BIN" "$PROJECT_ROOT/scripts/xcode_integrator.py" "${CMD_ARGS[@]}"

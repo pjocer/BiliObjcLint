@@ -43,9 +43,24 @@ error() { echo -e "${RED}[BiliObjCLint]${NC} $1"; exit 1; }
 # 获取脚本所在目录（项目的 scripts 目录）
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# 检查是否为调试模式
+DEBUG_FILE="$SCRIPT_DIR/.biliobjclint_debug"
+DEBUG_MODE=false
+if [ -f "$DEBUG_FILE" ]; then
+    DEBUG_MODE=true
+    DEBUG_PATH=$(cat "$DEBUG_FILE")
+fi
+
 # ==================== Main ====================
 
 main() {
+    # 调试模式：跳过版本检查，避免覆盖本地开发代码
+    if [ "$DEBUG_MODE" = true ]; then
+        info "[DEBUG MODE] 使用本地开发目录: $DEBUG_PATH"
+        info "[DEBUG MODE] 跳过版本检查和脚本更新"
+        return 0
+    fi
+
     # 检查 Xcode 环境变量
     if [ -z "$PROJECT_FILE_PATH" ]; then
         error "PROJECT_FILE_PATH 环境变量未设置，请确保在 Xcode Build Phase 中运行"

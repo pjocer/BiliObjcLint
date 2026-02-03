@@ -55,6 +55,17 @@ class LocalPodsConfig:
 
 
 @dataclass
+class PerformanceConfig:
+    """性能优化配置"""
+    # 是否启用并行检查
+    parallel: bool = True
+    # 最大工作线程数（0 表示自动：min(32, cpu_count * 2)）
+    max_workers: int = 0
+    # 文件缓存最大容量（MB）
+    file_cache_size_mb: int = 100
+
+
+@dataclass
 class LintConfig:
     """完整的 Lint 配置"""
     # 基础配置
@@ -77,6 +88,9 @@ class LintConfig:
 
     # 本地 Pod 检测配置
     local_pods: LocalPodsConfig = field(default_factory=LocalPodsConfig)
+
+    # 性能优化配置
+    performance: PerformanceConfig = field(default_factory=PerformanceConfig)
 
 
 class ConfigLoader:
@@ -142,6 +156,11 @@ class ConfigLoader:
             "incremental": False,
             "included_pods": [],
             "excluded_pods": ["*Test*", "*Mock*"]
+        },
+        "performance": {
+            "parallel": True,
+            "max_workers": 0,
+            "file_cache_size_mb": 100
         }
     }
 
@@ -212,6 +231,13 @@ class ConfigLoader:
             excluded_pods=local_pods_cfg.get("excluded_pods", ["*Test*", "*Mock*"])
         )
 
+        performance_cfg = self._config.get("performance", {})
+        performance = PerformanceConfig(
+            parallel=performance_cfg.get("parallel", True),
+            max_workers=performance_cfg.get("max_workers", 0),
+            file_cache_size_mb=performance_cfg.get("file_cache_size_mb", 100)
+        )
+
         return LintConfig(
             base_branch=self._config.get("base_branch", "origin/master"),
             incremental=self._config.get("incremental", True),
@@ -221,7 +247,8 @@ class ConfigLoader:
             python_rules=python_rules,
             custom_rules_python_path=custom_rules.get("python", {}).get("path", "./custom_rules/python/"),
             claude_autofix=claude_autofix,
-            local_pods=local_pods
+            local_pods=local_pods,
+            performance=performance
         )
 
     def get_raw_config(self) -> Dict[str, Any]:

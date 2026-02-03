@@ -330,7 +330,14 @@ class BiliObjCLint:
 
     def _run_python_rules(self, files: List[str], changed_lines_map: dict) -> List[Violation]:
         """运行 Python 规则检查"""
-        engine = RuleEngine(str(self.project_root))
+        perf_config = self.config.performance
+
+        engine = RuleEngine(
+            str(self.project_root),
+            parallel=perf_config.parallel,
+            max_workers=perf_config.max_workers,
+            file_cache_size_mb=perf_config.file_cache_size_mb
+        )
 
         # 加载内置规则
         engine.load_builtin_rules(self.config.python_rules)
@@ -343,10 +350,11 @@ class BiliObjCLint:
             self.logger.debug(f"Loaded custom rules from: {custom_path}")
 
         rule_ids = [r.identifier for r in engine.rules]
-        self.logger.info(f"Running {len(engine.rules)} Python rules: {rule_ids}")
+        self.logger.info(f"Running {len(engine.rules)} Python rules: {rule_ids} (parallel={perf_config.parallel})")
 
         if self.args.verbose:
-            print(f"Running {len(engine.rules)} Python rules...", file=sys.stderr)
+            mode_str = f"parallel ({perf_config.max_workers or 'auto'} workers)" if perf_config.parallel else "sequential"
+            print(f"Running {len(engine.rules)} Python rules ({mode_str})...", file=sys.stderr)
             for rule in engine.rules:
                 print(f"  - {rule.identifier}", file=sys.stderr)
 

@@ -51,24 +51,51 @@ if [ -z "$SRCROOT" ]; then
     exit 1
 fi
 
-# 获取 biliobjclint 的安装路径
-LINT_PATH=$(brew --prefix biliobjclint 2>/dev/null)
-if [ -z "$LINT_PATH" ] || [ ! -d "$LINT_PATH" ]; then
-    error "BiliObjCLint 未安装，请运行: brew install pjocer/biliobjclint/biliobjclint"
-    exit 1
+# 获取脚本所在目录
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# 检查是否为调试模式
+DEBUG_FILE="$SCRIPT_DIR/.biliobjclint_debug"
+DEBUG_MODE=false
+if [ -f "$DEBUG_FILE" ]; then
+    DEBUG_PATH=$(cat "$DEBUG_FILE")
+    if [ -d "$DEBUG_PATH" ]; then
+        DEBUG_MODE=true
+        LINT_PATH="$DEBUG_PATH"
+        PYTHON_BIN="$LINT_PATH/.venv/bin/python3"
+        info "[DEBUG MODE] 使用本地目录: $LINT_PATH"
+    else
+        error "[DEBUG MODE] 本地目录不存在: $DEBUG_PATH"
+        error "请删除 $DEBUG_FILE 或重新执行 --bootstrap --debug"
+        exit 1
+    fi
+else
+    # 正常模式：使用 Homebrew 安装
+    LINT_PATH=$(brew --prefix biliobjclint 2>/dev/null)
+    if [ -z "$LINT_PATH" ] || [ ! -d "$LINT_PATH" ]; then
+        error "BiliObjCLint 未安装，请运行: brew install pjocer/biliobjclint/biliobjclint"
+        exit 1
+    fi
+    PYTHON_BIN="${LINT_PATH}/libexec/.venv/bin/python3"
 fi
 
 # 配置文件路径
 CONFIG_PATH="${SRCROOT}/.biliobjclint.yaml"
-PYTHON_BIN="${LINT_PATH}/libexec/.venv/bin/python3"
 
 # 加载日志库
-if [ -f "${LINT_PATH}/libexec/scripts/lib/logging.sh" ]; then
-    source "${LINT_PATH}/libexec/scripts/lib/logging.sh"
+if [ "$DEBUG_MODE" = true ]; then
+    LOG_LIB_PATH="${LINT_PATH}/scripts/lib/logging.sh"
+else
+    LOG_LIB_PATH="${LINT_PATH}/libexec/scripts/lib/logging.sh"
+fi
+
+if [ -f "$LOG_LIB_PATH" ]; then
+    source "$LOG_LIB_PATH"
     init_logging "xcode_build_phase"
     log_script_start "Build Phase Lint Check"
     log_info "Project: ${SRCROOT}"
     log_info "Configuration: ${CONFIGURATION}"
+    [ "$DEBUG_MODE" = true ] && log_info "Debug mode: enabled"
 else
     # 如果日志库不存在，定义空函数
     log_info() { :; }
@@ -97,13 +124,23 @@ log_info "Python binary: $PYTHON_BIN"
 
 # ==================== 执行 Lint 检查 ====================
 
+# 根据模式设置脚本路径
+if [ "$DEBUG_MODE" = true ]; then
+    SCRIPTS_PATH="${LINT_PATH}/scripts"
+else
+    SCRIPTS_PATH="${LINT_PATH}/libexec/scripts"
+fi
+
 # 创建临时文件存储 JSON 输出
 VIOLATIONS_FILE=$(mktemp)
 log_debug "Violations temp file: $VIOLATIONS_FILE"
 
+# 记录开始时间
+LINT_START_TIME=$("$PYTHON_BIN" -c "import time; print(time.time())")
+
 # 执行 Lint 检查，输出 JSON 格式到临时文件
 log_info "Running lint check (JSON output)..."
-"$PYTHON_BIN" "${LINT_PATH}/libexec/scripts/biliobjclint.py" \
+"$PYTHON_BIN" "${SCRIPTS_PATH}/biliobjclint.py" \
     --config "$CONFIG_PATH" \
     --project-root "${SRCROOT}" \
     --incremental \
@@ -111,14 +148,21 @@ log_info "Running lint check (JSON output)..."
 
 # 执行 Lint 检查，输出 Xcode 格式（用于在 Xcode 中显示警告/错误）
 log_info "Running lint check (Xcode output)..."
-"$PYTHON_BIN" "${LINT_PATH}/libexec/scripts/biliobjclint.py" \
+"$PYTHON_BIN" "${SCRIPTS_PATH}/biliobjclint.py" \
     --config "$CONFIG_PATH" \
     --project-root "${SRCROOT}" \
     --incremental \
     --xcode-output
 
 LINT_EXIT=$?
-log_info "Lint exit code: $LINT_EXIT"
+
+# 记录结束时间并计算耗时
+LINT_END_TIME=$("$PYTHON_BIN" -c "import time; print(time.time())")
+LINT_DURATION=$("$PYTHON_BIN" -c "print(f'{$LINT_END_TIME - $LINT_START_TIME:.2f}')")
+info "=========================================="
+info "Lint 检查耗时: ${LINT_DURATION} 秒"
+info "=========================================="
+log_info "Lint exit code: $LINT_EXIT, duration: ${LINT_DURATION}s"
 
 # ==================== Claude 自动修复 ====================
 
@@ -136,7 +180,7 @@ if [ -s "$VIOLATIONS_FILE" ]; then
     # 在进入后台子进程前，先保存所有需要的变量值
     # 因为 Xcode 环境变量在后台子进程中可能不可用
     _PYTHON_BIN="$PYTHON_BIN"
-    _LINT_PATH="$LINT_PATH"
+    _SCRIPTS_PATH="$SCRIPTS_PATH"
     _CONFIG_PATH="$CONFIG_PATH"
     _PROJECT_ROOT="${SRCROOT}"
     _VIOLATIONS_COPY="$VIOLATIONS_COPY"
@@ -148,7 +192,7 @@ if [ -s "$VIOLATIONS_FILE" ]; then
     # 2. 显示对话框询问用户
     # 3. 执行修复（如果用户同意）
     (
-        "$_PYTHON_BIN" "$_LINT_PATH/libexec/scripts/claude_fixer.py" \
+        "$_PYTHON_BIN" "$_SCRIPTS_PATH/claude_fixer.py" \
             --violations "$_VIOLATIONS_COPY" \
             --config "$_CONFIG_PATH" \
             --project-root "$_PROJECT_ROOT"
