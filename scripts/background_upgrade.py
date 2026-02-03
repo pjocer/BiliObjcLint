@@ -52,8 +52,8 @@ class FileLogger:
 
 logger = FileLogger()
 
-# 导入 scripts_path 工具模块
-from core import scripts_path_utils
+# 导入项目配置模块
+from core import project_config
 
 
 def get_brew_prefix() -> Optional[Path]:
@@ -215,13 +215,14 @@ def update_build_phase(
                 logger.info(f"Build Phase already at version {SCRIPT_VERSION}")
                 return True
 
-        # 从持久化存储获取 scripts_path（使用 xcodeproj_path 作为 key）
-        saved_path = scripts_path_utils.get(str(integrator.xcodeproj_path), project_name, target_name)
-        if saved_path:
-            scripts_path_in_phase = scripts_path_utils.get_srcroot_path(saved_path)
-            logger.info(f"Loaded scripts path from store: {saved_path}")
+        # 从持久化存储获取项目配置
+        config = project_config.get(str(integrator.xcodeproj_path), target.name)
+        if config:
+            scripts_path_in_phase = project_config.get_scripts_srcroot_path(config)
+            logger.info(f"Loaded config, scripts path: {config.scripts_dir_relative}")
         else:
-            logger.error(f"No scripts path found in store for key: {integrator.xcodeproj_path}|{project_name}|{target_name}")
+            key = project_config.make_key(str(integrator.xcodeproj_path), target.name)
+            logger.error(f"No config found for key: {key}")
             return False
 
         # 更新 Build Phase
@@ -320,13 +321,14 @@ def update_build_phase_with_new_version(
             current_version = integrator.get_lint_phase_version(target)
             logger.info(f"Current Build Phase version: {current_version}")
 
-        # 从持久化存储获取 scripts_path（使用 xcodeproj_path 作为 key）
-        saved_path = scripts_path_utils.get(str(integrator.xcodeproj_path), project_name, target_name)
-        if saved_path:
-            scripts_path_in_phase = scripts_path_utils.get_srcroot_path(saved_path)
-            logger.info(f"Loaded scripts path from store: {saved_path}")
+        # 从持久化存储获取项目配置
+        config = project_config.get(str(integrator.xcodeproj_path), target.name)
+        if config:
+            scripts_path_in_phase = project_config.get_scripts_srcroot_path(config)
+            logger.info(f"Loaded config, scripts path: {config.scripts_dir_relative}")
         else:
-            logger.error(f"No scripts path found in store for key: {integrator.xcodeproj_path}|{project_name}|{target_name}")
+            key = project_config.make_key(str(integrator.xcodeproj_path), target.name)
+            logger.error(f"No config found for key: {key}")
             return False
 
         # 更新 Build Phase

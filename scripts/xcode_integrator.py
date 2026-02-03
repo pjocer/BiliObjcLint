@@ -69,8 +69,8 @@ BOOTSTRAP_SCRIPT_TEMPLATE = '''#!/bin/bash
 "{scripts_path}/bootstrap.sh" -w "${{WORKSPACE_PATH}}" -p "${{PROJECT_FILE_PATH}}" -t "${{TARGET_NAME}}"
 '''
 
-# 导入 scripts_path 工具模块
-from core import scripts_path_utils
+# 导入项目配置模块
+from core import project_config
 
 
 class XcodeIntegrator:
@@ -320,19 +320,16 @@ class XcodeIntegrator:
 
         # 获取 scripts_path（如果未提供）
         if not scripts_path:
-            # 从持久化存储读取（使用 xcodeproj_path 作为 key）
-            saved_path = scripts_path_utils.get(
-                str(self.xcodeproj_path),
-                self.project_name,
-                target.name
-            )
-            if saved_path:
-                scripts_path = scripts_path_utils.get_srcroot_path(saved_path)
-                self.logger.debug(f"Loaded scripts path from store: {saved_path}")
+            # 从持久化存储读取配置
+            config = project_config.get(str(self.xcodeproj_path), target.name)
+            if config:
+                scripts_path = project_config.get_scripts_srcroot_path(config)
+                self.logger.debug(f"Loaded scripts path from config: {config.scripts_dir_relative}")
             else:
-                # 没有保存的路径，需要先执行 --bootstrap
-                self.logger.error(f"No scripts path found in store for key: {self.xcodeproj_path}|{self.project_name}|{target.name}")
-                print("Error: 未找到 scripts 路径配置，请先执行 --bootstrap", file=sys.stderr)
+                # 没有保存的配置，需要先执行 --bootstrap
+                key = project_config.make_key(str(self.xcodeproj_path), target.name)
+                self.logger.error(f"No config found for key: {key}")
+                print("Error: 未找到项目配置，请先执行 --bootstrap", file=sys.stderr)
                 return False
 
         script_content = LINT_SCRIPT_TEMPLATE.format(
@@ -797,16 +794,21 @@ class XcodeIntegrator:
         print(f"Scripts 相对路径: {relative_path}")
         print()
 
-        # 4.5 保存 scripts 相对路径到持久化存储
-        # 使用 xcodeproj_path 作为 key（因为 ${PROJECT_FILE_PATH} 始终可用，而 ${WORKSPACE_PATH} 可能为空）
+        # 4.5 保存完整项目配置到持久化存储
+        # Key = normalize(xcodeproj_path)|target_name
+        # 这样在 Xcode Build Phase 中可以通过 ${PROJECT_FILE_PATH} 和 ${TARGET_NAME} 构建 key
         if not dry_run:
-            scripts_path_utils.save(
-                str(self.xcodeproj_path),
-                self.project_name,
-                target.name,
-                relative_path
+            config = project_config.ProjectConfig(
+                xcode_path=str(self.project_path),
+                is_workspace=(self.project_path.suffix == '.xcworkspace'),
+                xcodeproj_path=str(self.xcodeproj_path),
+                project_name=self.project_name or self.xcodeproj_path.stem,
+                target_name=target.name,
+                scripts_dir_absolute=str(scripts_dir),
+                scripts_dir_relative=relative_path
             )
-            self.logger.info(f"Saved scripts path to store: {relative_path} (key: {self.xcodeproj_path})")
+            key = project_config.save(config)
+            self.logger.info(f"Saved project config (key: {key})")
 
         # 5. 添加 Bootstrap Build Phase
         if not self.add_bootstrap_phase(target, relative_path, dry_run):

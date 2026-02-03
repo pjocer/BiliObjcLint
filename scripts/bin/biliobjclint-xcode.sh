@@ -94,6 +94,7 @@ show_help() {
 
 # 解析参数
 PROJECT_PATH=""
+XCODEPROJ_PATH=""
 PROJECT_NAME=""
 TARGET_NAME=""
 LINT_PATH=""
@@ -110,6 +111,10 @@ while [[ $# -gt 0 ]]; do
         --manual)
             ACTION="manual"
             shift
+            ;;
+        --xcodeproj)
+            XCODEPROJ_PATH="$2"
+            shift 2
             ;;
         --project|-p)
             PROJECT_NAME="$2"
@@ -176,6 +181,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# 如果指定了 --xcodeproj，使用它作为项目路径
+if [ -n "$XCODEPROJ_PATH" ]; then
+    PROJECT_PATH="$XCODEPROJ_PATH"
+fi
+
 # 检查项目路径
 if [ -z "$PROJECT_PATH" ]; then
     print_error "请指定项目路径"
@@ -217,13 +227,18 @@ fi
 
 # check-and-inject 使用 check_update.py
 if [ "$ACTION" = "check-and-inject" ]; then
+    # 使用 --xcodeproj 参数传递路径（对应 Xcode 的 PROJECT_FILE_PATH）
+    CHECK_ARGS=("--xcodeproj" "$PROJECT_PATH")
+    if [ -n "$TARGET_NAME" ]; then
+        CHECK_ARGS+=("--target" "$TARGET_NAME")
+    fi
     if [ -n "$SCRIPTS_DIR" ]; then
-        CMD_ARGS+=("--scripts-dir" "$SCRIPTS_DIR")
+        CHECK_ARGS+=("--scripts-dir" "$SCRIPTS_DIR")
     fi
     if [ -n "$DRY_RUN" ]; then
-        CMD_ARGS+=("$DRY_RUN")
+        CHECK_ARGS+=("$DRY_RUN")
     fi
-    "$PYTHON_BIN" "$PROJECT_ROOT/scripts/check_update.py" "${CMD_ARGS[@]}"
+    "$PYTHON_BIN" "$PROJECT_ROOT/scripts/check_update.py" "${CHECK_ARGS[@]}"
 else
     # 其他操作使用 xcode_integrator.py
     if [ "$ACTION" = "remove" ]; then

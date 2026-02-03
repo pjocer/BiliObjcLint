@@ -35,8 +35,8 @@ GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/tags"
 
 logger = get_logger("check_update")
 
-# 导入 scripts_path 工具模块
-from core import scripts_path_utils
+# 导入项目配置模块
+from core import project_config
 
 
 def get_local_version() -> Optional[str]:
@@ -412,14 +412,15 @@ def do_check_and_inject(
                 print(f"[BiliObjCLint] Target '{target.name}' 已存在 Lint Phase (v{current_version})")
                 return True
 
-        # 从持久化存储获取 scripts_path（使用 xcodeproj_path 作为 key）
-        saved_path = scripts_path_utils.get(str(integrator.xcodeproj_path), project_name, target_name)
-        if saved_path:
-            scripts_path_in_phase = scripts_path_utils.get_srcroot_path(saved_path)
-            logger.info(f"Loaded scripts path from store: {saved_path}")
+        # 从持久化存储获取项目配置
+        config = project_config.get(str(integrator.xcodeproj_path), target_name)
+        if config:
+            scripts_path_in_phase = project_config.get_scripts_srcroot_path(config)
+            logger.info(f"Loaded config, scripts path: {config.scripts_dir_relative}")
         else:
-            logger.error(f"No scripts path found in store for key: {integrator.xcodeproj_path}|{project_name}|{target_name}")
-            print("[BiliObjCLint] Error: 未找到 scripts 路径配置，请先执行 --bootstrap", file=sys.stderr)
+            key = project_config.make_key(str(integrator.xcodeproj_path), target_name)
+            logger.error(f"No config found for key: {key}")
+            print("[BiliObjCLint] Error: 未找到项目配置，请先执行 --bootstrap", file=sys.stderr)
             return False
 
         # 注入 Build Phase
@@ -458,6 +459,12 @@ def parse_args():
         'project_path',
         nargs='?',
         help='Xcode 项目路径 (.xcodeproj 或 .xcworkspace)'
+    )
+
+    parser.add_argument(
+        '--xcodeproj',
+        help='.xcodeproj 路径（对应 Xcode 的 PROJECT_FILE_PATH）',
+        default=None
     )
 
     parser.add_argument(
@@ -512,12 +519,14 @@ def main():
             print(f"已是最新版本: {local_ver}")
             sys.exit(0)
 
-    if not args.project_path:
-        print("Error: 请指定项目路径", file=sys.stderr)
+    # 确定项目路径：优先使用 --xcodeproj，否则使用位置参数
+    project_path = args.xcodeproj or args.project_path
+    if not project_path:
+        print("Error: 请指定项目路径（--xcodeproj 或位置参数）", file=sys.stderr)
         sys.exit(1)
 
     success = do_check_and_inject(
-        project_path=args.project_path,
+        project_path=project_path,
         target_name=args.target,
         project_name=args.project,
         scripts_dir=args.scripts_dir,

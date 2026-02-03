@@ -2,6 +2,24 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.3.0 (2026-02-02)
+
+### 重构
+- 重新设计项目配置持久化方案
+  - 新增 `project_config.py` 模块，替代 `scripts_path_utils.py`
+  - 配置存储在 `~/.biliobjclint/projects.json`
+  - Key 格式：`{xcodeproj_path}|{target_name}`（可通过 Xcode 的 `${PROJECT_FILE_PATH}` 和 `${TARGET_NAME}` 构建）
+  - 存储完整项目配置：xcode_path、is_workspace、xcodeproj_path、project_name、target_name、scripts_dir_absolute、scripts_dir_relative
+
+### 简化
+- 简化 `bootstrap.sh`，直接从 Xcode 环境变量获取项目信息
+  - 使用 `${PROJECT_FILE_PATH}` 和 `${TARGET_NAME}`（始终可用）
+  - 移除复杂的参数解析逻辑
+- `biliobjclint-xcode` 新增 `--xcodeproj` 参数，直接指定 .xcodeproj 路径
+
+### 修复
+- 彻底修复 scripts_path 配置查找失败的问题
+
 ## v1.2.5 (2026-02-02)
 
 ### 修复
