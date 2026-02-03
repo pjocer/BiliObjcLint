@@ -62,11 +62,12 @@ PHASE_NAME = "[BiliObjcLint] Code Style Lint"
 BOOTSTRAP_PHASE_NAME = "[BiliObjcLint] Package Manager"
 
 # Bootstrap Build Phase 脚本模板
+# bootstrap.sh 直接从 Xcode 环境变量读取 PROJECT_FILE_PATH 和 TARGET_NAME
 BOOTSTRAP_SCRIPT_TEMPLATE = '''#!/bin/bash
 # [BiliObjcLint] Package Manager
 # 自动安装和更新 BiliObjCLint
 
-"{scripts_path}/bootstrap.sh" -w "${{WORKSPACE_PATH}}" -p "${{PROJECT_FILE_PATH}}" -t "${{TARGET_NAME}}"
+"{scripts_path}/bootstrap.sh"
 '''
 
 # 导入项目配置模块
