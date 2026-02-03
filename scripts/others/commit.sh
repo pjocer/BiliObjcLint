@@ -51,6 +51,7 @@ COMMIT_SCOPE=""
 COMMIT_DESC=""
 COMMIT_BODY=""
 COMMIT_MESSAGE=""  # 完整的提交信息（跳过格式化）
+IMPORTANT_NOTES=()  # 重要提示数组
 
 # 支持的提交类型
 COMMIT_TYPES=("feat" "fix" "docs" "style" "refactor" "perf" "test" "chore")
@@ -139,6 +140,7 @@ Options:
                       示例: 规则, 配置, 脚本, Claude, Xcode
   -d, --desc DESC     简短描述 (必填，交互模式下会提示输入)
   -b, --body BODY     详细说明 (可选，支持多行)
+  -i, --important MSG 重要提示 (可选，可多次使用，自动写入 CHANGELOG)
   -m, --message MSG   完整的提交信息 (跳过格式化，直接使用)
   -y, --yes           跳过确认提示（非交互式模式）
   -h, --help          显示帮助信息
@@ -165,6 +167,9 @@ Examples:
 
   # 带详细说明
   commit.sh -t feat -s "Claude" -d "添加 API 配置支持" -b "支持内部网关和官方 API 两种方式"
+
+  # 带重要提示（自动写入 CHANGELOG 的 ### 重要 段落）
+  commit.sh -y -t feat -d "重大更新" -i "需要重新执行 --bootstrap" -i "旧配置需要迁移"
 
   # 非交互式
   commit.sh -y -t chore -d "更新依赖"
@@ -291,6 +296,59 @@ Co-Authored-By: Claude (claude-4.5-opus) <noreply@anthropic.com>"
     echo "$message"
 }
 
+# 更新 CHANGELOG 添加重要提示段落
+update_changelog_with_important() {
+    local changelog_file="$PROJECT_ROOT/CHANGELOG.md"
+
+    if [ ${#IMPORTANT_NOTES[@]} -eq 0 ]; then
+        return 0
+    fi
+
+    if [ ! -f "$changelog_file" ]; then
+        warn "CHANGELOG.md 不存在，跳过重要提示插入"
+        return 1
+    fi
+
+    info "添加重要提示到 CHANGELOG..."
+
+    # 构建重要提示内容
+    local important_content="\n### 重要\n"
+    for note in "${IMPORTANT_NOTES[@]}"; do
+        important_content+="- ${note}\n"
+    done
+
+    # 使用 Python 处理 CHANGELOG 插入（bash 处理多行文本比较麻烦）
+    python3 << PYTHON_EOF
+import re
+
+changelog_path = "$changelog_file"
+important_content = """
+### 重要
+$(for note in "${IMPORTANT_NOTES[@]}"; do echo "- $note"; done)
+"""
+
+with open(changelog_path, 'r') as f:
+    content = f.read()
+
+# 找到第一个版本标题后的第一个 ### 标题
+# 模式：## vX.X.X ... 后面的第一个 ### 之前插入
+pattern = r'(## v\d+\.\d+\.\d+[^\n]*\n\n)(### )'
+match = re.search(pattern, content)
+
+if match:
+    # 在第一个 ### 之前插入重要提示
+    insert_pos = match.start(2)
+    new_content = content[:insert_pos] + important_content.strip() + '\n\n' + content[insert_pos:]
+    with open(changelog_path, 'w') as f:
+        f.write(new_content)
+    print("CHANGELOG 已更新")
+else:
+    print("未找到合适的插入位置，跳过")
+PYTHON_EOF
+
+    return 0
+}
+
 # 解析参数
 parse_args() {
     while [[ $# -gt 0 ]]; do
@@ -318,6 +376,10 @@ parse_args() {
             -y|--yes)
                 SKIP_CONFIRM=true
                 shift
+                ;;
+            -i|--important)
+                IMPORTANT_NOTES+=("$2")
+                shift 2
                 ;;
             -h|--help)
                 show_help
@@ -415,6 +477,11 @@ Co-Authored-By: Claude (claude-4.5-opus) <noreply@anthropic.com>"
 
         # 构建提交信息
         COMMIT_MESSAGE=$(build_commit_message)
+    fi
+
+    # 如果有重要提示，更新 CHANGELOG
+    if [ ${#IMPORTANT_NOTES[@]} -gt 0 ]; then
+        update_changelog_with_important
     fi
 
     # 显示提交信息预览

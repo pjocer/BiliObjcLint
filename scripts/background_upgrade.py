@@ -70,8 +70,16 @@ def get_brew_prefix() -> Optional[Path]:
     return None
 
 
-def get_changelog_for_version(version: str) -> str:
-    """获取指定版本的 CHANGELOG（仅保留 bullet points，去除 markdown 标题）"""
+def get_changelog_for_version(version: str) -> tuple:
+    """
+    获取指定版本的 CHANGELOG，分离普通内容和重要提示
+
+    Returns:
+        tuple: (normal_changelog: str, important_notes: str)
+    """
+    normal_lines = []
+    important_lines = []
+
     try:
         brew_prefix = get_brew_prefix()
         logger.info(f"Looking for changelog, brew_prefix: {brew_prefix}, version: {version}")
@@ -83,42 +91,67 @@ def get_changelog_for_version(version: str) -> str:
                 content = changelog_file.read_text()
                 lines = content.split('\n')
                 in_version = False
-                changelog_lines = []
+                in_important = False
                 search_pattern = f'## v{version}'
                 logger.info(f"Searching for pattern: {search_pattern}")
+
                 for line in lines:
                     if line.startswith(f'## v{version}') or line.startswith(f'## [{version}'):
                         in_version = True
                         logger.info(f"Found version header: {line}")
                         continue
                     elif line.startswith('## ') and in_version:
+                        # 遇到下一个版本，结束
                         break
                     elif in_version:
-                        # 只保留 bullet points (- 开头的行)，跳过 ### 标题和空行
                         stripped = line.strip()
+                        # 检测 ### 重要 段落
+                        if stripped == '### 重要':
+                            in_important = True
+                            continue
+                        elif stripped.startswith('### ') and in_important:
+                            in_important = False
+
+                        # 只保留 bullet points (- 开头的行)
                         if stripped.startswith('- '):
-                            changelog_lines.append(stripped)
-                if changelog_lines:
-                    result = '\n'.join(changelog_lines)
-                    logger.info(f"Found changelog content, length: {len(result)}")
-                    return result
-                else:
-                    logger.info("No changelog content found for this version")
+                            if in_important:
+                                important_lines.append(stripped)
+                            else:
+                                normal_lines.append(stripped)
+
+                normal_result = '\n'.join(normal_lines) if normal_lines else ""
+                important_result = '\n'.join(important_lines) if important_lines else ""
+
+                logger.info(f"Found changelog: normal={len(normal_result)}, important={len(important_result)}")
+                return normal_result, important_result
             else:
                 logger.info("Changelog file does not exist")
         else:
             logger.info("brew_prefix is None")
     except Exception as e:
         logger.exception(f"Failed to get changelog: {e}")
-    return ""
+
+    return "", ""
 
 
-def show_update_dialog(version: str, changelog: str):
-    """显示更新完成弹窗"""
+def show_update_dialog(version: str, changelog: str, important: str = ""):
+    """
+    显示更新完成弹窗
+
+    Args:
+        version: 版本号
+        changelog: 普通更新内容
+        important: 重要提示内容（用 emoji 高亮显示）
+    """
     title = f"BiliObjCLint 已更新到 v{version}"
     message = "更新完成！"
+
     if changelog:
-        message += f"\n\n更新内容:\n{changelog[:500]}"
+        message += f"\n\n更新内容:\n{changelog[:400]}"
+
+    if important:
+        message += f"\n\n━━━━━━━━━━━━━━━━━━━━\n⚠️ 重要提示 ⚠️\n━━━━━━━━━━━━━━━━━━━━\n{important}"
+
     try:
         # 转义双引号
         message = message.replace('"', '\\"')
@@ -441,12 +474,12 @@ def do_upgrade(
 
         # 6. 获取 CHANGELOG 内容（从新版本读取）
         logger.info(f"Getting changelog for version {remote_ver}...")
-        changelog = get_changelog_for_version(remote_ver)
-        logger.info(f"Changelog content length: {len(changelog)}")
+        changelog, important = get_changelog_for_version(remote_ver)
+        logger.info(f"Changelog content: normal={len(changelog)}, important={len(important)}")
 
         # 7. 显示更新完成弹窗（阻塞等待用户点击 OK）
         logger.info("Showing update dialog...")
-        show_update_dialog(remote_ver, changelog)
+        show_update_dialog(remote_ver, changelog, important)
 
         # 8. 用户点击 OK 后，进程正常结束
         logger.info("User acknowledged update, process ending")

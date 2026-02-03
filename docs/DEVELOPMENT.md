@@ -323,6 +323,7 @@ BiliObjCLint 提供了两个脚本来简化提交和发布流程：
 | `-s, --scope` | 作用域（可选）: 如 规则, 配置, 脚本, Claude |
 | `-d, --desc` | 简短描述（必填） |
 | `-b, --body` | 详细说明（可选） |
+| `-i, --important` | 重要提示（可选，可多次使用，自动写入 CHANGELOG 的 `### 重要` 段落） |
 | `-m, --message` | 完整提交信息（跳过格式化） |
 | `-y, --yes` | 非交互式模式（跳过确认） |
 
@@ -342,6 +343,11 @@ BiliObjCLint 提供了两个脚本来简化提交和发布流程：
 ./scripts/others/commit.sh -t feat -s "Claude" -d "添加 API 配置支持" \
     -b "- 支持内部网关配置
 - 支持官方 API 配置"
+
+# 带重要提示（自动写入 CHANGELOG，更新时高亮显示）
+./scripts/others/commit.sh -y -t feat -d "重大架构更新" \
+    -i "需要重新执行 --bootstrap" \
+    -i "旧版本配置不兼容"
 
 # 直接指定完整信息（兼容旧方式）
 ./scripts/others/commit.sh -m "feat: 新增功能"
