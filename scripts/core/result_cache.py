@@ -2,6 +2,10 @@
 Result Cache Module - 规则检查结果缓存
 
 支持持久化缓存，跨进程复用检查结果，减少重复计算。
+缓存存储在全局目录 ~/.biliobjclint/result_cache.json。
+
+缓存隔离策略：
+- 缓存 key 为文件绝对路径的 MD5，不同项目天然隔离
 
 缓存失效策略：
 - 文件 mtime 变化
@@ -209,8 +213,9 @@ def get_result_cache(cache_dir: str = None, enabled: bool = True) -> ResultCache
     global _result_cache
     if _result_cache is None:
         if cache_dir is None:
-            # 默认缓存目录：项目根目录下的 .biliobjclint_cache
-            cache_dir = ".biliobjclint_cache"
+            # 默认缓存目录：全局 ~/.biliobjclint/（按文件绝对路径隔离）
+            from pathlib import Path
+            cache_dir = str(Path.home() / ".biliobjclint")
         _result_cache = ResultCache(cache_dir, enabled)
     return _result_cache
 

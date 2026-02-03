@@ -109,8 +109,8 @@ class RuleEngine:
         self.parallel = parallel
         self.max_workers = max_workers
         self._file_cache = get_file_cache(file_cache_size_mb)
-        # 规则结果缓存
-        cache_dir = self.project_root / ".biliobjclint_cache"
+        # 规则结果缓存（全局目录，按文件绝对路径隔离）
+        cache_dir = Path.home() / ".biliobjclint"
         self._result_cache = ResultCache(str(cache_dir), enabled=result_cache_enabled)
         self._config_hash: Optional[str] = None
         self.logger.debug(f"RuleEngine initialized: project_root={project_root}, parallel={parallel}, result_cache={result_cache_enabled}")
