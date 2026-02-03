@@ -4,11 +4,13 @@ Rule Engine Module - Python 规则引擎
 支持:
 - 文件内容缓存
 - 多文件并行检查
+- 规则结果缓存（持久化）
 """
 import sys
+import json
 import importlib.util
 from pathlib import Path
-from typing import List, Dict, Set, Optional, Tuple
+from typing import List, Dict, Set, Optional, Tuple, Any
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
@@ -17,6 +19,7 @@ from .reporter import Violation, Severity
 from .config import RuleConfig
 from .logger import get_logger
 from .file_cache import get_file_cache
+from .result_cache import ResultCache
 
 
 class BaseRule(ABC):
@@ -91,13 +94,14 @@ class RuleEngine:
     """规则引擎 - 管理和执行规则（性能优化版）"""
 
     def __init__(self, project_root: str, parallel: bool = True, max_workers: int = 0,
-                 file_cache_size_mb: int = 100):
+                 file_cache_size_mb: int = 100, result_cache_enabled: bool = True):
         """
         Args:
             project_root: 项目根目录
             parallel: 是否启用并行执行
             max_workers: 最大工作线程数（0 表示自动：min(32, cpu_count * 2)）
             file_cache_size_mb: 文件缓存最大容量（MB）
+            result_cache_enabled: 是否启用规则结果缓存
         """
         self.project_root = Path(project_root)
         self.rules: List[BaseRule] = []
@@ -105,7 +109,11 @@ class RuleEngine:
         self.parallel = parallel
         self.max_workers = max_workers
         self._file_cache = get_file_cache(file_cache_size_mb)
-        self.logger.debug(f"RuleEngine initialized: project_root={project_root}, parallel={parallel}")
+        # 规则结果缓存
+        cache_dir = self.project_root / ".biliobjclint_cache"
+        self._result_cache = ResultCache(str(cache_dir), enabled=result_cache_enabled)
+        self._config_hash: Optional[str] = None
+        self.logger.debug(f"RuleEngine initialized: project_root={project_root}, parallel={parallel}, result_cache={result_cache_enabled}")
 
     def load_builtin_rules(self, rules_config: Dict[str, RuleConfig]):
         """加载内置规则"""
@@ -132,6 +140,12 @@ class RuleEngine:
                 self.logger.debug(f"Skipped disabled rule: {rule_id}")
 
         self.logger.info(f"Loaded {loaded_count} builtin rules")
+
+        # 计算配置 hash（用于结果缓存失效判断）
+        config_dict = {k: {"enabled": v.enabled, "severity": v.severity, "params": v.params}
+                       for k, v in rules_config.items()}
+        self._config_hash = ResultCache.compute_config_hash(config_dict)
+        self.logger.debug(f"Config hash: {self._config_hash}")
 
     def load_custom_rules(self, custom_rules_path: str):
         """加载自定义 Python 规则"""
@@ -186,13 +200,24 @@ class RuleEngine:
 
         Args:
             file_path: 文件路径
-            changed_lines: 变更行号集合（None 表示检查全部）
+            changed_lines: 变更行号集合（None 或空集合表示检查全部）
         Returns:
             违规列表
         """
+        # 判断是否可以使用结果缓存
+        # 只有全量检查（无 changed_lines）时才使用缓存
+        use_result_cache = (not changed_lines) and self._config_hash
+
+        # 尝试从结果缓存获取
+        if use_result_cache:
+            cached_violations = self._result_cache.get(file_path, self._config_hash)
+            if cached_violations is not None:
+                # 反序列化缓存的 violations
+                return [self._deserialize_violation(v) for v in cached_violations]
+
         violations = []
 
-        # 使用缓存读取文件
+        # 使用文件缓存读取文件内容
         cached = self._file_cache.get(file_path)
         if cached is None:
             return violations
@@ -215,7 +240,38 @@ class RuleEngine:
                 self.logger.warning(f"Rule {rule.identifier} failed on {file_path}: {e}")
                 print(f"Warning: Rule {rule.identifier} failed on {file_path}: {e}", file=sys.stderr)
 
+        # 存储到结果缓存
+        if use_result_cache and violations is not None:
+            serialized = [self._serialize_violation(v) for v in violations]
+            self._result_cache.put(file_path, self._config_hash, serialized)
+
         return violations
+
+    def _serialize_violation(self, v: Violation) -> Dict[str, Any]:
+        """序列化 Violation 为 dict"""
+        return {
+            "file_path": v.file_path,
+            "line": v.line,
+            "column": v.column,
+            "severity": v.severity.value,
+            "message": v.message,
+            "rule_id": v.rule_id,
+            "source": v.source,
+            "related_lines": v.related_lines
+        }
+
+    def _deserialize_violation(self, d: Dict[str, Any]) -> Violation:
+        """反序列化 dict 为 Violation"""
+        return Violation(
+            file_path=d["file_path"],
+            line=d["line"],
+            column=d["column"],
+            severity=Severity(d["severity"]),
+            message=d["message"],
+            rule_id=d["rule_id"],
+            source=d.get("source", "biliobjclint"),
+            related_lines=tuple(d["related_lines"]) if d.get("related_lines") else None
+        )
 
     def check_files(self, files: List[str], changed_lines_map: Dict[str, Set[int]] = None) -> List[Violation]:
         """
@@ -230,9 +286,16 @@ class RuleEngine:
         self.logger.info(f"Checking {len(files)} files with {len(self.rules)} rules (parallel={self.parallel})")
 
         if not self.parallel or len(files) <= 1:
-            return self._check_files_sequential(files, changed_lines_map)
+            violations = self._check_files_sequential(files, changed_lines_map)
+        else:
+            violations = self._check_files_parallel(files, changed_lines_map)
 
-        return self._check_files_parallel(files, changed_lines_map)
+        # 保存结果缓存到磁盘
+        self._result_cache.save()
+        cache_stats = self._result_cache.get_stats()
+        self.logger.info(f"Result cache stats: {cache_stats}")
+
+        return violations
 
     def _check_files_sequential(self, files: List[str], changed_lines_map: Dict[str, Set[int]] = None) -> List[Violation]:
         """串行检查文件"""

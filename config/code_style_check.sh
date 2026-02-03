@@ -131,30 +131,27 @@ else
     SCRIPTS_PATH="${LINT_PATH}/libexec/scripts"
 fi
 
-# 创建临时文件存储 JSON 输出
+# 创建临时文件存储 JSON 输出（用于 Claude fixer）
 VIOLATIONS_FILE=$(mktemp)
 log_debug "Violations temp file: $VIOLATIONS_FILE"
 
 # 记录开始时间
 LINT_START_TIME=$("$PYTHON_BIN" -c "import time; print(time.time())")
 
-# 执行 Lint 检查，输出 JSON 格式到临时文件
-log_info "Running lint check (JSON output)..."
+# 执行 Lint 检查（单次执行，同时输出 Xcode 格式和 JSON 文件）
+# --xcode-output: 输出 Xcode 兼容格式到 stdout（用于 Xcode 显示警告/错误）
+# --json-file: 同时输出 JSON 格式到文件（用于 Claude fixer）
+# 临时禁用 set -e，因为 lint 检查可能返回非零退出码（有 error 级别违规时）
+log_info "Running lint check..."
+set +e
 "$PYTHON_BIN" "${SCRIPTS_PATH}/biliobjclint.py" \
     --config "$CONFIG_PATH" \
     --project-root "${SRCROOT}" \
     --incremental \
-    --json-output > "$VIOLATIONS_FILE" 2>/dev/null
-
-# 执行 Lint 检查，输出 Xcode 格式（用于在 Xcode 中显示警告/错误）
-log_info "Running lint check (Xcode output)..."
-"$PYTHON_BIN" "${SCRIPTS_PATH}/biliobjclint.py" \
-    --config "$CONFIG_PATH" \
-    --project-root "${SRCROOT}" \
-    --incremental \
-    --xcode-output
-
+    --xcode-output \
+    --json-file "$VIOLATIONS_FILE"
 LINT_EXIT=$?
+set -e
 
 # 记录结束时间并计算耗时
 LINT_END_TIME=$("$PYTHON_BIN" -c "import time; print(time.time())")

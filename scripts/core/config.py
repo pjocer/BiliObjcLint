@@ -63,6 +63,8 @@ class PerformanceConfig:
     max_workers: int = 0
     # 文件缓存最大容量（MB）
     file_cache_size_mb: int = 100
+    # 是否启用规则结果缓存（持久化到磁盘，跨进程复用）
+    result_cache_enabled: bool = True
 
 
 @dataclass
@@ -235,7 +237,8 @@ class ConfigLoader:
         performance = PerformanceConfig(
             parallel=performance_cfg.get("parallel", True),
             max_workers=performance_cfg.get("max_workers", 0),
-            file_cache_size_mb=performance_cfg.get("file_cache_size_mb", 100)
+            file_cache_size_mb=performance_cfg.get("file_cache_size_mb", 100),
+            result_cache_enabled=performance_cfg.get("result_cache_enabled", True)
         )
 
         return LintConfig(

@@ -151,6 +151,15 @@ class BiliObjCLint:
         self.logger.info(f"Elapsed time: {elapsed:.2f}s")
         self.logger.log_separator("BiliObjCLint Session End")
 
+        # 如果指定了 --json-file，同时输出 JSON 到文件（用于 Claude fixer）
+        if self.args.json_file:
+            try:
+                with open(self.args.json_file, 'w', encoding='utf-8') as f:
+                    f.write(self.reporter.to_json())
+                self.logger.debug(f"JSON output written to: {self.args.json_file}")
+            except Exception as e:
+                self.logger.warning(f"Failed to write JSON file: {e}")
+
         if self.args.json_output:
             print(self.reporter.to_json())
             return 1 if errors_count > 0 else 0
@@ -304,7 +313,16 @@ class BiliObjCLint:
 
         for pattern in self.config.included:
             # 支持 glob 模式
-            for path in self.project_root.rglob(pattern.replace("**", "*").lstrip("*/")):
+            # rglob 本身就是递归的，只需要提取文件名模式
+            # "**/*.m" -> "*.m", "*/*.m" -> "*.m"
+            if pattern.startswith("**/"):
+                glob_pattern = pattern[3:]  # 去掉 "**/" 前缀
+            elif pattern.startswith("*/"):
+                glob_pattern = pattern[2:]  # 去掉 "*/" 前缀
+            else:
+                glob_pattern = pattern
+
+            for path in self.project_root.rglob(glob_pattern):
                 if path.is_file():
                     files.append(str(path.resolve()))
 
@@ -411,6 +429,14 @@ def parse_args() -> argparse.Namespace:
         "--json-output", "-j",
         action="store_true",
         help="输出 JSON 格式"
+    )
+
+    # 内部参数：同时输出 Xcode 格式到 stdout 和 JSON 到指定文件
+    # 用于 code_style_check.sh 优化，避免执行两次 lint
+    parser.add_argument(
+        "--json-file",
+        help=argparse.SUPPRESS,  # 隐藏此参数，不在帮助中显示
+        default=None
     )
 
     parser.add_argument(

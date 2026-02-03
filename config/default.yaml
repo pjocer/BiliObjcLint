@@ -210,3 +210,6 @@ performance:
   max_workers: 0
   # 文件内容缓存最大容量（MB）
   file_cache_size_mb: 100
+  # 是否启用规则结果缓存（持久化到磁盘，跨编译复用）
+  # 注意：仅在全量模式下生效，增量模式不使用此缓存
+  result_cache_enabled: true
