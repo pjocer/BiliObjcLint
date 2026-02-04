@@ -249,6 +249,52 @@ biliobjclint-xcode <项目路径> [选项]
   --override              强制覆盖已存在的 Lint Phase
 ```
 
+### biliobjclint-server
+
+本地统计服务，提供 Lint 指标可视化仪表盘。
+
+```
+biliobjclint-server <操作> [选项]
+
+操作:
+  start                   后台启动服务
+  stop                    停止服务
+  restart                 重启服务
+  status                  查看服务状态
+  run                     前台运行服务
+  clear                   清空所有本地数据
+
+选项:
+  --config PATH           配置文件路径
+  --yes, -y               跳过确认（用于 clear）
+```
+
+**使用示例：**
+
+```bash
+# 启动服务
+biliobjclint-server start
+
+# 查看状态
+biliobjclint-server status
+
+# 打开仪表盘（默认: http://127.0.0.1:18080/login）
+```
+
+**客户端配置**（添加到 `.biliobjclint.yaml`）：
+
+```yaml
+metrics:
+  enabled: true
+  endpoint: "http://127.0.0.1:18080"
+```
+
+**功能特性：**
+- 实时 Lint 指标仪表盘
+- 规则违规统计与趋势图
+- 用户认证与管理
+- 历史数据可视化
+
 ## 常见问题
 
 ### Q: 如何只检查特定类型的问题？

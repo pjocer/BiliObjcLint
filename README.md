@@ -249,6 +249,52 @@ Options:
   --override              Force override existing Lint Phase
 ```
 
+### biliobjclint-server
+
+Local statistics server with dashboard for visualizing lint metrics.
+
+```
+biliobjclint-server <action> [options]
+
+Actions:
+  start                   Start server in background
+  stop                    Stop running server
+  restart                 Restart server
+  status                  Show server status
+  run                     Run server in foreground
+  clear                   Clear all local data
+
+Options:
+  --config PATH           Config file path
+  --yes, -y               Skip confirmation for clear
+```
+
+**Usage Example:**
+
+```bash
+# Start server
+biliobjclint-server start
+
+# Check status
+biliobjclint-server status
+
+# View dashboard (default: http://127.0.0.1:18080/login)
+```
+
+**Client Configuration** (add to `.biliobjclint.yaml`):
+
+```yaml
+metrics:
+  enabled: true
+  endpoint: "http://127.0.0.1:18080"
+```
+
+**Features:**
+- Real-time lint metrics dashboard
+- Rule violation statistics and trends
+- User authentication and management
+- Historical data visualization
+
 ## FAQ
 
 ### Q: How to check only specific types of issues?

@@ -7,45 +7,60 @@
 ```
 BiliObjCLint/
 ├── Formula/
-│   └── biliobjclint.rb       # Homebrew formula
+│   └── biliobjclint.rb           # Homebrew formula
 ├── scripts/
-│   ├── biliobjclint.py       # 主入口
-│   ├── xcode_integrator.py   # Xcode 集成工具
-│   ├── bin/                  # 可执行脚本
-│   │   ├── biliobjclint.sh   # biliobjclint 命令入口
-│   │   └── biliobjclint-xcode.sh  # Xcode 集成命令入口
-│   ├── claude/               # Claude AI 自动修复模块
-│   │   ├── fixer.py          # 修复器主逻辑
-│   │   ├── http_server.py    # HTTP 服务器（处理浏览器请求）
-│   │   └── html_report.py    # HTML 报告生成
-│   ├── core/                 # 核心模块
-│   │   ├── lint/             # Lint 核心模块
-│   │   │   ├── config.py     # 配置管理
-│   │   │   ├── git_diff.py   # Git 增量检测
-│   │   │   ├── reporter.py   # 输出格式化
-│   │   │   ├── rule_engine.py# Python 规则引擎
-│   │   │   └── logger.py     # 日志系统
-│   │   └── server/           # 本地统计服务模块
-│   ├── rules/                # 内置 Python 规则
-│   │   ├── naming_rules/     # 命名规则
-│   │   ├── memory_rules/     # 内存管理规则
-│   │   ├── style_rules/      # 代码风格规则
-│   │   └── security_rules/   # 安全规则
-│   ├── others/               # 辅助脚本
-│   │   ├── release.sh        # 版本发布脚本
-│   │   └── commit.sh         # 提交脚本
+│   ├── __init__.py               # 顶层包导出
+│   ├── bin/                      # 可执行脚本
+│   │   ├── biliobjclint.sh       # biliobjclint 命令入口
+│   │   ├── biliobjclint-xcode.sh # Xcode 集成命令入口
+│   │   └── biliobjclint-server.sh# Server 命令入口
+│   ├── claude/                   # Claude AI 自动修复模块
+│   │   ├── fixer.py              # 修复器主逻辑
+│   │   ├── http_server.py        # HTTP 服务器（处理浏览器请求）
+│   │   └── html_report.py        # HTML 报告生成
+│   ├── core/                     # 核心模块
+│   │   ├── lint/                 # Lint 核心模块
+│   │   │   ├── config.py         # 配置管理
+│   │   │   ├── git_diff.py       # Git 增量检测
+│   │   │   ├── reporter.py       # 输出格式化
+│   │   │   ├── rule_engine.py    # Python 规则引擎
+│   │   │   ├── logger.py         # 日志系统
+│   │   │   └── rules/            # 内置 Python 规则
+│   │   │       ├── naming_rules/ # 命名规则
+│   │   │       ├── memory_rules/ # 内存管理规则
+│   │   │       ├── style_rules/  # 代码风格规则
+│   │   │       └── security_rules/# 安全规则
+│   │   └── server/               # 本地统计服务模块
+│   ├── wrapper/                  # 应用层封装
+│   │   ├── lint/                 # Lint 入口
+│   │   │   ├── linter.py         # BiliObjCLint 主类
+│   │   │   └── cli.py            # 命令行入口
+│   │   ├── update/               # 更新模块
+│   │   │   ├── checker.py        # 版本检查
+│   │   │   ├── upgrader.py       # 后台升级
+│   │   │   └── phase_updater.py  # Build Phase 更新（子进程）
+│   │   └── xcode/                # Xcode 集成
+│   │       ├── integrator.py     # XcodeIntegrator 主类
+│   │       ├── project_loader.py # 项目加载
+│   │       ├── phase_manager.py  # Build Phase 管理
+│   │       ├── bootstrap.py      # Bootstrap 逻辑
+│   │       ├── templates.py      # 脚本模板
+│   │       └── cli.py            # 命令行入口
+│   ├── others/                   # 辅助脚本
+│   │   ├── release.sh            # 版本发布脚本
+│   │   └── commit.sh             # 提交脚本
 │   └── lib/
-│       └── logging.sh        # Shell 日志库
+│       └── logging.sh            # Shell 日志库
 ├── config/
-│   ├── default.yaml          # 默认配置模板
-│   ├── bootstrap.sh          # Bootstrap 脚本（自动安装/更新）
-│   └── code_style_check.sh   # 代码规范审查脚本
+│   ├── default.yaml              # 默认配置模板
+│   ├── bootstrap.sh              # Bootstrap 脚本（自动安装/更新）
+│   └── code_style_check.sh       # 代码规范审查脚本
 ├── custom_rules/
-│   └── python/               # 自定义 Python 规则
-├── docs/                     # 开发文档
-├── logs/                     # 运行日志（gitignore）
-├── setup_env.sh              # 环境初始化脚本
-└── VERSION                   # 版本号文件
+│   └── python/                   # 自定义 Python 规则
+├── docs/                         # 开发文档
+├── logs/                         # 运行日志（gitignore）
+├── setup_env.sh                  # 环境初始化脚本
+└── VERSION                       # 版本号文件
 ```
 
 ## 开发环境设置
@@ -64,14 +79,15 @@ source .venv/bin/activate
 
 ## 核心模块说明
 
-### biliobjclint.py
+### wrapper/lint/linter.py
 
-主入口，负责：
-- 解析命令行参数
+BiliObjCLint 主类，负责：
 - 加载配置
 - 获取待检查文件
 - 调用规则引擎
 - 输出结果
+
+命令行入口：`wrapper/lint/cli.py`
 
 ### rule_engine.py
 
@@ -215,12 +231,12 @@ export BILIOBJCLINT_VERBOSE=1
 
 ```bash
 # 检查测试文件
-.venv/bin/python3 scripts/biliobjclint.py \
+.venv/bin/python3 scripts/wrapper/lint/cli.py \
     --files tests/TestFile.m \
     --verbose
 
 # JSON 输出
-.venv/bin/python3 scripts/biliobjclint.py \
+.venv/bin/python3 scripts/wrapper/lint/cli.py \
     --files tests/TestFile.m \
     --json-output
 ```
@@ -286,8 +302,8 @@ rm /path/to/App/scripts/.biliobjclint_debug
 
 ## 添加新的内置规则
 
-1. 在 `scripts/rules/` 下创建或修改规则文件
-2. 在 `scripts/rules/__init__.py` 中注册规则
+1. 在 `scripts/core/lint/rules/` 下创建或修改规则文件
+2. 在 `scripts/core/lint/rules/__init__.py` 中注册规则
 3. 在 `config/default.yaml` 中添加默认配置
 4. 更新 README 的规则列表
 
