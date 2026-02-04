@@ -2,6 +2,13 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.4.13 (2026-02-04)
+
+### 修复
+- 修复 `code_style_check.sh` 中旧路径引用导致 lint 无法执行的问题
+  - `biliobjclint.py` → `wrapper/lint/cli.py`
+  - `claude_fixer.py` → `claude/cli.py`
+
 ## v1.4.12 (2026-02-04)
 
 ### 修复
