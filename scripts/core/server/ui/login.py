@@ -119,14 +119,14 @@ def render_login(error: str = "") -> str:
           <h2>BiliObjCLint</h2>
           <p class="subtitle">代码质量统计平台</p>
           {err}
-          <form method="post" action="/login">
+          <form method="post" action="/login" autocomplete="off">
             <div class="form-group">
               <label>用户名</label>
-              <input name="username" placeholder="请输入用户名" autocomplete="username" />
+              <input name="username" placeholder="请输入用户名" autocomplete="off" />
             </div>
             <div class="form-group">
               <label>密码</label>
-              <input name="password" type="password" placeholder="请输入密码" autocomplete="current-password" />
+              <input name="password" type="password" placeholder="请输入密码" autocomplete="new-password" data-lpignore="true" />
             </div>
             <button type="submit" class="submit-btn">登 录</button>
           </form>
