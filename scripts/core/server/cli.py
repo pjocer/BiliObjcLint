@@ -245,19 +245,35 @@ def stop_server(pid_path: Path) -> int:
             pid_path.unlink()
         return 0
 
+    # 先尝试 SIGTERM 优雅退出
     try:
         os.kill(pid, signal.SIGTERM)
     except Exception as e:
         print(f"Failed to stop server: {e}")
         return 1
 
+    # 等待 2 秒
     for _ in range(20):
         if not is_running(pid):
             break
         time.sleep(0.1)
 
+    # 如果还在运行，强制 SIGKILL
     if is_running(pid):
-        print(f"Server still running (pid={pid})")
+        print(f"Server not responding to SIGTERM, sending SIGKILL (pid={pid})")
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except Exception as e:
+            print(f"Failed to kill server: {e}")
+            return 1
+        # 再等待 1 秒
+        for _ in range(10):
+            if not is_running(pid):
+                break
+            time.sleep(0.1)
+
+    if is_running(pid):
+        print(f"Failed to stop server (pid={pid})")
         return 1
 
     pid_path.unlink(missing_ok=True)
