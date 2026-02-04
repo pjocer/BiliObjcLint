@@ -164,7 +164,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/login":
-            self._send_html(200, render_login())
+            # 检查是否刚注册成功
+            registered = query.get("registered", [""])[0]
+            success_msg = "注册成功！请登录。" if registered == "1" else ""
+            self._send_html(200, render_login(success=success_msg))
             return
 
         if path == "/register":
@@ -332,7 +335,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         db = self._get_state().db
         success, msg = db.create_user(username, password, "readonly")
         if success:
-            self._send_html(200, render_register(success="注册成功！请返回登录页面登录。"))
+            # 注册成功后自动跳转到登录页
+            self._redirect("/login?registered=1")
         else:
             self._send_html(400, render_register(error=msg))
 

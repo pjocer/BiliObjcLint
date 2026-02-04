@@ -74,16 +74,17 @@ LOGIN_STYLE = """
 .login-card .remember-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   margin-bottom: 16px;
   font-size: 13px;
+  color: #6b6b6b;
+  cursor: pointer;
 }
 
-.login-card .remember-row label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #6b6b6b;
+.login-card .remember-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #fb7299;
   cursor: pointer;
 }
 
@@ -137,13 +138,24 @@ LOGIN_STYLE = """
 .login-card .register-link a:hover {
   text-decoration: underline;
 }
+
+.login-card .success {
+  background: #f0fdf4;
+  color: #166534;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 16px;
+  text-align: left;
+}
 </style>
 """
 
 
-def render_login(error: str = "") -> str:
+def render_login(error: str = "", success: str = "") -> str:
     """Render the login page."""
     err = f'<div class="error">{error}</div>' if error else ""
+    succ = f'<div class="success">{success}</div>' if success else ""
     return f"""
     <html>
     <head>
@@ -157,6 +169,7 @@ def render_login(error: str = "") -> str:
           <img class="login-logo" src="/static/biliobjclint_logo.png" alt="BiliObjCLint" />
           <h2>BiliObjCLint</h2>
           <p class="subtitle">代码质量统计平台</p>
+          {succ}
           {err}
           <form method="post" action="/login">
             <div class="form-group">
@@ -168,7 +181,8 @@ def render_login(error: str = "") -> str:
               <input type="password" name="password" placeholder="请输入密码" autocomplete="current-password" />
             </div>
             <div class="remember-row">
-              <label><input type="checkbox" name="remember" value="1" /> 记住密码</label>
+              <input type="checkbox" name="remember" value="1" id="remember" />
+              <label for="remember">记住密码</label>
             </div>
             <button type="submit" class="submit-btn">登 录</button>
           </form>
