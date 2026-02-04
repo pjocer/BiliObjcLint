@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .db import Database
 from .auth import SessionStore
-from .ui.templates import render_dashboard, render_login, render_users
+from .ui import render_dashboard, render_login, render_users
 
 
 PROJECT_TOKEN_SEP = "|||"
