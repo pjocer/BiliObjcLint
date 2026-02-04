@@ -327,6 +327,15 @@ def update_build_phase_with_new_version(
             sys.path.insert(0, str(new_scripts_path))
             logger.info(f"Added new scripts path to sys.path: {new_scripts_path}")
 
+        # 【关键修复】清除 sys.modules 中的 core 相关模块缓存
+        # 原因：脚本顶部已导入旧版本的 core.lint.project_config，这些模块被缓存在 sys.modules 中
+        # 如果不清除，动态导入的 xcode_integrator 会使用已缓存的旧版本模块，导致导入失败
+        # 这是此问题反复出现的根本原因
+        modules_to_remove = [m for m in sys.modules.keys() if m == 'core' or m.startswith('core.')]
+        for m in modules_to_remove:
+            del sys.modules[m]
+            logger.info(f"Cleared cached module: {m}")
+
         # 从新版本路径动态导入 xcode_integrator
         xcode_integrator_path = new_scripts_path / 'xcode_integrator.py'
         if not xcode_integrator_path.exists():
@@ -360,12 +369,14 @@ def update_build_phase_with_new_version(
             logger.info(f"Current Build Phase version: {current_version}")
 
         # 从持久化存储获取项目配置
-        config = project_config.get(str(integrator.xcodeproj_path), target.name)
+        # 注意：由于已清除 sys.modules 中的 core 模块缓存，这里需要重新导入 project_config
+        from core.lint import project_config as new_project_config
+        config = new_project_config.get(str(integrator.xcodeproj_path), target.name)
         if config:
-            scripts_path_in_phase = project_config.get_scripts_srcroot_path(config)
+            scripts_path_in_phase = new_project_config.get_scripts_srcroot_path(config)
             logger.info(f"Loaded config, scripts path: {config.scripts_dir_relative}")
         else:
-            key = project_config.make_key(str(integrator.xcodeproj_path), target.name)
+            key = new_project_config.make_key(str(integrator.xcodeproj_path), target.name)
             logger.error(f"No config found for key: {key}")
             return False
 

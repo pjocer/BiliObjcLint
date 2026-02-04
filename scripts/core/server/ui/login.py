@@ -74,24 +74,27 @@ LOGIN_STYLE = """
 .login-card .remember-row {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   margin-bottom: 16px;
   font-size: 13px;
   color: #6b6b6b;
   cursor: pointer;
+  text-align: left;
 }
 
 .login-card .remember-row input[type="checkbox"] {
   width: 16px;
   height: 16px;
+  margin: 0;
   accent-color: #fb7299;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
-.login-card .remember-row input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  accent-color: #fb7299;
+.login-card .remember-row label {
+  margin: 0;
+  cursor: pointer;
 }
 
 .login-card .submit-btn {
