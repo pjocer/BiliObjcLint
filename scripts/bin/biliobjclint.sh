@@ -15,12 +15,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 # Python 脚本和虚拟环境路径
-PYTHON_SCRIPT="$PROJECT_ROOT/scripts/biliobjclint.py"
+PYTHON_SCRIPT="$PROJECT_ROOT/scripts/wrapper/lint/cli.py"
 VENV_PYTHON="$PROJECT_ROOT/.venv/bin/python3"
 
 # 检查 Python 脚本是否存在
 if [ ! -f "$PYTHON_SCRIPT" ]; then
-    echo "Error: biliobjclint.py not found: $PYTHON_SCRIPT" >&2
+    echo "Error: lint cli.py not found: $PYTHON_SCRIPT" >&2
     exit 1
 fi
 

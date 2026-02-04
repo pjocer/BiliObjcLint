@@ -2,26 +2,23 @@
 """
 BiliObjCLint 后台升级脚本
 
-由 check_update.py 的 background_upgrade() 函数调用，在独立进程中执行：
+由 checker.py 的 background_upgrade() 函数调用，在独立进程中执行：
 1. brew update
 2. brew upgrade biliobjclint
 3. 更新成功后复制脚本到目标工程
 4. 显示更新完成弹窗
 
 Usage:
-    python3 background_upgrade.py --local-ver 1.1.28 --remote-ver 1.1.29 [--scripts-dir /path/to/scripts]
+    python3 upgrader.py --local-ver 1.1.28 --remote-ver 1.1.29 [--scripts-dir /path/to/scripts]
 """
 import argparse
 import subprocess
 import shutil
+import shlex
 import stat
 import sys
 from pathlib import Path
 from typing import Optional
-
-# 添加 scripts 目录到路径以导入 logger
-SCRIPT_DIR = Path(__file__).parent
-sys.path.insert(0, str(SCRIPT_DIR))
 
 import datetime
 
@@ -51,9 +48,6 @@ class FileLogger:
 
 
 logger = FileLogger()
-
-# 导入项目配置模块
-from core.lint import project_config
 
 
 def get_brew_prefix() -> Optional[Path]:
@@ -205,76 +199,15 @@ def copy_scripts_to_project(scripts_dir: Path, force: bool = False) -> bool:
     return success
 
 
-def update_build_phase(
-    project_path: str,
-    target_name: Optional[str] = None,
-    project_name: Optional[str] = None,
-    scripts_dir: Optional[str] = None
-) -> bool:
-    """
-    更新 Build Phase 到最新版本（使用当前脚本路径）
-
-    Args:
-        project_path: Xcode 项目路径
-        target_name: Target 名称
-        project_name: 项目名称（用于 workspace）
-        scripts_dir: scripts 目录路径
-
-    Returns:
-        是否成功
-    """
+def show_updating_notification():
+    """显示正在更新的系统通知"""
+    title = "BiliObjCLint"
+    message = "检测到BiliObjcLint需要更新，正在后台更新中..."
     try:
-        import os
-        from xcode_integrator import XcodeIntegrator, SCRIPT_VERSION
-
-        brew_prefix = get_brew_prefix()
-        lint_path = str(brew_prefix / 'libexec') if brew_prefix else str(SCRIPT_DIR.parent)
-
-        integrator = XcodeIntegrator(project_path, lint_path, project_name)
-
-        if not integrator.load_project():
-            logger.error("Failed to load project")
-            return False
-
-        target = integrator.get_target(target_name)
-        if not target:
-            logger.error(f"Target not found: {target_name}")
-            return False
-
-        current_version = None
-        if integrator.has_lint_phase(target):
-            current_version = integrator.get_lint_phase_version(target)
-            if current_version == SCRIPT_VERSION:
-                logger.info(f"Build Phase already at version {SCRIPT_VERSION}")
-                return True
-
-        # 从持久化存储获取项目配置
-        config = project_config.get(str(integrator.xcodeproj_path), target.name)
-        if config:
-            scripts_path_in_phase = project_config.get_scripts_srcroot_path(config)
-            logger.info(f"Loaded config, scripts path: {config.scripts_dir_relative}")
-        else:
-            key = project_config.make_key(str(integrator.xcodeproj_path), target.name)
-            logger.error(f"No config found for key: {key}")
-            return False
-
-        # 更新 Build Phase
-        success = integrator.add_lint_phase(
-            target,
-            dry_run=False,
-            override=True,
-            scripts_path=scripts_path_in_phase
-        )
-
-        if success:
-            integrator.save()
-            logger.info(f"Build Phase updated: {current_version} -> {SCRIPT_VERSION}")
-
-        return success
-
+        script = f'display notification "{message}" with title "{title}"'
+        subprocess.run(['osascript', '-e', script], capture_output=True, timeout=10)
     except Exception as e:
-        logger.exception(f"Failed to update build phase: {e}")
-        return False
+        logger.debug(f"Failed to show updating notification: {e}")
 
 
 def _update_build_phase_subprocess(
@@ -285,7 +218,7 @@ def _update_build_phase_subprocess(
     new_version: Optional[str] = None
 ) -> bool:
     """
-    使用子进程在新版本的 Python 环境中更新 Build Phase
+    使用子进程调用 phase_updater.py 更新 Build Phase
 
     这是解决模块缓存问题的终极方案：
     - 当前脚本从旧版本运行，进程中已加载旧版本模块
@@ -304,55 +237,26 @@ def _update_build_phase_subprocess(
             logger.error(f"New Python not found: {new_python}")
             return False
 
-        # 构建内联 Python 脚本
-        # 使用 -c 参数直接执行，避免文件导入问题
-        inline_script = f'''
-import sys
-sys.path.insert(0, "{brew_prefix / 'libexec' / 'scripts'}")
+        # 新版本的 phase_updater.py 脚本
+        phase_updater = brew_prefix / 'libexec' / 'scripts' / 'wrapper' / 'update' / 'phase_updater.py'
+        if not phase_updater.exists():
+            logger.error(f"phase_updater.py not found: {phase_updater}")
+            return False
 
-from xcode_integrator import XcodeIntegrator, SCRIPT_VERSION
-from core.lint import project_config
+        # 构建命令行参数
+        args = [str(new_python), str(phase_updater)]
+        args.extend(['--project-path', project_path])
+        if target_name:
+            args.extend(['--target-name', target_name])
+        if project_name:
+            args.extend(['--project-name', project_name])
+        if scripts_dir:
+            args.extend(['--scripts-dir', scripts_dir])
 
-project_path = "{project_path}"
-target_name = "{target_name or ''}" or None
-project_name = "{project_name or ''}" or None
-
-integrator = XcodeIntegrator(project_path, "{brew_prefix / 'libexec'}", project_name)
-if not integrator.load_project():
-    print("ERROR: Failed to load project")
-    sys.exit(1)
-
-target = integrator.get_target(target_name)
-if not target:
-    print(f"ERROR: Target not found: {{target_name}}")
-    sys.exit(1)
-
-current_version = None
-if integrator.has_lint_phase(target):
-    current_version = integrator.get_lint_phase_version(target)
-    print(f"Current Build Phase version: {{current_version}}")
-
-config = project_config.get(str(integrator.xcodeproj_path), target.name)
-if config:
-    scripts_path = project_config.get_scripts_srcroot_path(config)
-    print(f"Scripts path: {{config.scripts_dir_relative}}")
-else:
-    print(f"ERROR: No config found")
-    sys.exit(1)
-
-success = integrator.add_lint_phase(target, dry_run=False, override=True, scripts_path=scripts_path)
-if success:
-    integrator.save()
-    print(f"Build Phase updated: {{current_version}} -> {{SCRIPT_VERSION}}")
-else:
-    print("ERROR: Failed to update Build Phase")
-    sys.exit(1)
-'''
-
-        logger.info(f"Running Build Phase update in new Python environment: {new_python}")
+        logger.info(f"Running Build Phase update: {' '.join(args)}")
 
         result = subprocess.run(
-            [str(new_python), '-c', inline_script],
+            args,
             capture_output=True,
             text=True,
             timeout=60
@@ -361,16 +265,16 @@ else:
         # 记录输出
         if result.stdout:
             for line in result.stdout.strip().split('\n'):
-                logger.info(f"[subprocess] {line}")
+                logger.info(f"[phase_updater] {line}")
         if result.stderr:
             for line in result.stderr.strip().split('\n'):
-                logger.error(f"[subprocess] {line}")
+                logger.error(f"[phase_updater] {line}")
 
         if result.returncode != 0:
-            logger.error(f"Subprocess failed with return code: {result.returncode}")
+            logger.error(f"phase_updater failed with return code: {result.returncode}")
             return False
 
-        logger.info("Build Phase updated successfully via subprocess")
+        logger.info("Build Phase updated successfully via phase_updater.py")
         return True
 
     except subprocess.TimeoutExpired:
@@ -379,17 +283,6 @@ else:
     except Exception as e:
         logger.exception(f"Failed to update build phase via subprocess: {e}")
         return False
-
-
-def show_updating_notification():
-    """显示正在更新的系统通知"""
-    title = "BiliObjCLint"
-    message = "检测到BiliObjcLint需要更新，正在后台更新中..."
-    try:
-        script = f'display notification "{message}" with title "{title}"'
-        subprocess.run(['osascript', '-e', script], capture_output=True, timeout=10)
-    except Exception as e:
-        logger.debug(f"Failed to show updating notification: {e}")
 
 
 def do_upgrade(
@@ -463,7 +356,7 @@ def do_upgrade(
             copy_scripts_to_project(Path(scripts_dir), force=True)
 
         # 5. 强制更新 Build Phase
-        # 【关键】使用子进程在新版本的 Python 环境中执行，彻底避免旧版本模块缓存问题
+        # 【关键】使用子进程调用 phase_updater.py，彻底避免旧版本模块缓存问题
         # 原因：当前脚本从旧版本运行，sys.modules 中缓存了旧版本模块
         #       即使清除缓存，Python 内部状态仍可能有问题
         #       使用子进程完全隔离，确保在纯净的新版本环境中执行
@@ -492,6 +385,100 @@ def do_upgrade(
     except Exception as e:
         logger.exception(f"Upgrade failed: {e}")
         return False
+
+
+def start_background_upgrade(
+    local_ver: str,
+    remote_ver: str,
+    scripts_dir: Optional[Path] = None,
+    project_path: Optional[str] = None,
+    target_name: Optional[str] = None,
+    project_name: Optional[str] = None
+):
+    """
+    启动后台升级进程
+
+    使用独立子进程执行更新，确保主进程退出后更新仍能继续。
+    此函数被 checker.py 调用。
+    """
+    # 添加 scripts 目录到路径
+    SCRIPT_DIR = Path(__file__).parent
+    SCRIPTS_ROOT = SCRIPT_DIR.parent.parent
+    sys.path.insert(0, str(SCRIPTS_ROOT))
+
+    from core.lint.logger import get_logger
+    log = get_logger("check_update")
+
+    log.info(f"Starting background upgrade: {local_ver} -> {remote_ver}")
+
+    # 构建命令参数
+    upgrade_script = Path(__file__)
+    args = [
+        '--local-ver', local_ver,
+        '--remote-ver', remote_ver,
+    ]
+    if scripts_dir:
+        args.extend(['--scripts-dir', str(scripts_dir)])
+    if project_path:
+        args.extend(['--project-path', project_path])
+    if target_name:
+        args.extend(['--target-name', target_name])
+    if project_name:
+        args.extend(['--project-name', project_name])
+
+    try:
+        # 创建日志目录
+        log_dir = Path.home() / '.biliobjclint'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / 'background_upgrade.log'
+
+        # 清空旧日志，写入调试信息
+        debug_info = f"""=== Background upgrade started: {local_ver} -> {remote_ver} ===
+scripts_dir: {scripts_dir}
+project_path: {project_path}
+target_name: {target_name}
+project_name: {project_name}
+"""
+        log_file.write_text(debug_info)
+
+        # 获取 venv Python 路径
+        brew_prefix = get_brew_prefix()
+        if brew_prefix:
+            venv_python = brew_prefix / 'libexec' / '.venv' / 'bin' / 'python3'
+            if venv_python.exists():
+                python_path = str(venv_python)
+            else:
+                python_path = 'python3'
+                log.info(f"Venv python not found at {venv_python}, using system python3")
+        else:
+            python_path = 'python3'
+            log.info("brew prefix not found, using system python3")
+
+        # 使用 shell 命令启动后台进程
+        args_quoted = ' '.join(shlex.quote(arg) for arg in args)
+        script_path = shlex.quote(str(upgrade_script))
+        log_path = shlex.quote(str(log_file))
+        python_quoted = shlex.quote(python_path)
+        shell_cmd = f'nohup {python_quoted} {script_path} {args_quoted} >> {log_path} 2>&1 &'
+
+        # 将 shell 命令也写入日志文件
+        with open(log_file, 'a') as f:
+            f.write(f"shell_cmd: {shell_cmd}\n")
+            f.write("---\n")
+
+        log.info(f"Shell command: {shell_cmd}")
+
+        subprocess.Popen(
+            shell_cmd,
+            shell=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        log.info(f"Background upgrade process started, log: {log_file}")
+    except Exception as e:
+        log.exception(f"Failed to start background upgrade: {e}")
 
 
 def parse_args():

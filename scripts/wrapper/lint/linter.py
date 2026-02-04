@@ -1,22 +1,7 @@
-#!/usr/bin/env python3
 """
-BiliObjCLint - Bilibili Objective-C 代码规范检查工具
+BiliObjCLint 主类模块
 
-支持增量检查，使用 Python 规则引擎
-
-Usage:
-    python3 biliobjclint.py [options]
-
-Options:
-    --config PATH          配置文件路径 (默认: .biliobjclint.yaml)
-    --project-root PATH    项目根目录 (默认: 当前目录)
-    --incremental          增量检查模式 (只检查 git 变更)
-    --base-branch BRANCH   增量对比基准分支 (默认: origin/master)
-    --files FILE [FILE...] 指定要检查的文件
-    --xcode-output         输出 Xcode 兼容格式
-    --json-output          输出 JSON 格式
-    --verbose              详细输出
-    --help                 显示帮助
+负责执行 lint 检查的核心逻辑。
 """
 import argparse
 import sys
@@ -30,13 +15,14 @@ import fnmatch
 
 # 添加 scripts 目录到路径
 SCRIPT_DIR = Path(__file__).parent
-sys.path.insert(0, str(SCRIPT_DIR))
+SCRIPTS_ROOT = SCRIPT_DIR.parent.parent
+sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from core.lint.config import ConfigLoader, LintConfig
 from core.lint.git_diff import GitDiffAnalyzer, is_git_repo
 from core.lint.reporter import Reporter, Violation, Severity
 from core.lint.rule_engine import RuleEngine
-from core.lint.logger import get_logger, LogContext, log_lint_start, log_lint_end
+from core.lint.logger import get_logger, LogContext
 from core.lint.local_pods import LocalPodsAnalyzer
 from core.lint.ignore_cache import IgnoreCache
 from core.lint import metrics as metrics_mod
@@ -127,13 +113,13 @@ class BiliObjCLint:
                 self.reporter.add_violations(python_violations)
                 self.logger.info(f"Python rules violations: {len(python_violations)}")
 
-        # 6. 设置本地 Pod 信息
+        # 5. 设置本地 Pod 信息
         if self.file_to_pod_map:
             for v in self.reporter.violations:
                 if v.file_path in self.file_to_pod_map:
                     v.pod_name = self.file_to_pod_map[v.file_path]
 
-        # 7. 过滤被忽略的违规
+        # 6. 过滤被忽略的违规
         with LogContext(self.logger, "ignore_filter"):
             before_ignore_count = len(self.reporter.violations)
             self._filter_ignored_violations()
@@ -141,14 +127,14 @@ class BiliObjCLint:
             if before_ignore_count != after_ignore_count:
                 self.logger.info(f"Filtered {before_ignore_count - after_ignore_count} ignored violations")
 
-        # 9. 过滤增量结果
+        # 7. 过滤增量结果
         if self.args.incremental and changed_lines_map:
             before_count = len(self.reporter.violations)
             self.reporter.filter_by_changed_lines(changed_lines_map)
             after_count = len(self.reporter.violations)
             self.logger.debug(f"Incremental filter: {before_count} -> {after_count} violations")
 
-        # 10. 输出结果
+        # 8. 输出结果
         elapsed = time.time() - self.start_time
         errors_count = sum(1 for v in self.reporter.violations if v.severity == Severity.ERROR)
         warnings_count = len(self.reporter.violations) - errors_count
@@ -412,103 +398,3 @@ class BiliObjCLint:
         violations = engine.check_files(files, changed_lines_map)
         self.logger.debug(f"Python rules found {len(violations)} violations")
         return violations
-
-
-def parse_args() -> argparse.Namespace:
-    """解析命令行参数"""
-    parser = argparse.ArgumentParser(
-        description="BiliObjCLint - Objective-C 代码规范检查工具",
-        formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-
-    parser.add_argument(
-        "--config", "-c",
-        help="配置文件路径",
-        default=None
-    )
-
-    parser.add_argument(
-        "--project-root", "-p",
-        help="项目根目录",
-        default=os.getcwd()
-    )
-
-    parser.add_argument(
-        "--incremental", "-i",
-        action="store_true",
-        help="增量检查模式（只检查 git 变更）"
-    )
-
-    parser.add_argument(
-        "--base-branch", "-b",
-        help="增量对比基准分支",
-        default=None
-    )
-
-    parser.add_argument(
-        "--files", "-f",
-        nargs="+",
-        help="指定要检查的文件"
-    )
-
-    parser.add_argument(
-        "--xcode-output", "-x",
-        action="store_true",
-        default=True,
-        help="输出 Xcode 兼容格式（默认启用）"
-    )
-
-    parser.add_argument(
-        "--json-output", "-j",
-        action="store_true",
-        help="输出 JSON 格式"
-    )
-
-    # 内部参数：同时输出 Xcode 格式到 stdout 和 JSON 到指定文件
-    # 用于 code_style_check.sh 优化，避免执行两次 lint
-    parser.add_argument(
-        "--json-file",
-        help=argparse.SUPPRESS,  # 隐藏此参数，不在帮助中显示
-        default=None
-    )
-
-    parser.add_argument(
-        "--no-python-rules",
-        action="store_true",
-        help="禁用 Python 规则"
-    )
-
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="详细输出"
-    )
-
-    return parser.parse_args()
-
-
-def main():
-    """主入口"""
-    args = parse_args()
-    logger = get_logger("biliobjclint")
-
-    try:
-        linter = BiliObjCLint(args)
-        exit_code = linter.run()
-        logger.debug(f"Exit code: {exit_code}")
-        sys.exit(exit_code)
-    except KeyboardInterrupt:
-        logger.warning("Interrupted by user")
-        print("\nInterrupted.", file=sys.stderr)
-        sys.exit(130)
-    except Exception as e:
-        logger.exception(f"Unexpected error: {e}")
-        print(f"Error: {e}", file=sys.stderr)
-        if args.verbose:
-            import traceback
-            traceback.print_exc()
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

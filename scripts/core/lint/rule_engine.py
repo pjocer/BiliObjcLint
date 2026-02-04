@@ -119,12 +119,8 @@ class RuleEngine:
         """加载内置规则"""
         self.logger.debug("Loading builtin rules...")
 
-        # 动态导入 rules 模块
-        scripts_dir = Path(__file__).parent.parent
-        if str(scripts_dir) not in sys.path:
-            sys.path.insert(0, str(scripts_dir))
-
-        from rules import get_all_rules
+        # 导入 rules 模块（已迁移到 core/lint/rules/）
+        from .rules import get_all_rules
 
         loaded_count = 0
         for rule_class in get_all_rules():

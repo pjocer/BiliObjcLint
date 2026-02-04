@@ -4,7 +4,7 @@ BiliObjCLint 版本更新检查模块
 
 负责：
 1. 检查版本更新（GitHub API vs 本地）
-2. 后台执行 brew update && brew upgrade
+2. 触发后台 brew upgrade
 3. 更新后强制覆盖脚本到目标工程
 4. 检查并注入 Code Style Check Build Phase
 
@@ -16,7 +16,6 @@ import sys
 import subprocess
 import json
 import shutil
-import shlex
 import stat
 from pathlib import Path
 from typing import Optional, Tuple
@@ -25,9 +24,11 @@ from urllib.error import URLError
 
 # 添加 scripts 目录到路径
 SCRIPT_DIR = Path(__file__).parent
-sys.path.insert(0, str(SCRIPT_DIR))
+SCRIPTS_ROOT = SCRIPT_DIR.parent.parent
+sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from core.lint.logger import get_logger
+from core.lint import project_config
 
 # GitHub 仓库信息
 GITHUB_REPO = "pjocer/BiliObjcLint"
@@ -35,8 +36,20 @@ GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/tags"
 
 logger = get_logger("check_update")
 
-# 导入项目配置模块
-from core.lint import project_config
+
+def get_brew_prefix() -> Optional[Path]:
+    """获取 biliobjclint 的 brew 安装路径"""
+    try:
+        result = subprocess.run(
+            ['brew', '--prefix', 'biliobjclint'],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            return Path(result.stdout.strip())
+    except Exception as e:
+        logger.debug(f"Failed to get brew prefix: {e}")
+
+    return None
 
 
 def get_local_version() -> Optional[str]:
@@ -56,7 +69,7 @@ def get_local_version() -> Optional[str]:
         logger.debug(f"Failed to get version from brew prefix: {e}")
 
     # 回退到本地 VERSION 文件
-    version_file = SCRIPT_DIR.parent / 'VERSION'
+    version_file = SCRIPTS_ROOT.parent / 'VERSION'
     if version_file.exists():
         return version_file.read_text().strip()
 
@@ -179,113 +192,6 @@ def show_lint_phase_update_notification(old_version: str, new_version: str):
         logger.debug(f"Failed to show lint phase update notification: {e}")
 
 
-def background_upgrade(
-    local_ver: str,
-    remote_ver: str,
-    scripts_dir: Optional[Path] = None,
-    project_path: Optional[str] = None,
-    target_name: Optional[str] = None,
-    project_name: Optional[str] = None
-):
-    """
-    后台执行 brew upgrade
-
-    使用独立子进程执行更新，确保主进程退出后更新仍能继续。
-    调用同级目录的 background_upgrade.py 脚本执行实际升级操作。
-    升级完成后会更新 Build Phase。
-    """
-    logger.info(f"Starting background upgrade: {local_ver} -> {remote_ver}")
-
-    # 构建命令参数
-    upgrade_script = SCRIPT_DIR / 'background_upgrade.py'
-    args = [
-        '--local-ver', local_ver,
-        '--remote-ver', remote_ver,
-    ]
-    if scripts_dir:
-        args.extend(['--scripts-dir', str(scripts_dir)])
-    if project_path:
-        args.extend(['--project-path', project_path])
-    if target_name:
-        args.extend(['--target-name', target_name])
-    if project_name:
-        args.extend(['--project-name', project_name])
-
-    try:
-        # 创建日志目录
-        log_dir = Path.home() / '.biliobjclint'
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / 'background_upgrade.log'
-
-        # 清空旧日志，写入调试信息
-        debug_info = f"""=== Background upgrade started: {local_ver} -> {remote_ver} ===
-scripts_dir: {scripts_dir}
-project_path: {project_path}
-target_name: {target_name}
-project_name: {project_name}
-"""
-        log_file.write_text(debug_info)
-
-        # 获取 venv Python 路径（brew upgrade 后需要使用新版本的 venv）
-        # 由于 brew upgrade 会更新 symlink，这里获取的是当前（旧版本）的 venv
-        # 但旧版本的 venv 也有 pbxproj，所以可以用来启动脚本
-        # 脚本执行时会动态导入新版本的 xcode_integrator
-        brew_prefix = get_brew_prefix()
-        if brew_prefix:
-            venv_python = brew_prefix / 'libexec' / '.venv' / 'bin' / 'python3'
-            if venv_python.exists():
-                python_path = str(venv_python)
-            else:
-                python_path = 'python3'
-                logger.info(f"Venv python not found at {venv_python}, using system python3")
-        else:
-            python_path = 'python3'
-            logger.info("brew prefix not found, using system python3")
-
-        # 使用 shell 命令启动后台进程，确保日志重定向正确工作
-        # nohup + & 确保进程完全脱离父进程
-        # 使用 shlex.quote 确保所有参数正确转义（处理空格等特殊字符）
-        args_quoted = ' '.join(shlex.quote(arg) for arg in args)
-        script_path = shlex.quote(str(upgrade_script))
-        log_path = shlex.quote(str(log_file))
-        python_quoted = shlex.quote(python_path)
-        shell_cmd = f'nohup {python_quoted} {script_path} {args_quoted} >> {log_path} 2>&1 &'
-
-        # 将 shell 命令也写入日志文件，便于调试
-        with open(log_file, 'a') as f:
-            f.write(f"shell_cmd: {shell_cmd}\n")
-            f.write("---\n")
-
-        logger.info(f"Shell command: {shell_cmd}")
-
-        subprocess.Popen(
-            shell_cmd,
-            shell=True,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-        logger.info(f"Background upgrade process started, log: {log_file}")
-    except Exception as e:
-        logger.exception(f"Failed to start background upgrade: {e}")
-
-
-def get_brew_prefix() -> Optional[Path]:
-    """获取 biliobjclint 的 brew 安装路径"""
-    try:
-        result = subprocess.run(
-            ['brew', '--prefix', 'biliobjclint'],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
-            return Path(result.stdout.strip())
-    except Exception as e:
-        logger.debug(f"Failed to get brew prefix: {e}")
-
-    return None
-
-
 def copy_scripts_to_project(scripts_dir: Path, force: bool = False) -> bool:
     """
     复制 bootstrap.sh 和 code_style_check.sh 到目标工程
@@ -328,6 +234,29 @@ def copy_scripts_to_project(scripts_dir: Path, force: bool = False) -> bool:
             success = False
 
     return success
+
+
+def background_upgrade(
+    local_ver: str,
+    remote_ver: str,
+    scripts_dir: Optional[Path] = None,
+    project_path: Optional[str] = None,
+    target_name: Optional[str] = None,
+    project_name: Optional[str] = None
+):
+    """
+    后台执行 brew upgrade
+
+    使用独立子进程执行更新，确保主进程退出后更新仍能继续。
+    调用 wrapper/update/upgrader.py 脚本执行实际升级操作。
+    升级完成后会更新 Build Phase。
+    """
+    # 导入 upgrader 模块
+    from .upgrader import start_background_upgrade
+    start_background_upgrade(
+        local_ver, remote_ver, scripts_dir,
+        project_path, target_name, project_name
+    )
 
 
 def do_check_and_inject(
@@ -381,11 +310,11 @@ def do_check_and_inject(
 
     # 4. 导入 xcode_integrator 并注入 Build Phase
     try:
-        from xcode_integrator import XcodeIntegrator, PHASE_NAME, SCRIPT_VERSION
+        from wrapper.xcode import XcodeIntegrator, PHASE_NAME, SCRIPT_VERSION
 
         # 获取 lint_path
         brew_prefix = get_brew_prefix()
-        lint_path = str(brew_prefix / 'libexec') if brew_prefix else str(SCRIPT_DIR.parent)
+        lint_path = str(brew_prefix / 'libexec') if brew_prefix else str(SCRIPTS_ROOT.parent)
 
         integrator = XcodeIntegrator(project_path, lint_path, project_name)
 
@@ -436,7 +365,7 @@ def do_check_and_inject(
             print(f"[BiliObjCLint] 已为 Target '{target.name}' 注入 Code Style Lint Phase")
 
             # 如果是版本更新（而非首次注入），且 brew 不需要更新，显示系统通知
-            # brew 需要更新时，弹窗由 background_upgrade.py 处理
+            # brew 需要更新时，弹窗由 upgrader.py 处理
             if current_version and current_version != SCRIPT_VERSION and not needs_update:
                 show_lint_phase_update_notification(current_version, SCRIPT_VERSION)
 

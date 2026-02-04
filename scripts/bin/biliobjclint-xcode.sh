@@ -247,7 +247,7 @@ if [ "$ACTION" = "check-and-inject" ]; then
     if [ -n "$DRY_RUN" ]; then
         CHECK_ARGS+=("$DRY_RUN")
     fi
-    "$PYTHON_BIN" "$PROJECT_ROOT/scripts/check_update.py" "${CHECK_ARGS[@]}"
+    "$PYTHON_BIN" "$PROJECT_ROOT/scripts/wrapper/update/checker.py" "${CHECK_ARGS[@]}"
 else
     # 其他操作使用 xcode_integrator.py
     if [ "$ACTION" = "remove" ]; then
@@ -280,7 +280,7 @@ else
         CMD_ARGS+=("--debug" "$DEBUG_PATH")
     fi
 
-    "$PYTHON_BIN" "$PROJECT_ROOT/scripts/xcode_integrator.py" "${CMD_ARGS[@]}"
+    "$PYTHON_BIN" "$PROJECT_ROOT/scripts/wrapper/xcode/cli.py" "${CMD_ARGS[@]}"
 fi
 
 EXIT_CODE=$?
