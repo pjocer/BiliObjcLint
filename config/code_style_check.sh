@@ -144,7 +144,7 @@ LINT_START_TIME=$("$PYTHON_BIN" -c "import time; print(time.time())")
 # 临时禁用 set -e，因为 lint 检查可能返回非零退出码（有 error 级别违规时）
 log_info "Running lint check..."
 set +e
-"$PYTHON_BIN" "${SCRIPTS_PATH}/biliobjclint.py" \
+"$PYTHON_BIN" "${SCRIPTS_PATH}/wrapper/lint/cli.py" \
     --config "$CONFIG_PATH" \
     --project-root "${SRCROOT}" \
     --incremental \
@@ -189,7 +189,7 @@ if [ -s "$VIOLATIONS_FILE" ]; then
     # 2. 显示对话框询问用户
     # 3. 执行修复（如果用户同意）
     (
-        "$_PYTHON_BIN" "$_SCRIPTS_PATH/claude_fixer.py" \
+        "$_PYTHON_BIN" "$_SCRIPTS_PATH/claude/cli.py" \
             --violations "$_VIOLATIONS_COPY" \
             --config "$_CONFIG_PATH" \
             --project-root "$_PROJECT_ROOT"
