@@ -2,137 +2,13 @@
 
 所有重要的版本更新都会记录在此文件中。
 
-## v1.4.14 (2026-02-04)
-
-### 测试
-- 升级流程验证版本
-
-## v1.4.13 (2026-02-04)
-
-### 修复
-- 修复 `code_style_check.sh` 中旧路径引用导致 lint 无法执行的问题
-  - `biliobjclint.py` → `wrapper/lint/cli.py`
-  - `claude_fixer.py` → `claude/cli.py`
-
-## v1.4.12 (2026-02-04)
-
-### 修复
-- 修复 `checker.py` 相对导入导致 v1.4.10 升级时崩溃的问题
-
-## v1.4.11 (2026-02-04)
-
-### 修复
-- 添加 `xcode_integrator.py` 兼容层，修复从 v1.4.9 升级到 v1.4.10 时 Build Phase 更新失败的问题
-
-## v1.4.10 (2026-02-04)
-
-### 重构
-- 重构 scripts 目录结构，拆分模块到 wrapper/
-  - 迁移 `rules/` 到 `core/lint/rules/`
-  - 创建 `wrapper/update/`：checker.py, upgrader.py, phase_updater.py
-  - 拆分 `xcode_integrator.py` 到 `wrapper/xcode/`：6 个模块化文件
-  - 迁移 `biliobjclint.py` 到 `wrapper/lint/`
-  - 删除 `claude_fixer.py` 兼容层
-  - 更新 `bin/*.sh` 脚本路径
-
-## v1.4.9 (2026-02-04)
-
-### 修复
-- 终极方案：使用子进程彻底解决 Build Phase 版本不更新的问题
-  - 根本原因：background_upgrade.py 从旧版本启动，进程中已加载旧版本模块
-  - 修复方案：使用子进程在新版本的 Python 环境中执行 Build Phase 更新，完全隔离旧版本模块
-
-## v1.4.8 (2026-02-04)
-
-### 修复
-- 尝试修复 brew upgrade 后 Build Phase 版本不更新的问题（清除 sys.modules 缓存，但不够彻底）
-
-## v1.4.7 (2026-02-04)
-
-### 新增
-- 趋势图支持动态粒度显示
-  - 同一天查询时自动切换到小时粒度
-  - 跨日期查询时按天粒度显示
-- 趋势图自动填充缺失时间段（显示完整数据范围）
-- 数据点圆形标记（非零值显示）
-- Y 轴数值刻度
-
-### 改进
-- 图例显示当前粒度类型（按小时/按天）
-- X 轴标签根据数据点数动态调整
-- 图例文字汉化（总数、警告、错误）
-
-## v1.4.6 (2026-02-04)
-
-### 改进
-- 注册成功后自动跳转登录页，显示成功提示
-- 优化登录页"记住密码"复选框布局，与密码输入框左对齐
-
-## v1.4.5 (2026-02-04)
-
-### 新增
-- 新增用户注册功能（用户名、密码、确认密码）
-- 登录页添加"记住密码"选项（30天有效期）
-- 登录页添加注册链接
-
-### 改进
-- 统一所有页面为 B 站粉主题色（#fb7299）
-- Dashboard Autofix 汇总和表格表头改为中文显示
-
-## v1.4.4 (2026-02-04)
-
-### 新增
-- 登录页添加 BiliObjCLint logo 图片
-- 新增静态文件服务功能（`/static/*` 路由）
-
-## v1.4.3 (2026-02-04)
-
-### 修复
-- 修复 `biliobjclint-server restart` 命令无法正确重启服务的问题
-  - SIGTERM 超时后自动发送 SIGKILL 强制终止进程
-  - 确保旧进程完全退出后再启动新进程
-
-## v1.4.2 (2026-02-04)
-
-### 重构
-- 拆分 `ui/templates.py` 为独立页面模块
-  - `styles.py` - 共享 CSS 样式
-  - `components.py` - 共享组件（图表、规则名映射、iOS 开关）
-  - `login.py` - 登录页面
-  - `dashboard.py` - Dashboard 页面
-  - `users.py` - 用户管理页面
-
-### 改进
-- Dashboard 规则统计 UI 优化
-  - 规则名显示中文（如 `todo_fixme` → `待办事项`）
-  - 鼠标悬停显示英文 rule ID（tooltip）
-  - 启用状态改为 iOS 风格 toggle switch（只读）
-  - 表头汉化：`Severity` → `级别`，`Enabled` → `启用`
-- 登录页面重新设计
-  - 移除无意义的"模块/安全/模式"展示卡片
-  - 采用居中卡片式布局，更简洁现代
-
-## v1.4.1 (2026-02-04)
-
-### 新增
-- 服务启动时自动检测端口占用，显示占用进程信息和解决方案
-- 服务启动时自动检测本机 IP 地址，显示局域网可访问地址
-- 服务启动提示中显示客户端配置示例，方便远程部署
-- 启动成功后显示 `brew services` 开机自启动提示
-- 默认配置 `server.host` 改为 `0.0.0.0`，支持远程访问
-
-### 改进
-- 新增 `get_local_ips()`、`get_primary_ip()` 函数获取本机网络接口
-- 新增 `is_port_in_use()`、`find_process_using_port()` 函数检测端口状态
-- shell wrapper 启动提示优化，动态读取配置显示正确的端口和 IP
-
 ## v1.4.0 (2026-02-04)
 
 ### 新增
 - 新增本地统计服务 `biliobjclint-server`
   - HTTP 服务器提供可视化 Dashboard（趋势图、规则统计、Autofix 汇总）
   - SQLite 存储 lint 历史数据
-  - 用户认证和会话管理
+  - 用户认证和会话管理（登录、注册、记住密码）
   - 支持 `brew services start/stop biliobjclint`
 - 新增客户端统计上报模块 (`metrics.py`)
   - 自动上报 lint 结果和 autofix 统计
@@ -145,15 +21,27 @@
 - 新增 `AutofixTracker` 类，跟踪 Claude 自动修复统计
 - 新增服务端配置模板 `config/biliobjclint_server_config.json`
 
+### Dashboard 功能
+- 趋势图支持动态粒度显示（同一天按小时、跨天按日期）
+- 趋势图自动填充缺失时间段，数据点圆形标记
+- 规则名显示中文（如 `todo_fixme` → `待办事项`），鼠标悬停显示英文 ID
+- 启用状态改为 iOS 风格 toggle switch
+- 登录页 B 站粉主题色（#fb7299）、logo 图片
+- 用户注册功能（用户名、密码、确认密码）
+- 登录页"记住密码"选项（30 天有效期）
+
+### 服务端改进
+- 服务启动时自动检测端口占用，显示占用进程信息和解决方案
+- 服务启动时自动检测本机 IP 地址，显示局域网可访问地址
+- 默认配置 `server.host` 改为 `0.0.0.0`，支持远程访问
+- 修复 `biliobjclint-server restart` 命令无法正确重启服务的问题
+
 ### 重构
 - 重构 `scripts/core/` 目录结构
   - lint 核心模块迁移至 `scripts/core/lint/`
   - 新增 `scripts/core/server/` 存放服务端代码
-- 拆分 `server/cli.py` 为多个模块：
-  - `db.py` - 数据库操作
-  - `auth.py` - 认证模块
-  - `handlers.py` - HTTP 请求处理
-  - `utils.py` - 工具函数
+- 拆分 `server/cli.py` 为多个模块：db.py, auth.py, handlers.py, utils.py
+- 拆分 `ui/templates.py` 为独立页面模块：styles.py, components.py, login.py, dashboard.py, users.py
 - 更新所有规则文件的 import 路径（`core.*` → `core.lint.*`）
 
 ### 修复
@@ -163,6 +51,7 @@
 ### 文档
 - 新增 `LINTSERVER.md` 接口规范文档
 - 更新 `docs/DEVELOPMENT.md` 添加服务端使用说明
+- 更新 README 添加 `biliobjclint-server` 命令文档
 
 ## v1.3.7 (2026-02-03)
 
