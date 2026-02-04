@@ -25,7 +25,10 @@ _SCRIPTS_DIR = _PROJECT_ROOT / "scripts"
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
-from core.server.utils import ensure_dir, default_config_path, default_pid_path, template_config_path
+from core.server.utils import (
+    ensure_dir, default_config_path, default_pid_path, template_config_path,
+    get_local_ips, get_primary_ip, is_port_in_use, find_process_using_port
+)
 from core.server.db import Database
 from core.server.auth import SessionStore
 from core.server.handlers import RequestHandler, ServerState
@@ -99,6 +102,27 @@ def run_server(config_path: Path) -> int:
     host = server_cfg.get("host", "127.0.0.1")
     port = int(server_cfg.get("port", 18080))
 
+    # 检查端口是否被占用
+    if is_port_in_use(port, host if host != "0.0.0.0" else "127.0.0.1"):
+        pid, proc_name = find_process_using_port(port)
+        print("")
+        print("=" * 60)
+        print(f"  错误: 端口 {port} 已被占用")
+        print("=" * 60)
+        if pid:
+            print(f"\n  占用进程: {proc_name} (PID: {pid})")
+            print(f"\n  解决方案:")
+            print(f"    1. 停止占用进程: kill {pid}")
+            print(f"    2. 或修改配置使用其他端口")
+        else:
+            print(f"\n  解决方案:")
+            print(f"    1. 查找占用进程: lsof -i :{port}")
+            print(f"    2. 停止占用进程或修改配置使用其他端口")
+        print(f"\n  配置文件: {config_path}")
+        print("=" * 60)
+        print("")
+        return 1
+
     logging_cfg = config.get("logging", {})
     log_path = Path(os.path.expanduser(logging_cfg.get("path", "~/.biliobjclint/lintserver.log")))
     log_level = logging_cfg.get("level", "info")
@@ -106,11 +130,44 @@ def run_server(config_path: Path) -> int:
 
     if sys.stdout.isatty():
         print("")
-        print("BiliObjCLint Server 正在前台运行")
-        print(f"  Dashboard: http://{host}:{port}/login")
+        print("=" * 60)
+        print("  BiliObjCLint Server 正在前台运行")
+        print("=" * 60)
+        print("")
+
+        # 显示可访问地址
+        if host == "0.0.0.0":
+            print("  监听地址: 0.0.0.0 (所有网络接口)")
+            print("")
+            print("  可访问地址:")
+            print(f"    - http://127.0.0.1:{port}/login (本机)")
+            local_ips = get_local_ips()
+            if local_ips:
+                for iface, ip in local_ips:
+                    print(f"    - http://{ip}:{port}/login ({iface})")
+            print("")
+            print("  客户端配置 (.biliobjclint.yaml):")
+            if local_ips:
+                primary_ip = local_ips[0][1]
+                print(f"    metrics:")
+                print(f"      enabled: true")
+                print(f"      endpoint: \"http://{primary_ip}:{port}\"")
+                print(f"      token: \"<与服务端 ingest.token 一致>\"")
+            else:
+                print(f"    metrics.endpoint: \"http://<服务器IP>:{port}\"")
+        else:
+            print(f"  Dashboard: http://{host}:{port}/login")
+            if host == "127.0.0.1":
+                print("")
+                print("  提示: 当前仅监听本机回环地址，其他机器无法访问")
+                print("        如需远程访问，请修改配置文件中的 server.host 为 \"0.0.0.0\"")
+
+        print("")
         print(f"  配置文件: {config_path}")
         print(f"  日志文件: {log_path}")
+        print("")
         print("  按 Ctrl+C 停止服务")
+        print("=" * 60)
         print("")
         sys.stdout.flush()
 
