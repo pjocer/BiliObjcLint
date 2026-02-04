@@ -2,7 +2,7 @@
 Method Length Rule - 方法长度检查
 """
 import re
-from typing import List, Set
+from typing import List, Set, Tuple
 
 from ..base_rule import BaseRule
 from core.lint.reporter import Violation
@@ -62,3 +62,14 @@ class MethodLengthRule(BaseRule):
                     in_method = False
 
         return violations
+
+    def get_hash_context(self, file_path: str, line: int, lines: List[str],
+                         violation: Violation) -> Tuple[int, int]:
+        """
+        获取方法范围作为哈希上下文
+
+        使用 violation 中已有的 related_lines 字段
+        """
+        if violation.related_lines:
+            return violation.related_lines
+        return (line, line)

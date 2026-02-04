@@ -115,5 +115,57 @@ class BaseRule(ABC):
             related_lines=related_lines
         )
 
+    def get_hash_context(self, file_path: str, line: int, lines: List[str],
+                         violation: Violation) -> Tuple[int, int]:
+        """
+        获取用于计算 code_hash 的代码范围
+
+        不同规则可以覆盖此方法以定义不同的哈希上下文范围：
+        - 单行规则（默认）：仅哈希违规所在行
+        - Block 范围规则：哈希整个 Block
+        - 方法范围规则：哈希整个方法
+        - 文件头规则：哈希前 N 行
+
+        Args:
+            file_path: 文件路径
+            line: 违规行号（1-indexed）
+            lines: 文件所有行
+            violation: 违规对象（可获取 related_lines 等信息）
+
+        Returns:
+            (start_line, end_line): 1-indexed, inclusive
+        """
+        # 默认实现：单行
+        return (line, line)
+
+    def get_hash_context_value(self, file_path: str, line: int, lines: List[str],
+                               violation: Violation) -> Optional[str]:
+        """
+        获取 violation 的代码内容哈希值
+
+        调用 get_hash_context() 获取代码范围，然后使用 violation_hash 模块计算哈希。
+
+        Args:
+            file_path: 文件路径
+            line: 违规行号（1-indexed）
+            lines: 文件所有行
+            violation: 违规对象
+
+        Returns:
+            MD5 哈希字符串（16 字符），计算失败返回 None
+        """
+        from core.lint.violation_hash import compute_hash_from_range
+
+        if not lines:
+            return None
+
+        try:
+            # 获取哈希范围
+            start, end = self.get_hash_context(file_path, line, lines, violation)
+            # 使用 violation_hash 模块计算哈希
+            return compute_hash_from_range(violation.rule_id, lines, start, end)
+        except Exception:
+            return None
+
     def __repr__(self):
         return f"<{self.__class__.__name__} identifier={self.identifier} enabled={self.enabled}>"

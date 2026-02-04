@@ -231,6 +231,11 @@ class RuleEngine:
                     lines=lines,
                     changed_lines=changed_lines or set()
                 )
+                # 为每个 violation 计算 code_hash
+                for v in rule_violations:
+                    v.code_hash = rule.get_hash_context_value(
+                        file_path, v.line, lines, v
+                    )
                 violations.extend(rule_violations)
             except Exception as e:
                 self.logger.warning(f"Rule {rule.identifier} failed on {file_path}: {e}")
@@ -245,7 +250,7 @@ class RuleEngine:
 
     def _serialize_violation(self, v: Violation) -> Dict[str, Any]:
         """序列化 Violation 为 dict"""
-        return {
+        data = {
             "file_path": v.file_path,
             "line": v.line,
             "column": v.column,
@@ -255,6 +260,9 @@ class RuleEngine:
             "source": v.source,
             "related_lines": v.related_lines
         }
+        if v.code_hash:
+            data["code_hash"] = v.code_hash
+        return data
 
     def _deserialize_violation(self, d: Dict[str, Any]) -> Violation:
         """反序列化 dict 为 Violation"""
@@ -266,7 +274,8 @@ class RuleEngine:
             message=d["message"],
             rule_id=d["rule_id"],
             source=d.get("source", "biliobjclint"),
-            related_lines=tuple(d["related_lines"]) if d.get("related_lines") else None
+            related_lines=tuple(d["related_lines"]) if d.get("related_lines") else None,
+            code_hash=d.get("code_hash")
         )
 
     def check_files(self, files: List[str], changed_lines_map: Dict[str, Set[int]] = None) -> List[Violation]:

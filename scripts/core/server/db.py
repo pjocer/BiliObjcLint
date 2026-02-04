@@ -78,6 +78,38 @@ class Database:
                 )
                 """
             )
+            # 违规详情表（用于去重）
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS violations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_key TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    line INTEGER NOT NULL,
+                    column INTEGER,
+                    rule_id TEXT NOT NULL,
+                    severity TEXT,
+                    message TEXT,
+                    code_hash TEXT,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL,
+                    UNIQUE(project_key, file_path, rule_id, code_hash)
+                )
+                """
+            )
+            # 创建索引加速查询
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_violations_project_key
+                ON violations(project_key)
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_violations_last_seen
+                ON violations(last_seen)
+                """
+            )
 
     # -------------------- 用户管理 --------------------
 
@@ -207,6 +239,10 @@ class Database:
         if "rules" in payload and isinstance(payload.get("rules"), dict):
             self.replace_rule_counts(run_id, payload.get("rules", {}))
 
+        # 处理 violations（去重 upsert）
+        if "violations" in payload and isinstance(payload.get("violations"), list):
+            self.upsert_violations(project_key, payload.get("violations", []))
+
         return True, "ok"
 
     def replace_rule_counts(self, run_id: str, rules: Dict[str, Any]) -> None:
@@ -226,6 +262,162 @@ class Database:
                         int(item.get("count", 0)),
                     )
                 )
+
+    def upsert_violations(self, project_key: str, violations: List[Dict[str, Any]]) -> Tuple[int, int]:
+        """
+        Upsert 违规记录（基于 code_hash 去重）
+
+        相同 (project_key, file_path, rule_id, code_hash) 的记录只更新 last_seen，
+        不同的记录则插入新行。
+
+        Args:
+            project_key: 项目 key
+            violations: 违规列表
+
+        Returns:
+            (inserted_count, updated_count)
+        """
+        now = datetime.now().isoformat()
+        inserted = 0
+        updated = 0
+
+        with self._connect() as conn:
+            for v in violations:
+                if not isinstance(v, dict):
+                    continue
+
+                file_path = v.get("file", "")
+                line = v.get("line", 0)
+                column = v.get("column", 0)
+                rule_id = v.get("rule_id", "")
+                severity = v.get("severity", "warning")
+                message = v.get("message", "")
+                code_hash = v.get("code_hash")
+
+                if not file_path or not rule_id:
+                    continue
+
+                # 尝试 upsert
+                # SQLite 3.24+ 支持 ON CONFLICT ... DO UPDATE
+                try:
+                    cursor = conn.execute(
+                        """
+                        INSERT INTO violations
+                            (project_key, file_path, line, column, rule_id, severity, message, code_hash, first_seen, last_seen)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(project_key, file_path, rule_id, code_hash)
+                        DO UPDATE SET
+                            line = excluded.line,
+                            column = excluded.column,
+                            severity = excluded.severity,
+                            message = excluded.message,
+                            last_seen = excluded.last_seen
+                        """,
+                        (project_key, file_path, line, column, rule_id, severity, message, code_hash, now, now)
+                    )
+                    # rowcount == 1 表示插入，rowcount == 0 表示更新（SQLite 的行为）
+                    # 实际上 SQLite ON CONFLICT DO UPDATE 总是返回 1
+                    # 所以这里我们无法精确区分，简化为总数统计
+                    inserted += 1
+                except Exception as e:
+                    self.logger.debug(f"Failed to upsert violation: {e}")
+
+        return inserted, updated
+
+    def get_violations(
+        self,
+        project_key: str,
+        rule_id: Optional[str] = None,
+        file_path: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """获取违规详情"""
+        query = """
+            SELECT file_path, line, column, rule_id, severity, message, code_hash, first_seen, last_seen
+            FROM violations
+            WHERE project_key = ?
+        """
+        params: List[Any] = [project_key]
+
+        if rule_id:
+            query += " AND rule_id = ?"
+            params.append(rule_id)
+        if file_path:
+            query += " AND file_path = ?"
+            params.append(file_path)
+
+        query += " ORDER BY last_seen DESC LIMIT ?"
+        params.append(limit)
+
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+
+        return [
+            {
+                "file": row[0],
+                "line": row[1],
+                "column": row[2],
+                "rule_id": row[3],
+                "severity": row[4],
+                "message": row[5],
+                "code_hash": row[6],
+                "first_seen": row[7],
+                "last_seen": row[8],
+            }
+            for row in rows
+        ]
+
+    def get_violations_stats(self, project_key: str) -> Dict[str, Any]:
+        """获取违规统计（去重后的实际违规数）"""
+        with self._connect() as conn:
+            # 总违规数（去重后）
+            total = conn.execute(
+                "SELECT COUNT(*) FROM violations WHERE project_key = ?",
+                (project_key,)
+            ).fetchone()[0]
+
+            # 按规则统计
+            by_rule = conn.execute(
+                """
+                SELECT rule_id, COUNT(*) as count
+                FROM violations
+                WHERE project_key = ?
+                GROUP BY rule_id
+                ORDER BY count DESC
+                """,
+                (project_key,)
+            ).fetchall()
+
+            # 按严重级别统计
+            by_severity = conn.execute(
+                """
+                SELECT severity, COUNT(*) as count
+                FROM violations
+                WHERE project_key = ?
+                GROUP BY severity
+                """,
+                (project_key,)
+            ).fetchall()
+
+        return {
+            "total": total,
+            "by_rule": {row[0]: row[1] for row in by_rule},
+            "by_severity": {row[0]: row[1] for row in by_severity},
+        }
+
+    def cleanup_stale_violations(self, project_key: str, days: int = 30) -> int:
+        """清理过期的违规记录（超过 N 天未更新）"""
+        if days <= 0:
+            return 0
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                DELETE FROM violations
+                WHERE project_key = ? AND last_seen < date('now', ?)
+                """,
+                (project_key, f"-{days} days")
+            )
+            return cursor.rowcount
 
     # -------------------- 统计查询 --------------------
 

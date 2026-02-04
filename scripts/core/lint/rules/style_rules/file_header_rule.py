@@ -2,7 +2,7 @@
 File Header Rule - 文件头注释检查
 """
 import re
-from typing import List, Set
+from typing import List, Set, Tuple
 
 from ..base_rule import BaseRule
 from core.lint.reporter import Violation
@@ -41,3 +41,12 @@ class FileHeaderRule(BaseRule):
                 break  # 只报告一次
 
         return violations
+
+    def get_hash_context(self, file_path: str, line: int, lines: List[str],
+                         violation: Violation) -> Tuple[int, int]:
+        """
+        获取文件头范围作为哈希上下文
+
+        文件头检查范围为前 20 行
+        """
+        return (1, min(20, len(lines)))

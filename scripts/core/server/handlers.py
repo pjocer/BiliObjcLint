@@ -205,6 +205,16 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_html(200, render_users(users))
             return
 
+        # API: 获取违规详情
+        if path == "/api/v1/violations":
+            self._handle_get_violations(query)
+            return
+
+        # API: 获取违规统计（去重后）
+        if path == "/api/v1/violations/stats":
+            self._handle_violations_stats(query)
+            return
+
         self._send_json(404, {"error": "not_found"})
 
     def _handle_dashboard(self, session: Tuple[str, str], query: Dict) -> None:
@@ -286,6 +296,10 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         if path == "/api/v1/ingest":
             self._handle_ingest()
+            return
+
+        if path == "/api/v1/violations/cleanup":
+            self._handle_cleanup_violations()
             return
 
         self._send_json(404, {"error": "not_found"})
@@ -410,3 +424,72 @@ class RequestHandler(BaseHTTPRequestHandler):
                 f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
         self._send_json(200, {"success": True})
+
+    def _handle_get_violations(self, query: Dict) -> None:
+        """处理获取违规详情请求"""
+        project_key = (query.get("project_key") or [""])[0].strip()
+        if not project_key:
+            self._send_json(400, {"error": "missing project_key"})
+            return
+
+        rule_id = (query.get("rule_id") or [""])[0].strip() or None
+        file_path = (query.get("file") or [""])[0].strip() or None
+        limit = 100
+        try:
+            limit = int((query.get("limit") or ["100"])[0])
+        except ValueError:
+            pass
+
+        violations = self._get_state().db.get_violations(
+            project_key, rule_id, file_path, limit
+        )
+        self._send_json(200, {
+            "project_key": project_key,
+            "count": len(violations),
+            "violations": violations,
+        })
+
+    def _handle_violations_stats(self, query: Dict) -> None:
+        """处理获取违规统计请求（去重后的实际违规数）"""
+        project_key = (query.get("project_key") or [""])[0].strip()
+        if not project_key:
+            self._send_json(400, {"error": "missing project_key"})
+            return
+
+        stats = self._get_state().db.get_violations_stats(project_key)
+        self._send_json(200, {
+            "project_key": project_key,
+            **stats,
+        })
+
+    def _handle_cleanup_violations(self) -> None:
+        """处理清理过期违规记录请求"""
+        # 需要登录且为管理员
+        session = self._require_login()
+        if not session:
+            return
+        _, role = session
+        if not self._is_admin(role):
+            self._send_json(403, {"error": "forbidden"})
+            return
+
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length).decode("utf-8")
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self._send_json(400, {"error": "invalid_json"})
+            return
+
+        project_key = data.get("project_key", "")
+        days = data.get("days", 30)
+
+        if not project_key:
+            self._send_json(400, {"error": "missing project_key"})
+            return
+
+        deleted = self._get_state().db.cleanup_stale_violations(project_key, days)
+        self._send_json(200, {
+            "success": True,
+            "deleted": deleted,
+        })

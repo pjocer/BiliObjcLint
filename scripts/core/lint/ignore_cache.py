@@ -81,29 +81,35 @@ class IgnoreCache:
             pass
         return file_path
 
-    def _calculate_code_hash(self, file_path: str, line: int, rule_id: str, context_lines: int = 2) -> Optional[str]:
+    def _calculate_code_hash(self, file_path: str, line: int, rule_id: str) -> Optional[str]:
         """
         计算违规的代码哈希
 
-        使用违规行及其上下文（前后各 N 行）的内容哈希。
-        这样即使行号变化，只要代码内容不变，签名就不变。
+        根据规则类型选择不同的哈希上下文范围：
+        - block_retain_cycle: Block 范围（从 ^{ 到匹配的 }）
+        - wrapper_empty_pointer: 容器范围（@{...} 或 @[...]）
+        - method_length: 方法范围（需要额外信息，暂用默认范围）
+        - file_header: 文件头范围（前 20 行）
+        - 其他规则: 单行
 
         Args:
             file_path: 文件路径
             line: 违规行号
             rule_id: 规则 ID
-            context_lines: 上下文行数
 
         Returns:
-            MD5 哈希字符串，失败返回 None
+            MD5 哈希字符串（16 字符），失败返回 None
         """
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 lines = f.readlines()
 
-            # 计算上下文范围
-            start = max(0, line - 1 - context_lines)
-            end = min(len(lines), line + context_lines)
+            # 根据规则类型获取哈希范围
+            start, end = self._get_hash_context_by_rule(lines, line, rule_id)
+
+            # 边界检查
+            start = max(0, start)
+            end = min(len(lines), end)
 
             # 获取上下文代码
             context = lines[start:end]
@@ -113,10 +119,120 @@ class IgnoreCache:
 
             # 计算哈希
             hash_input = f"{rule_id}:{normalized}"
-            return hashlib.md5(hash_input.encode()).hexdigest()
+            return hashlib.md5(hash_input.encode()).hexdigest()[:16]
         except Exception as e:
             self.logger.debug(f"Failed to calculate code hash for {file_path}:{line}: {e}")
             return None
+
+    def _get_hash_context_by_rule(self, lines: List[str], line: int, rule_id: str) -> tuple:
+        """
+        根据规则类型获取哈希上下文范围
+
+        Args:
+            lines: 文件行列表
+            line: 违规行号（1-indexed）
+            rule_id: 规则 ID
+
+        Returns:
+            (start, end): 0-indexed 范围
+        """
+        # 转换为 0-indexed
+        line_idx = line - 1
+
+        if rule_id == 'block_retain_cycle':
+            return self._find_block_range(lines, line_idx)
+        elif rule_id == 'wrapper_empty_pointer':
+            return self._find_container_range(lines, line_idx)
+        elif rule_id == 'file_header':
+            return (0, min(20, len(lines)))
+        else:
+            # 默认：单行
+            return (line_idx, line_idx + 1)
+
+    def _find_block_range(self, lines: List[str], line_idx: int) -> tuple:
+        """查找 Block 范围"""
+        import re
+        block_pattern = re.compile(r'\^\s*[\(\{]')
+        method_pattern = re.compile(r'^[-+]\s*\([^)]+\)')
+
+        # 向上查找 block 开始
+        block_start = line_idx
+        brace_count = 0
+
+        for i in range(line_idx - 1, max(0, line_idx - 100), -1):
+            line = lines[i]
+            if method_pattern.match(line.strip()):
+                break
+            brace_count += line.count('}') - line.count('{')
+            if block_pattern.search(line) and brace_count < 0:
+                block_start = i
+                break
+
+        # 向下查找 block 结束
+        block_end = line_idx + 1
+        brace_count = 0
+        found_open = False
+
+        for i in range(block_start, min(len(lines), block_start + 200)):
+            line = lines[i]
+            for char in line:
+                if char == '{':
+                    brace_count += 1
+                    found_open = True
+                elif char == '}':
+                    brace_count -= 1
+                    if found_open and brace_count == 0:
+                        block_end = i + 1
+                        return (block_start, block_end)
+
+        return (block_start, min(block_start + 50, len(lines)))
+
+    def _find_container_range(self, lines: List[str], line_idx: int) -> tuple:
+        """查找容器字面量范围（@{...} 或 @[...]）"""
+        current_line = lines[line_idx] if line_idx < len(lines) else ''
+
+        # 检查当前行是否包含容器开始
+        if '@{' in current_line or '@[' in current_line:
+            container_start = line_idx
+        else:
+            # 向上查找
+            container_start = line_idx
+            brace_count = 0
+            bracket_count = 0
+
+            for i in range(line_idx - 1, max(0, line_idx - 30), -1):
+                line = lines[i]
+                brace_count += line.count('}') - line.count('{')
+                bracket_count += line.count(']') - line.count('[')
+
+                if '@{' in line and brace_count < 0:
+                    container_start = i
+                    break
+                if '@[' in line and bracket_count < 0:
+                    container_start = i
+                    break
+
+        # 判断容器类型并向下查找结束
+        start_line = lines[container_start] if container_start < len(lines) else ''
+        is_dict = '@{' in start_line
+
+        count = 0
+        found_open = False
+        open_char = '{' if is_dict else '['
+        close_char = '}' if is_dict else ']'
+
+        for i in range(container_start, min(len(lines), container_start + 50)):
+            line = lines[i]
+            for char in line:
+                if char == open_char:
+                    count += 1
+                    found_open = True
+                elif char == close_char:
+                    count -= 1
+                    if found_open and count == 0:
+                        return (container_start, i + 1)
+
+        return (container_start, min(container_start + 20, len(lines)))
 
     def add_ignore(self, file_path: str, line: int, rule_id: str, message: str) -> bool:
         """

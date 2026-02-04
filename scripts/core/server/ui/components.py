@@ -29,6 +29,31 @@ RULE_NAMES = {
     "todo_fixme": "待办事项",
 }
 
+# Rule ID to description mapping (from rule classes)
+RULE_DESCRIPTIONS = {
+    # Memory rules
+    "block_retain_cycle": "检测 Block 中可能的循环引用，检查 weak/strong self 使用",
+    "collection_mutation": "检查集合修改操作的安全性",
+    "dict_usage": "检查 NSMutableDictionary 的 setObject:forKey: 使用",
+    "weak_delegate": "检查 delegate 属性是否使用 weak 修饰",
+    "wrapper_empty_pointer": "检查容器字面量中的元素是否可能为 nil",
+    # Naming rules
+    "class_prefix": "检查类名是否使用指定前缀",
+    "constant_naming": "检查常量命名是否符合规范",
+    "method_naming": "检查方法命名是否符合小驼峰规范",
+    "method_parameter": "检查方法参数数量是否超过限制",
+    "property_naming": "检查属性命名是否符合小驼峰规范",
+    # Security rules
+    "forbidden_api": "检测禁止使用的 API",
+    "hardcoded_credentials": "检测硬编码的密码、密钥等敏感信息",
+    "insecure_random": "检测不安全的随机数生成方式",
+    # Style rules
+    "file_header": "检查文件是否包含必要的头注释",
+    "line_length": "检查代码行是否超过最大长度",
+    "method_length": "检查方法是否超过最大行数",
+    "todo_fixme": "检测代码中的 TODO 和 FIXME 注释",
+}
+
 
 def get_rule_display_name(rule_id: str) -> str:
     """Get Chinese display name for a rule ID."""
@@ -41,10 +66,21 @@ def render_ios_switch(enabled: bool) -> str:
     return f'<span class="ios-switch {on_class}"><span class="slider"></span></span>'
 
 
+def get_rule_description(rule_id: str) -> str:
+    """Get description for a rule ID."""
+    return RULE_DESCRIPTIONS.get(rule_id, "")
+
+
 def render_rule_name(rule_id: str) -> str:
-    """Render rule name with Chinese display and English tooltip."""
+    """Render rule name with Chinese display and detailed tooltip.
+
+    Tooltip shows: [rule_id]\\n[description]
+    """
     display_name = get_rule_display_name(rule_id)
-    return f'<span class="rule-name" title="{rule_id}">{display_name}</span>'
+    description = get_rule_description(rule_id)
+    # Use &#10; for newline in HTML title attribute
+    tooltip = f"{rule_id}&#10;{description}" if description else rule_id
+    return f'<span class="rule-name" title="{tooltip}">{display_name}</span>'
 
 
 def _fill_time_slots(
@@ -194,16 +230,20 @@ def render_trend_chart(
     errs = " ".join(f"{_x(i):.1f},{_y(p[3] or 0):.1f}" for i, p in enumerate(points))
 
     # Generate circle markers for each data point (only for non-zero values)
+    # Each circle has a <title> element for tooltip showing the count
     total_circles = "".join(
-        f"<circle cx='{_x(i):.1f}' cy='{_y(p[1] or 0):.1f}' r='4' fill='#1f7a5b' />"
+        f"<circle cx='{_x(i):.1f}' cy='{_y(p[1] or 0):.1f}' r='4' fill='#1f7a5b'>"
+        f"<title>{_format_label(p[0], granularity)} 总数: {p[1] or 0}</title></circle>"
         for i, p in enumerate(points) if (p[1] or 0) > 0
     )
     warn_circles = "".join(
-        f"<circle cx='{_x(i):.1f}' cy='{_y(p[2] or 0):.1f}' r='3.5' fill='#d97706' />"
+        f"<circle cx='{_x(i):.1f}' cy='{_y(p[2] or 0):.1f}' r='3.5' fill='#d97706'>"
+        f"<title>{_format_label(p[0], granularity)} 警告: {p[2] or 0}</title></circle>"
         for i, p in enumerate(points) if (p[2] or 0) > 0
     )
     err_circles = "".join(
-        f"<circle cx='{_x(i):.1f}' cy='{_y(p[3] or 0):.1f}' r='3.5' fill='#b00020' />"
+        f"<circle cx='{_x(i):.1f}' cy='{_y(p[3] or 0):.1f}' r='3.5' fill='#b00020'>"
+        f"<title>{_format_label(p[0], granularity)} 错误: {p[3] or 0}</title></circle>"
         for i, p in enumerate(points) if (p[3] or 0) > 0
     )
 

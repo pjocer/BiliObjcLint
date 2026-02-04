@@ -507,3 +507,65 @@ class WrapperEmptyPointerRule(BaseRule):
             return ternary_result
 
         return False, None
+
+    def get_hash_context(self, file_path: str, line: int, lines: List[str],
+                         violation: Violation) -> Tuple[int, int]:
+        """
+        获取容器字面量范围作为哈希上下文
+
+        容器范围从 @{ 或 @[ 开始到匹配的 } 或 ] 结束
+        支持多行容器
+        """
+        container_start = self._find_container_start_line(lines, line)
+        container_end = self._find_container_end_line(lines, container_start)
+        return (container_start, container_end)
+
+    def _find_container_start_line(self, lines: List[str], line_num: int) -> int:
+        """向上查找容器开始行"""
+        # 检查当前行是否包含容器开始
+        current_line = lines[line_num - 1] if line_num <= len(lines) else ''
+        if '@{' in current_line or '@[' in current_line:
+            return line_num
+
+        # 向上查找 @{ 或 @[
+        brace_count = 0
+        bracket_count = 0
+
+        for i in range(line_num - 2, max(0, line_num - 30), -1):
+            line = lines[i]
+
+            brace_count += line.count('}') - line.count('{')
+            bracket_count += line.count(']') - line.count('[')
+
+            if '@{' in line and brace_count < 0:
+                return i + 1
+            if '@[' in line and bracket_count < 0:
+                return i + 1
+
+        return line_num
+
+    def _find_container_end_line(self, lines: List[str], start_line: int) -> int:
+        """从容器开始行向下查找容器结束行"""
+        start_content = lines[start_line - 1] if start_line <= len(lines) else ''
+
+        # 判断是字典还是数组
+        is_dict = '@{' in start_content
+
+        count = 0
+        found_open = False
+        open_char = '{' if is_dict else '['
+        close_char = '}' if is_dict else ']'
+
+        for i in range(start_line - 1, min(len(lines), start_line + 50)):
+            line = lines[i]
+
+            for char in line:
+                if char == open_char:
+                    count += 1
+                    found_open = True
+                elif char == close_char:
+                    count -= 1
+                    if found_open and count == 0:
+                        return i + 1
+
+        return min(start_line + 20, len(lines))

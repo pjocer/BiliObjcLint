@@ -8,14 +8,14 @@ import time
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from .config import LintConfig, MetricsConfig, RuleConfig
 from .logger import get_logger
 from .reporter import Reporter, Severity, Violation
 
 
-SCHEMA_VERSION = "1.1"
+SCHEMA_VERSION = "1.2"
 
 
 def _now_iso() -> str:
@@ -54,6 +54,30 @@ def _sanitize_config_snapshot(raw: Dict[str, Any]) -> Dict[str, Any]:
         data["metrics"] = metrics_cfg
 
     return data
+
+
+def _build_violations_list(violations: Iterable[Violation], project_root: Path) -> List[Dict[str, Any]]:
+    """构建违规列表（包含 code_hash 用于去重）"""
+    result = []
+    for v in violations:
+        # 计算相对路径
+        try:
+            rel_path = str(Path(v.file_path).relative_to(project_root))
+        except ValueError:
+            rel_path = v.file_path
+
+        item = {
+            "file": rel_path,
+            "line": v.line,
+            "column": v.column,
+            "rule_id": v.rule_id,
+            "severity": v.severity.value,
+            "message": v.message,
+        }
+        if v.code_hash:
+            item["code_hash"] = v.code_hash
+        result.append(item)
+    return result
 
 
 def _build_rules_summary(violations: Iterable[Violation], rule_configs: Dict[str, RuleConfig]) -> Dict[str, Dict[str, Any]]:
@@ -150,6 +174,7 @@ def build_lint_payload(
         },
         "summary": summary,
         "rules": _build_rules_summary(reporter.violations, config.python_rules),
+        "violations": _build_violations_list(reporter.violations, project_root),
         "autofix": _build_autofix_stub(config, reporter.violations),
         "config_snapshot": _sanitize_config_snapshot(raw_config),
         "duration_ms": duration_ms,

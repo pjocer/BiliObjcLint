@@ -477,3 +477,55 @@ class BlockRetainCycleRule(BaseRule):
                 )
 
         return None
+
+    def get_hash_context(self, file_path: str, line: int, lines: List[str],
+                         violation: Violation) -> Tuple[int, int]:
+        """
+        获取 Block 范围作为哈希上下文
+
+        Block 范围从 ^{ 开始到匹配的 } 结束
+        """
+        block_start = self._find_block_start_line(lines, line)
+        block_end = self._find_block_end_line(lines, block_start)
+        return (block_start, block_end)
+
+    def _find_block_start_line(self, lines: List[str], line_num: int) -> int:
+        """向上查找 block 开始行"""
+        brace_count = 0
+
+        # 从当前行开始向上查找
+        for i in range(line_num - 1, max(0, line_num - 100), -1):
+            line = lines[i]
+
+            # 如果遇到方法定义，停止搜索
+            if self.METHOD_START_PATTERN.match(line.strip()):
+                return i + 1
+
+            # 计算大括号（向上扫描时，} 表示进入作用域，{ 表示离开作用域）
+            brace_count += line.count('}') - line.count('{')
+
+            # 检测 block 开始
+            if self.BLOCK_START_PATTERN.search(line):
+                if brace_count < 0:
+                    return i + 1  # 1-indexed
+
+        return line_num  # 找不到则返回当前行
+
+    def _find_block_end_line(self, lines: List[str], start_line: int) -> int:
+        """从 block 开始行向下查找 block 结束行"""
+        brace_count = 0
+        found_open_brace = False
+
+        for i in range(start_line - 1, min(len(lines), start_line + 200)):
+            line = lines[i]
+
+            for char in line:
+                if char == '{':
+                    brace_count += 1
+                    found_open_brace = True
+                elif char == '}':
+                    brace_count -= 1
+                    if found_open_brace and brace_count == 0:
+                        return i + 1  # 1-indexed
+
+        return min(start_line + 50, len(lines))  # 找不到则返回合理范围
