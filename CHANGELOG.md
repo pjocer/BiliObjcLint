@@ -2,6 +2,17 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.4.10 (2026-02-04)
+
+### 重构
+- 重构 scripts 目录结构，拆分模块到 wrapper/
+  - 迁移 `rules/` 到 `core/lint/rules/`
+  - 创建 `wrapper/update/`：checker.py, upgrader.py, phase_updater.py
+  - 拆分 `xcode_integrator.py` 到 `wrapper/xcode/`：6 个模块化文件
+  - 迁移 `biliobjclint.py` 到 `wrapper/lint/`
+  - 删除 `claude_fixer.py` 兼容层
+  - 更新 `bin/*.sh` 脚本路径
+
 ## v1.4.9 (2026-02-04)
 
 ### 修复
