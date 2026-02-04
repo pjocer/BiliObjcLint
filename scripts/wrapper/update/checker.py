@@ -251,8 +251,8 @@ def background_upgrade(
     调用 wrapper/update/upgrader.py 脚本执行实际升级操作。
     升级完成后会更新 Build Phase。
     """
-    # 导入 upgrader 模块
-    from .upgrader import start_background_upgrade
+    # 导入 upgrader 模块（使用绝对导入，因为此脚本作为独立进程运行）
+    from wrapper.update.upgrader import start_background_upgrade
     start_background_upgrade(
         local_ver, remote_ver, scripts_dir,
         project_path, target_name, project_name
