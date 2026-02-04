@@ -245,8 +245,17 @@ class RequestHandler(BaseHTTPRequestHandler):
                     days = None
 
         projects = state.db.list_projects()
-        daily = state.db.get_daily_stats(project_key, project_name, start_date, end_date, days)
-        rules = state.db.get_rule_stats(project_key, project_name, start_date, end_date, days)
+
+        # 使用去重后的 violations 表数据作为主要统计
+        # daily 现在返回单条记录：(今日, total, warning, error)
+        current_stats = state.db.get_current_violations_summary(project_key, project_name)
+        # 构造兼容的 daily 格式：[(day, total, warning, error)]
+        from datetime import date
+        today = date.today().isoformat()
+        daily = [(today, current_stats[0], current_stats[1], current_stats[2])]
+
+        # 使用去重后的规则统计
+        rules = state.db.get_current_rule_stats(project_key, project_name)
         autofix = state.db.get_autofix_summary(project_key, project_name, start_date, end_date, days)
 
         # Determine chart granularity based on date range

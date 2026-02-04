@@ -270,6 +270,9 @@ class Database:
         相同 (project_key, file_path, rule_id, code_hash) 的记录只更新 last_seen，
         不同的记录则插入新行。
 
+        注意：SQLite 的 UNIQUE 约束对 NULL 的处理是 NULL != NULL，
+        所以如果 code_hash 为空，需要生成一个基于位置的 fallback hash。
+
         Args:
             project_key: 项目 key
             violations: 违规列表
@@ -277,6 +280,7 @@ class Database:
         Returns:
             (inserted_count, updated_count)
         """
+        import hashlib
         now = datetime.now().isoformat()
         inserted = 0
         updated = 0
@@ -296,6 +300,12 @@ class Database:
 
                 if not file_path or not rule_id:
                     continue
+
+                # 如果没有 code_hash，生成一个基于位置的 fallback hash
+                # 这样可以避免 NULL 导致的重复插入问题
+                if not code_hash:
+                    fallback_input = f"{file_path}:{line}:{rule_id}"
+                    code_hash = hashlib.md5(fallback_input.encode()).hexdigest()[:16]
 
                 # 尝试 upsert
                 # SQLite 3.24+ 支持 ON CONFLICT ... DO UPDATE
@@ -404,6 +414,82 @@ class Database:
             "by_rule": {row[0]: row[1] for row in by_rule},
             "by_severity": {row[0]: row[1] for row in by_severity},
         }
+
+    def get_current_violations_summary(
+        self,
+        project_key: Optional[str],
+        project_name: Optional[str] = None,
+    ) -> Tuple[int, int, int]:
+        """
+        获取当前违规汇总（去重后的实际违规数）
+
+        从 violations 表获取数据，返回去重后的真实违规计数。
+        用于 Dashboard 显示当前项目的实际违规状态。
+
+        Args:
+            project_key: 项目 key
+            project_name: 项目名称（暂不使用，保留接口一致性）
+
+        Returns:
+            (total, warning, error) 三元组
+        """
+        if not project_key:
+            # 无项目筛选时返回全部
+            with self._connect() as conn:
+                total = conn.execute("SELECT COUNT(*) FROM violations").fetchone()[0]
+                warning = conn.execute(
+                    "SELECT COUNT(*) FROM violations WHERE severity = 'warning'"
+                ).fetchone()[0]
+                error = conn.execute(
+                    "SELECT COUNT(*) FROM violations WHERE severity = 'error'"
+                ).fetchone()[0]
+            return (total, warning, error)
+
+        with self._connect() as conn:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM violations WHERE project_key = ?",
+                (project_key,)
+            ).fetchone()[0]
+            warning = conn.execute(
+                "SELECT COUNT(*) FROM violations WHERE project_key = ? AND severity = 'warning'",
+                (project_key,)
+            ).fetchone()[0]
+            error = conn.execute(
+                "SELECT COUNT(*) FROM violations WHERE project_key = ? AND severity = 'error'",
+                (project_key,)
+            ).fetchone()[0]
+        return (total, warning, error)
+
+    def get_current_rule_stats(
+        self,
+        project_key: Optional[str],
+        project_name: Optional[str] = None,
+    ) -> List[Tuple[str, str, int, int]]:
+        """
+        获取当前规则统计（去重后的实际违规数）
+
+        从 violations 表获取数据，返回去重后的真实规则违规计数。
+
+        Args:
+            project_key: 项目 key
+            project_name: 项目名称（暂不使用）
+
+        Returns:
+            List of (rule_id, severity, enabled, count) tuples
+        """
+        query = """
+            SELECT rule_id, severity, 1 as enabled, COUNT(*) as count
+            FROM violations
+            WHERE 1=1
+        """
+        params: List[Any] = []
+        if project_key:
+            query += " AND project_key = ?"
+            params.append(project_key)
+        query += " GROUP BY rule_id, severity ORDER BY count DESC"
+
+        with self._connect() as conn:
+            return conn.execute(query, params).fetchall()
 
     def cleanup_stale_violations(self, project_key: str, days: int = 30) -> int:
         """清理过期的违规记录（超过 N 天未更新）"""
