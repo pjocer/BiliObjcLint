@@ -63,6 +63,53 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def _serve_static(self, filename: str) -> None:
+        """提供静态文件服务"""
+        # 静态文件目录: scripts/core/server/static/
+        static_dir = Path(__file__).parent / "static"
+        file_path = static_dir / filename
+
+        # 安全检查: 防止路径遍历攻击
+        try:
+            file_path = file_path.resolve()
+            if not str(file_path).startswith(str(static_dir.resolve())):
+                self._send_json(403, {"error": "forbidden"})
+                return
+        except Exception:
+            self._send_json(400, {"error": "invalid_path"})
+            return
+
+        if not file_path.exists() or not file_path.is_file():
+            self._send_json(404, {"error": "not_found"})
+            return
+
+        # 根据文件扩展名确定 MIME 类型
+        mime_types = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".svg": "image/svg+xml",
+            ".ico": "image/x-icon",
+            ".css": "text/css",
+            ".js": "application/javascript",
+        }
+        ext = file_path.suffix.lower()
+        content_type = mime_types.get(ext, "application/octet-stream")
+
+        try:
+            with open(file_path, "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "public, max-age=86400")  # 缓存 1 天
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as e:
+            logging.error(f"Failed to serve static file {filename}: {e}")
+            self._send_json(500, {"error": "internal_error"})
+
     def _redirect(self, location: str) -> None:
         """发送重定向响应"""
         self.send_response(302)
@@ -109,6 +156,11 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         if path == "/healthz":
             self._send_json(200, {"status": "ok"})
+            return
+
+        # 静态文件服务
+        if path.startswith("/static/"):
+            self._serve_static(path[8:])  # 去掉 "/static/" 前缀
             return
 
         if path == "/login":

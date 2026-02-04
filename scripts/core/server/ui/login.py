@@ -24,17 +24,11 @@ LOGIN_STYLE = """
 }
 
 .login-logo {
-  width: 64px;
-  height: 64px;
+  width: 80px;
+  height: 80px;
   margin: 0 auto 16px;
-  background: linear-gradient(135deg, #1f7a5b 0%, #34c759 100%);
   border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  color: white;
-  font-weight: bold;
+  object-fit: contain;
 }
 
 .login-card h2 {
@@ -121,7 +115,7 @@ def render_login(error: str = "") -> str:
     <body>
       <div class="login-page">
         <div class="login-card">
-          <div class="login-logo">B</div>
+          <img class="login-logo" src="/static/biliobjclint_logo.png" alt="BiliObjCLint" />
           <h2>BiliObjCLint</h2>
           <p class="subtitle">代码质量统计平台</p>
           {err}
