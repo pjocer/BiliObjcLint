@@ -399,6 +399,110 @@ def update_build_phase_with_new_version(
         return False
 
 
+def _update_build_phase_subprocess(
+    project_path: str,
+    target_name: Optional[str] = None,
+    project_name: Optional[str] = None,
+    scripts_dir: Optional[str] = None,
+    new_version: Optional[str] = None
+) -> bool:
+    """
+    使用子进程在新版本的 Python 环境中更新 Build Phase
+
+    这是解决模块缓存问题的终极方案：
+    - 当前脚本从旧版本运行，进程中已加载旧版本模块
+    - 使用子进程启动新版本的 Python，完全隔离环境
+    - 在纯净的新版本环境中执行 Build Phase 更新
+    """
+    try:
+        brew_prefix = get_brew_prefix()
+        if not brew_prefix:
+            logger.error("Cannot get brew prefix for subprocess")
+            return False
+
+        # 新版本的 Python 环境
+        new_python = brew_prefix / 'libexec' / '.venv' / 'bin' / 'python3'
+        if not new_python.exists():
+            logger.error(f"New Python not found: {new_python}")
+            return False
+
+        # 构建内联 Python 脚本
+        # 使用 -c 参数直接执行，避免文件导入问题
+        inline_script = f'''
+import sys
+sys.path.insert(0, "{brew_prefix / 'libexec' / 'scripts'}")
+
+from xcode_integrator import XcodeIntegrator, SCRIPT_VERSION
+from core.lint import project_config
+
+project_path = "{project_path}"
+target_name = "{target_name or ''}" or None
+project_name = "{project_name or ''}" or None
+
+integrator = XcodeIntegrator(project_path, "{brew_prefix / 'libexec'}", project_name)
+if not integrator.load_project():
+    print("ERROR: Failed to load project")
+    sys.exit(1)
+
+target = integrator.get_target(target_name)
+if not target:
+    print(f"ERROR: Target not found: {{target_name}}")
+    sys.exit(1)
+
+current_version = None
+if integrator.has_lint_phase(target):
+    current_version = integrator.get_lint_phase_version(target)
+    print(f"Current Build Phase version: {{current_version}}")
+
+config = project_config.get(str(integrator.xcodeproj_path), target.name)
+if config:
+    scripts_path = project_config.get_scripts_srcroot_path(config)
+    print(f"Scripts path: {{config.scripts_dir_relative}}")
+else:
+    print(f"ERROR: No config found")
+    sys.exit(1)
+
+success = integrator.add_lint_phase(target, dry_run=False, override=True, scripts_path=scripts_path)
+if success:
+    integrator.save()
+    print(f"Build Phase updated: {{current_version}} -> {{SCRIPT_VERSION}}")
+else:
+    print("ERROR: Failed to update Build Phase")
+    sys.exit(1)
+'''
+
+        logger.info(f"Running Build Phase update in new Python environment: {new_python}")
+
+        result = subprocess.run(
+            [str(new_python), '-c', inline_script],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+
+        # 记录输出
+        if result.stdout:
+            for line in result.stdout.strip().split('\n'):
+                logger.info(f"[subprocess] {line}")
+        if result.stderr:
+            for line in result.stderr.strip().split('\n'):
+                logger.error(f"[subprocess] {line}")
+
+        if result.returncode != 0:
+            logger.error(f"Subprocess failed with return code: {result.returncode}")
+            return False
+
+        logger.info("Build Phase updated successfully via subprocess")
+        return True
+
+    except subprocess.TimeoutExpired:
+        logger.error("Build Phase update subprocess timed out")
+        return False
+    except Exception as e:
+        logger.exception(f"Failed to update build phase via subprocess: {e}")
+        return False
+
+
 def show_updating_notification():
     """显示正在更新的系统通知"""
     title = "BiliObjCLint"
@@ -481,10 +585,13 @@ def do_upgrade(
             copy_scripts_to_project(Path(scripts_dir), force=True)
 
         # 5. 强制更新 Build Phase
-        # 重要：使用新版本的 brew prefix 路径，而不是当前脚本的路径
+        # 【关键】使用子进程在新版本的 Python 环境中执行，彻底避免旧版本模块缓存问题
+        # 原因：当前脚本从旧版本运行，sys.modules 中缓存了旧版本模块
+        #       即使清除缓存，Python 内部状态仍可能有问题
+        #       使用子进程完全隔离，确保在纯净的新版本环境中执行
         if project_path:
-            logger.info("Force updating Build Phase...")
-            update_build_phase_with_new_version(
+            logger.info("Force updating Build Phase via subprocess...")
+            _update_build_phase_subprocess(
                 project_path, target_name, project_name, scripts_dir, remote_ver
             )
 
