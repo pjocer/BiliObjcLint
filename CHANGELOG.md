@@ -2,6 +2,14 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.4.3 (2026-02-04)
+
+### 修复
+- 修复 Dashboard 显示累计数据而非去重数据的问题
+  - Dashboard 现在从 `violations` 表获取去重后的实际违规数，而不是累加所有历史运行记录
+  - 新增 `get_current_violations_summary()` 和 `get_current_rule_stats()` 方法
+  - 修复 code_hash 为 NULL 时 UNIQUE 约束失效的问题（SQLite 中 NULL != NULL）
+
 ## v1.4.2 (2026-02-04)
 
 ### 新增
