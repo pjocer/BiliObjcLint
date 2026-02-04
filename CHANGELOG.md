@@ -2,6 +2,19 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.4.2 (2026-02-04)
+
+### 新增
+- Metrics 上报去重优化
+  - 新增 `violation_hash.py` 模块，计算违规代码内容哈希
+  - `BaseRule` 新增 `get_hash_context()` 接口，支持规则级别的哈希策略
+  - 特殊规则实现自定义哈希范围：Block 范围、容器范围、方法范围、文件头范围
+  - `Violation` 新增 `code_hash` 字段
+  - Metrics Payload 新增 `violations` 列表（含 code_hash）
+  - Server 端新增 `violations` 表，支持 UNIQUE 约束去重
+  - Server 端实现 upsert 逻辑，相同违规只更新 `last_seen`
+  - 新增 API：`GET /api/v1/violations`、`GET /api/v1/violations/stats`、`POST /api/v1/violations/cleanup`
+
 ## v1.4.1 (2026-02-04)
 
 ### 重构
