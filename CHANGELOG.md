@@ -2,6 +2,26 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.4.2 (2026-02-04)
+
+### 重构
+- 拆分 `ui/templates.py` 为独立页面模块
+  - `styles.py` - 共享 CSS 样式
+  - `components.py` - 共享组件（图表、规则名映射、iOS 开关）
+  - `login.py` - 登录页面
+  - `dashboard.py` - Dashboard 页面
+  - `users.py` - 用户管理页面
+
+### 改进
+- Dashboard 规则统计 UI 优化
+  - 规则名显示中文（如 `todo_fixme` → `待办事项`）
+  - 鼠标悬停显示英文 rule ID（tooltip）
+  - 启用状态改为 iOS 风格 toggle switch（只读）
+  - 表头汉化：`Severity` → `级别`，`Enabled` → `启用`
+- 登录页面重新设计
+  - 移除无意义的"模块/安全/模式"展示卡片
+  - 采用居中卡片式布局，更简洁现代
+
 ## v1.4.1 (2026-02-04)
 
 ### 新增
