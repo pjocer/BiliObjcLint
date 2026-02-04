@@ -9,8 +9,8 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from core.reporter import Violation, Severity
-from core.config import RuleConfig
+from core.lint.reporter import Violation, Severity
+from core.lint.config import RuleConfig
 
 
 class BaseRule(ABC):

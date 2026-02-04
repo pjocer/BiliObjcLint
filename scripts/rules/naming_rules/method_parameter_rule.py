@@ -5,7 +5,7 @@ import re
 from typing import List, Set
 
 from ..base_rule import BaseRule
-from core.reporter import Violation
+from core.lint.reporter import Violation
 
 
 class MethodParameterRule(BaseRule):

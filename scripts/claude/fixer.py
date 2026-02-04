@@ -11,15 +11,15 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 # 添加 scripts 目录到路径以支持绝对导入
 _SCRIPT_DIR = Path(__file__).parent.parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from core.logger import get_logger, log_claude_fix_start, log_claude_fix_end
-from core.ignore_cache import IgnoreCache
+from core.lint.logger import get_logger, log_claude_fix_start, log_claude_fix_end
+from core.lint.ignore_cache import IgnoreCache
 
 from claude.dialogs import show_dialog, show_progress_notification
 from claude.prompt_builder import build_fix_prompt
@@ -37,10 +37,68 @@ from claude.http_server import (
 logger = get_logger("claude_fix")
 
 
+class AutofixTracker:
+    """记录 Claude 自动修复统计"""
+
+    def __init__(self, enabled: bool, trigger: str, mode: str):
+        self.enabled = enabled
+        self.trigger = trigger
+        self.mode = mode
+        self.triggered = False
+        self.flow = "none"
+        self.decision = "pending"
+        self.cli_available: Optional[bool] = None
+        self.actions: List[Dict[str, Any]] = []
+        self.summary = {
+            "attempts": 0,
+            "success": 0,
+            "failed": 0,
+            "cancelled": 0,
+            "target_total": 0,
+        }
+
+    def set_triggered(self, value: bool):
+        self.triggered = value
+
+    def set_flow(self, value: str):
+        self.flow = value
+
+    def set_decision(self, value: str):
+        self.decision = value
+
+    def set_cli_available(self, value: bool):
+        self.cli_available = value
+
+    def record_action(self, action: Dict[str, Any]):
+        self.actions.append(action)
+        self.summary["attempts"] += 1
+        self.summary["target_total"] += int(action.get("target_count", 0))
+        result = action.get("result")
+        if result == "success":
+            self.summary["success"] += 1
+        elif result in ("failed", "timeout", "not_available"):
+            self.summary["failed"] += 1
+        elif result == "cancelled":
+            self.summary["cancelled"] += 1
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "trigger": self.trigger,
+            "mode": self.mode,
+            "triggered": self.triggered,
+            "flow": self.flow,
+            "decision": self.decision,
+            "cli_available": self.cli_available,
+            "actions": self.actions,
+            "summary": self.summary,
+        }
+
+
 class ClaudeFixer:
     """Claude 自动修复器"""
 
-    def __init__(self, config: dict, project_root: str):
+    def __init__(self, config: dict, project_root: str, run_id: Optional[str] = None, project: Optional[dict] = None):
         self.config = config
         self.project_root = Path(project_root).resolve()
         self.autofix_config = config.get('claude_autofix', {})
@@ -55,10 +113,45 @@ class ClaudeFixer:
         self.disable_nonessential_traffic = self.autofix_config.get('disable_nonessential_traffic', True)
         self.start_time = None
         self._claude_path = None
+        self.run_id = run_id
+        self.project = project or {}
+        self.metrics_config = self._build_metrics_config(config)
+        self.project_key = self.project.get("key") or self.metrics_config.project_key or self.project_root.name
+        self.project_name = self.project.get("name") or self.metrics_config.project_name or self.project_root.name
+        self.tool_version = self._read_version()
+        self.autofix_tracker = AutofixTracker(
+            enabled=self.trigger != "disable",
+            trigger=self.trigger,
+            mode=self.mode,
+        )
 
         logger.debug(f"ClaudeFixer initialized: project_root={self.project_root}")
         logger.debug(f"Config: trigger={self.trigger}, mode={self.mode}, timeout={self.timeout}")
         logger.debug(f"API config: base_url={self.api_base_url or '(default)'}, model={self.model or '(default)'}")
+
+    def _read_version(self) -> str:
+        version_file = self.project_root / "VERSION"
+        if version_file.exists():
+            return version_file.read_text().strip()
+        return "unknown"
+
+    def _build_metrics_config(self, config: dict):
+        metrics_cfg = config.get("metrics", {}) if isinstance(config, dict) else {}
+        from core.lint.config import MetricsConfig
+        return MetricsConfig(
+            enabled=metrics_cfg.get("enabled", False),
+            endpoint=metrics_cfg.get("endpoint", "http://127.0.0.1:18080"),
+            token=metrics_cfg.get("token", ""),
+            project_key=metrics_cfg.get("project_key", ""),
+            project_name=metrics_cfg.get("project_name", ""),
+            mode=metrics_cfg.get("mode", "push"),
+            spool_dir=metrics_cfg.get("spool_dir", "~/.biliobjclint/metrics_spool"),
+            timeout_ms=metrics_cfg.get("timeout_ms", 2000),
+            retry_max=metrics_cfg.get("retry_max", 3),
+        )
+
+    def get_autofix_report(self) -> Dict[str, Any]:
+        return self.autofix_tracker.to_dict()
 
     def _find_claude_path(self) -> Optional[str]:
         """
@@ -256,7 +349,12 @@ class ClaudeFixer:
         # trigger == 'any'
         return len(violations) > 0
 
-    def fix_violations_silent(self, violations: List[Dict]) -> Tuple[bool, str]:
+    def fix_violations_silent(
+        self,
+        violations: List[Dict],
+        action_type: str = "fix_all",
+        target_rule: Optional[str] = None
+    ) -> Tuple[bool, str]:
         """
         静默模式修复违规
 
@@ -315,20 +413,52 @@ class ClaudeFixer:
             if result.returncode == 0:
                 logger.info(f"Fix completed successfully in {elapsed:.2f}s")
                 logger.debug(f"Claude stdout: {result.stdout[:500]}..." if len(result.stdout) > 500 else f"Claude stdout: {result.stdout}")
+                self.autofix_tracker.record_action({
+                    "type": action_type,
+                    "target_count": len(violations),
+                    "target_rule": target_rule,
+                    "result": "success",
+                    "elapsed_ms": int(elapsed * 1000),
+                    "message": "Fix completed",
+                })
                 return True, "修复完成"
             else:
                 error_output = result.stderr.strip() or result.stdout.strip() or f"退出码 {result.returncode}"
                 logger.error(f"Fix failed (exit code {result.returncode})")
                 logger.error(f"stderr: {result.stderr}")
                 logger.error(f"stdout: {result.stdout}")
+                self.autofix_tracker.record_action({
+                    "type": action_type,
+                    "target_count": len(violations),
+                    "target_rule": target_rule,
+                    "result": "failed",
+                    "elapsed_ms": int(elapsed * 1000),
+                    "message": error_output,
+                })
                 return False, f"修复失败: {error_output}"
 
         except subprocess.TimeoutExpired:
             elapsed = time.time() - fix_start_time
             logger.error(f"Fix timed out after {elapsed:.2f}s (limit: {self.timeout}s)")
+            self.autofix_tracker.record_action({
+                "type": action_type,
+                "target_count": len(violations),
+                "target_rule": target_rule,
+                "result": "timeout",
+                "elapsed_ms": int(elapsed * 1000),
+                "message": f"Timeout {self.timeout}s",
+            })
             return False, f"修复超时（{self.timeout}秒）"
         except Exception as e:
             logger.exception(f"Fix exception: {e}")
+            self.autofix_tracker.record_action({
+                "type": action_type,
+                "target_count": len(violations),
+                "target_rule": target_rule,
+                "result": "failed",
+                "elapsed_ms": int((time.time() - fix_start_time) * 1000),
+                "message": str(e),
+            })
             return False, f"修复异常: {e}"
         finally:
             # 清理临时文件
@@ -431,10 +561,12 @@ class ClaudeFixer:
 
         # 检查是否应该触发
         should = self.should_trigger(violations)
+        self.autofix_tracker.set_triggered(should)
         with open("/tmp/biliobjclint_debug.log", "a") as f:
             f.write(f"should_trigger: {should}, trigger_mode={self.trigger}\n")
         if not should:
             logger.info(f"Trigger condition not met (trigger={self.trigger})")
+            self.autofix_tracker.set_decision("skip")
             return 0
 
         # 统计
@@ -445,6 +577,7 @@ class ClaudeFixer:
 
         # 检测 Claude 是否可用
         available, error_msg = self.check_claude_available()
+        self.autofix_tracker.set_cli_available(available)
         if not available:
             logger.error(f"Claude not available: {error_msg}")
             show_dialog(
@@ -454,9 +587,18 @@ class ClaudeFixer:
                 icon="stop"
             )
             log_claude_fix_end(False, error_msg, time.time() - self.start_time)
+            self.autofix_tracker.set_decision("not_available")
+            self.autofix_tracker.record_action({
+                "type": "fix_all",
+                "target_count": len(violations),
+                "result": "not_available",
+                "elapsed_ms": int((time.time() - self.start_time) * 1000),
+                "message": error_msg,
+            })
             return 1
 
         # 先显示对话框
+        self.autofix_tracker.set_flow("dialog")
         dialog_result = show_dialog(
             "BiliObjCLint",
             f"发现 {len(violations)} 个代码问题\n（{error_count} errors, {warning_count} warnings）\n\n是否让 Claude 尝试自动修复？",
@@ -470,22 +612,43 @@ class ClaudeFixer:
         if dialog_result == "取消":
             logger.info("User cancelled from dialog")
             log_claude_fix_end(False, "User cancelled", time.time() - self.start_time)
+            self.autofix_tracker.set_decision("cancel")
+            self.autofix_tracker.record_action({
+                "type": "cancel",
+                "target_count": len(violations),
+                "result": "cancelled",
+                "elapsed_ms": int((time.time() - self.start_time) * 1000),
+                "message": "User cancelled",
+            })
             return 0
 
         # 用户选择直接修复
         if dialog_result == "自动修复":
             user_action = 'fix'
+            self.autofix_tracker.set_decision("fix")
         # 用户选择查看详情
         elif dialog_result == "查看详情":
+            self.autofix_tracker.set_flow("html")
             user_action = self._show_html_report_and_wait(violations)
             if user_action == 'cancel' or user_action is None:
                 logger.info("User cancelled or timed out from HTML")
                 log_claude_fix_end(False, "User cancelled", time.time() - self.start_time)
+                self.autofix_tracker.set_decision("cancel")
+                self.autofix_tracker.record_action({
+                    "type": "cancel",
+                    "target_count": len(violations),
+                    "result": "cancelled",
+                    "elapsed_ms": int((time.time() - self.start_time) * 1000),
+                    "message": "User cancelled",
+                })
                 return 0
             if user_action == 'done':
                 logger.info("User finished reviewing (done)")
                 log_claude_fix_end(True, "User finished", time.time() - self.start_time)
+                self.autofix_tracker.set_decision("done")
                 return 0
+            if user_action == 'fix':
+                self.autofix_tracker.set_decision("fix")
         else:
             # 未知结果
             logger.info(f"Unknown dialog result: {dialog_result}")
@@ -554,7 +717,7 @@ class ClaudeFixer:
             show_progress_notification("Claude 正在修复代码问题...")
 
             # 执行修复
-            success, result_msg = self.fix_violations_silent(violations)
+            success, result_msg = self.fix_violations_silent(violations, action_type="fix_all")
 
             # 显示结果
             if success:
@@ -578,6 +741,13 @@ class ClaudeFixer:
                 return 1
 
         elif self.mode == 'terminal':
+            self.autofix_tracker.record_action({
+                "type": "fix_all",
+                "target_count": len(violations),
+                "result": "started",
+                "elapsed_ms": 0,
+                "message": "Terminal opened",
+            })
             success, result_msg = self.fix_violations_terminal(violations)
             logger.info(f"Terminal mode result: success={success}, msg={result_msg}")
             if not success:
@@ -592,6 +762,13 @@ class ClaudeFixer:
             log_claude_fix_end(True, "Terminal opened", time.time() - self.start_time)
 
         elif self.mode == 'vscode':
+            self.autofix_tracker.record_action({
+                "type": "fix_all",
+                "target_count": len(violations),
+                "result": "started",
+                "elapsed_ms": 0,
+                "message": "VSCode opened",
+            })
             success, result_msg = self.fix_violations_vscode(violations)
             logger.info(f"VSCode mode result: success={success}, msg={result_msg}")
             show_dialog(
@@ -628,18 +805,30 @@ class ClaudeFixer:
             logger.info("No violations to fix")
             return 0
 
+        self.autofix_tracker.set_flow("skip_dialog")
+        self.autofix_tracker.set_decision("fix")
+        self.autofix_tracker.set_triggered(True)
+
         log_claude_fix_start(len(violations), str(self.project_root))
 
         # 检测 Claude 是否可用
         available, error_msg = self.check_claude_available()
+        self.autofix_tracker.set_cli_available(available)
         if not available:
             logger.error(f"Claude not available: {error_msg}")
             print(f"Claude 不可用: {error_msg}", file=sys.stderr)
             log_claude_fix_end(False, error_msg, time.time() - self.start_time)
+            self.autofix_tracker.record_action({
+                "type": "fix_all",
+                "target_count": len(violations),
+                "result": "not_available",
+                "elapsed_ms": int((time.time() - self.start_time) * 1000),
+                "message": error_msg,
+            })
             return 1
 
         # 直接执行修复
-        success, result_msg = self.fix_violations_silent(violations)
+        success, result_msg = self.fix_violations_silent(violations, action_type="fix_all")
 
         elapsed = time.time() - self.start_time
         if success:

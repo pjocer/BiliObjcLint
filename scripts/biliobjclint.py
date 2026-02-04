@@ -22,6 +22,8 @@ import argparse
 import sys
 import os
 import time
+import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict
 import fnmatch
@@ -30,13 +32,14 @@ import fnmatch
 SCRIPT_DIR = Path(__file__).parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from core.config import ConfigLoader, LintConfig
-from core.git_diff import GitDiffAnalyzer, is_git_repo
-from core.reporter import Reporter, Violation, Severity
-from core.rule_engine import RuleEngine
-from core.logger import get_logger, LogContext, log_lint_start, log_lint_end
-from core.local_pods import LocalPodsAnalyzer
-from core.ignore_cache import IgnoreCache
+from core.lint.config import ConfigLoader, LintConfig
+from core.lint.git_diff import GitDiffAnalyzer, is_git_repo
+from core.lint.reporter import Reporter, Violation, Severity
+from core.lint.rule_engine import RuleEngine
+from core.lint.logger import get_logger, LogContext, log_lint_start, log_lint_end
+from core.lint.local_pods import LocalPodsAnalyzer
+from core.lint.ignore_cache import IgnoreCache
+from core.lint import metrics as metrics_mod
 
 
 class BiliObjCLint:
@@ -46,9 +49,12 @@ class BiliObjCLint:
         self.args = args
         self.project_root = Path(args.project_root).resolve()
         self.config: Optional[LintConfig] = None
+        self.raw_config: Dict[str, Dict] = {}
         self.reporter = Reporter(xcode_output=args.xcode_output)
         self.logger = get_logger("biliobjclint")
         self.start_time = time.time()
+        self.run_id = str(uuid.uuid4())
+        self.started_at_iso = datetime.now().astimezone().isoformat()
         # 本地 Pod 相关
         self.local_pods_analyzer: Optional[LocalPodsAnalyzer] = None
         self.file_to_pod_map: Dict[str, str] = {}  # file_path -> pod_name
@@ -155,19 +161,45 @@ class BiliObjCLint:
         if self.args.json_file:
             try:
                 with open(self.args.json_file, 'w', encoding='utf-8') as f:
-                    f.write(self.reporter.to_json())
+                    json_data = self.reporter.to_json(
+                        run_id=self.run_id,
+                        extra={
+                            "created_at": self.started_at_iso,
+                            "project": {
+                                "key": (self.config.metrics.project_key if self.config else "") or self.project_root.name,
+                                "name": (self.config.metrics.project_name if self.config else "") or self.project_root.name,
+                            },
+                        },
+                    )
+                    f.write(json_data)
                 self.logger.debug(f"JSON output written to: {self.args.json_file}")
             except Exception as e:
                 self.logger.warning(f"Failed to write JSON file: {e}")
 
         if self.args.json_output:
-            print(self.reporter.to_json())
+            print(self.reporter.to_json(run_id=self.run_id))
             return 1 if errors_count > 0 else 0
         else:
             exit_code = self.reporter.report()
 
             if self.args.verbose:
                 self.reporter.print_summary()
+
+            # 统计上报（不影响 lint 结果）
+            try:
+                if self.config and self.config.metrics.enabled:
+                    payload = metrics_mod.build_lint_payload(
+                        run_id=self.run_id,
+                        config=self.config,
+                        raw_config=self.raw_config,
+                        reporter=self.reporter,
+                        project_root=self.project_root,
+                        duration_ms=int(elapsed * 1000),
+                        started_at_iso=self.started_at_iso,
+                    )
+                    metrics_mod.send_payload(payload, self.config.metrics, self.logger)
+            except Exception as e:
+                self.logger.warning(f"Metrics send failed: {e}")
 
             return exit_code if self.config.fail_on_error else 0
 
@@ -197,6 +229,7 @@ class BiliObjCLint:
 
         loader = ConfigLoader(config_path)
         self.config = loader.load()
+        self.raw_config = loader.get_raw_config()
 
         self.logger.debug(f"Config loaded: base_branch={self.config.base_branch}, fail_on_error={self.config.fail_on_error}")
         self.logger.debug(f"Included patterns: {self.config.included}")

@@ -68,6 +68,20 @@ class PerformanceConfig:
 
 
 @dataclass
+class MetricsConfig:
+    """统计上报配置"""
+    enabled: bool = False
+    endpoint: str = "http://127.0.0.1:18080"
+    token: str = ""
+    project_key: str = ""
+    project_name: str = ""
+    mode: str = "push"
+    spool_dir: str = "~/.biliobjclint/metrics_spool"
+    timeout_ms: int = 2000
+    retry_max: int = 3
+
+
+@dataclass
 class LintConfig:
     """完整的 Lint 配置"""
     # 基础配置
@@ -87,6 +101,9 @@ class LintConfig:
 
     # Claude 自动修复配置
     claude_autofix: ClaudeAutofixConfig = field(default_factory=ClaudeAutofixConfig)
+
+    # 统计上报配置
+    metrics: MetricsConfig = field(default_factory=MetricsConfig)
 
     # 本地 Pod 检测配置
     local_pods: LocalPodsConfig = field(default_factory=LocalPodsConfig)
@@ -152,6 +169,17 @@ class ConfigLoader:
             "trigger": "any",
             "mode": "silent",
             "timeout": 120
+        },
+        "metrics": {
+            "enabled": False,
+            "endpoint": "http://127.0.0.1:18080",
+            "token": "",
+            "project_key": "",
+            "project_name": "",
+            "mode": "push",
+            "spool_dir": "~/.biliobjclint/metrics_spool",
+            "timeout_ms": 2000,
+            "retry_max": 3
         },
         "local_pods": {
             "enabled": True,
@@ -225,6 +253,19 @@ class ConfigLoader:
             disable_nonessential_traffic=claude_autofix_cfg.get("disable_nonessential_traffic", True)
         )
 
+        metrics_cfg = self._config.get("metrics", {})
+        metrics = MetricsConfig(
+            enabled=metrics_cfg.get("enabled", False),
+            endpoint=metrics_cfg.get("endpoint", "http://127.0.0.1:18080"),
+            token=metrics_cfg.get("token", ""),
+            project_key=metrics_cfg.get("project_key", ""),
+            project_name=metrics_cfg.get("project_name", ""),
+            mode=metrics_cfg.get("mode", "push"),
+            spool_dir=metrics_cfg.get("spool_dir", "~/.biliobjclint/metrics_spool"),
+            timeout_ms=metrics_cfg.get("timeout_ms", 2000),
+            retry_max=metrics_cfg.get("retry_max", 3)
+        )
+
         local_pods_cfg = self._config.get("local_pods", {})
         local_pods = LocalPodsConfig(
             enabled=local_pods_cfg.get("enabled", True),
@@ -250,6 +291,7 @@ class ConfigLoader:
             python_rules=python_rules,
             custom_rules_python_path=custom_rules.get("python", {}).get("path", "./custom_rules/python/"),
             claude_autofix=claude_autofix,
+            metrics=metrics,
             local_pods=local_pods,
             performance=performance
         )

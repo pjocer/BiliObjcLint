@@ -53,7 +53,7 @@ class FileLogger:
 logger = FileLogger()
 
 # 导入项目配置模块
-from core import project_config
+from core.lint import project_config
 
 
 def get_brew_prefix() -> Optional[Path]:
@@ -322,7 +322,7 @@ def update_build_phase_with_new_version(
         new_scripts_path = brew_prefix / 'libexec' / 'scripts'
         logger.info(f"Loading xcode_integrator from new version: {new_scripts_path}")
 
-        # 添加新版本 scripts 目录到 sys.path（解决 core.logger 等依赖问题）
+        # 添加新版本 scripts 目录到 sys.path（解决 core.lint.logger 等依赖问题）
         if str(new_scripts_path) not in sys.path:
             sys.path.insert(0, str(new_scripts_path))
             logger.info(f"Added new scripts path to sys.path: {new_scripts_path}")

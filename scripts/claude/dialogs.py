@@ -13,7 +13,7 @@ _SCRIPT_DIR = Path(__file__).parent.parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from core.logger import get_logger
+from core.lint.logger import get_logger
 
 logger = get_logger("claude_fix")
 

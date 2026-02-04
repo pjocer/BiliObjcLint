@@ -185,6 +185,27 @@ claude_autofix:
   # 是否禁用非必要的网络请求（推荐开启以提高性能）
   disable_nonessential_traffic: true
 
+# ==================== 统计上报配置 ====================
+metrics:
+  # 是否启用统计上报
+  enabled: false
+  # 上报服务地址
+  endpoint: "http://127.0.0.1:18080"
+  # 上报鉴权 Token（与服务端配置一致）
+  token: ""
+  # 项目标识（用于服务端聚合统计）
+  project_key: ""
+  # 项目名称（默认使用项目目录名）
+  project_name: ""
+  # 上报模式: push
+  mode: "push"
+  # 本地缓存目录（上报失败时落盘）
+  spool_dir: "~/.biliobjclint/metrics_spool"
+  # 请求超时时间（毫秒）
+  timeout_ms: 2000
+  # 失败重试次数
+  retry_max: 3
+
 # ==================== 本地 Pod 检测配置 ====================
 local_pods:
   # 是否启用本地 Pod 检测

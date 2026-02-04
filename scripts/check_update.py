@@ -27,7 +27,7 @@ from urllib.error import URLError
 SCRIPT_DIR = Path(__file__).parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from core.logger import get_logger
+from core.lint.logger import get_logger
 
 # GitHub 仓库信息
 GITHUB_REPO = "pjocer/BiliObjcLint"
@@ -36,7 +36,7 @@ GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/tags"
 logger = get_logger("check_update")
 
 # 导入项目配置模块
-from core import project_config
+from core.lint import project_config
 
 
 def get_local_version() -> Optional[str]:

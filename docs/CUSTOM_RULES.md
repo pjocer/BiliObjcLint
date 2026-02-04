@@ -11,7 +11,7 @@ Python 规则开发简单，无需重新编译，适合大多数场景。
 在 `custom_rules/python/` 目录下创建 `.py` 文件：
 
 ```python
-from core.rule_engine import BaseRule
+from core.lint.rule_engine import BaseRule
 
 class MyCustomRule(BaseRule):
     # 规则标识符（必须唯一）
@@ -86,7 +86,7 @@ def check(self, file_path, content, lines, changed_lines):
 
 ```python
 import re
-from core.rule_engine import BaseRule
+from core.lint.rule_engine import BaseRule
 
 class HardcodedStringRule(BaseRule):
     identifier = "hardcoded_string"

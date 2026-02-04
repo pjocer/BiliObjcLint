@@ -19,7 +19,7 @@ _SCRIPT_DIR = Path(__file__).parent.parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from core.logger import get_logger
+from core.lint.logger import get_logger
 
 logger = get_logger("claude_fix")
 
@@ -177,7 +177,11 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
             global _fix_tasks
             try:
                 if _fixer_instance:
-                    success, result_msg = _fixer_instance.fix_violations_silent([violation])
+                    success, result_msg = _fixer_instance.fix_violations_silent(
+                        [violation],
+                        action_type="fix_single",
+                        target_rule=rule
+                    )
                     if success:
                         _fix_tasks[task_id] = {'status': 'completed', 'message': '修复完成'}
                     else:
@@ -241,7 +245,10 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
             global _fix_tasks
             try:
                 if _fixer_instance:
-                    success, result_msg = _fixer_instance.fix_violations_silent(_all_violations)
+                    success, result_msg = _fixer_instance.fix_violations_silent(
+                        _all_violations,
+                        action_type="fix_all"
+                    )
                     if success:
                         _fix_tasks[task_id] = {
                             'status': 'completed',

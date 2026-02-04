@@ -1,0 +1,24 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 18080
+  },
+  "auth": {
+    "enabled": true,
+    "admin_user": "admin",
+    "admin_password": ""
+  },
+  "ingest": {
+    "token": "",
+    "spool_path": "~/.biliobjclint/metrics_spool/ingest.jsonl"
+  },
+  "storage": {
+    "type": "sqlite",
+    "path": "~/.biliobjclint/lintserver.db",
+    "retention_days": 0
+  },
+  "logging": {
+    "level": "info",
+    "path": "~/.biliobjclint/lintserver.log"
+  }
+}

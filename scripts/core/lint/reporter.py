@@ -174,12 +174,21 @@ class Reporter:
             "files_affected": len(set(v.file_path for v in self.violations))
         }
 
-    def to_json(self) -> str:
-        """输出 JSON 格式报告"""
-        return json.dumps({
+    def to_json_dict(self, run_id: Optional[str] = None, extra: Optional[dict] = None) -> dict:
+        """输出 JSON 数据结构"""
+        data = {
             "summary": self.get_summary(),
             "violations": [v.to_dict() for v in self.violations]
-        }, indent=2, ensure_ascii=False)
+        }
+        if run_id:
+            data["run_id"] = run_id
+        if extra:
+            data.update(extra)
+        return data
+
+    def to_json(self, run_id: Optional[str] = None, extra: Optional[dict] = None) -> str:
+        """输出 JSON 格式报告"""
+        return json.dumps(self.to_json_dict(run_id=run_id, extra=extra), indent=2, ensure_ascii=False)
 
     def print_summary(self):
         """打印摘要到 stderr（不影响 Xcode 解析）"""

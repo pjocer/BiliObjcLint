@@ -7,7 +7,7 @@ BiliObjCLint Logger Module - 统一日志记录
 - xcode_YYYYMMDD_HHMMSS.log        # Xcode 集成日志
 
 Usage:
-    from core.logger import get_logger, LogContext
+    from core.lint.logger import get_logger, LogContext
 
     logger = get_logger('biliobjclint')
     logger.info("Starting lint check")
@@ -32,8 +32,8 @@ def get_logs_dir() -> Path:
     """获取日志目录路径"""
     # 从当前文件推断项目根目录
     current_file = Path(__file__).resolve()
-    # scripts/core/logger.py -> 上两级是 scripts, 再上一级是项目根目录
-    project_root = current_file.parent.parent.parent
+    # scripts/core/lint/logger.py -> 上两级是 scripts, 再上一级是项目根目录
+    project_root = current_file.parent.parent.parent.parent
     logs_dir = project_root / "logs"
     logs_dir.mkdir(exist_ok=True)
     return logs_dir

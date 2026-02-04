@@ -6,7 +6,7 @@ from typing import List, Set, Optional, Tuple
 from dataclasses import dataclass
 
 from ..base_rule import BaseRule
-from core.reporter import Violation, Severity
+from core.lint.reporter import Violation, Severity
 
 
 @dataclass

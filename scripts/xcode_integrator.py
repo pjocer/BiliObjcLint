@@ -34,7 +34,7 @@ from pbxproj.pbxextensions import ProjectFiles
 SCRIPT_DIR = Path(__file__).parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from core.logger import get_logger
+from core.lint.logger import get_logger
 
 
 def get_version() -> str:
@@ -71,7 +71,7 @@ BOOTSTRAP_SCRIPT_TEMPLATE = '''#!/bin/bash
 '''
 
 # 导入项目配置模块
-from core import project_config
+from core.lint import project_config
 
 
 class XcodeIntegrator:

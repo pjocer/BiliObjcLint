@@ -1,1 +1,1 @@
-# BiliObjCLint Core Module
+"""BiliObjCLint core package (lint + server)."""

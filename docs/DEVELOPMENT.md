@@ -19,11 +19,13 @@ BiliObjCLint/
 │   │   ├── http_server.py    # HTTP 服务器（处理浏览器请求）
 │   │   └── html_report.py    # HTML 报告生成
 │   ├── core/                 # 核心模块
-│   │   ├── config.py         # 配置管理
-│   │   ├── git_diff.py       # Git 增量检测
-│   │   ├── reporter.py       # 输出格式化
-│   │   ├── rule_engine.py    # Python 规则引擎
-│   │   └── logger.py         # 日志系统
+│   │   ├── lint/             # Lint 核心模块
+│   │   │   ├── config.py     # 配置管理
+│   │   │   ├── git_diff.py   # Git 增量检测
+│   │   │   ├── reporter.py   # 输出格式化
+│   │   │   ├── rule_engine.py# Python 规则引擎
+│   │   │   └── logger.py     # 日志系统
+│   │   └── server/           # 本地统计服务模块
 │   ├── rules/                # 内置 Python 规则
 │   │   ├── naming_rules/     # 命名规则
 │   │   ├── memory_rules/     # 内存管理规则
@@ -100,6 +102,38 @@ Claude AI 自动修复模块，包含以下文件：
 - 支持代码预览和高亮
 - 支持在 Xcode 中打开文件
 - "修复全部"按钮（v1.1.8+）
+
+### biliobjclint-server
+
+本地统计服务，用于接收 lint 上报并提供可视化仪表盘。
+
+配置模板：
+[config/biliobjclint_server_config.json](../config/biliobjclint_server_config.json)
+
+接口规范：
+[LINTSERVER.md](../LINTSERVER.md)
+
+配置文件可由 biliobjclint-server 自动创建，或自行基于模板创建并编辑。
+
+使用方式：
+
+```bash
+# 直接运行脚本
+scripts/bin/biliobjclint-server.sh --start
+scripts/bin/biliobjclint-server.sh --stop
+scripts/bin/biliobjclint-server.sh --restart
+scripts/bin/biliobjclint-server.sh --status
+
+# 安装后入口
+# 由 Homebrew formula 创建 wrapper 提供
+biliobjclint-server start
+biliobjclint-server restart
+
+# Homebrew Services
+brew services start biliobjclint-server
+brew services stop biliobjclint-server
+brew services restart biliobjclint-server
+```
 
 ### reporter.py
 

@@ -2,6 +2,44 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.4.0 (2026-02-04)
+
+### 新增
+- 新增本地统计服务 `biliobjclint-server`
+  - HTTP 服务器提供可视化 Dashboard（趋势图、规则统计、Autofix 汇总）
+  - SQLite 存储 lint 历史数据
+  - 用户认证和会话管理
+  - 支持 `brew services start/stop biliobjclint`
+- 新增客户端统计上报模块 (`metrics.py`)
+  - 自动上报 lint 结果和 autofix 统计
+  - 支持重试和 spool 兜底机制
+- 新增 `metrics` 配置段（`config/default.yaml`）
+  - `enabled`: 是否启用上报
+  - `endpoint`: 服务端地址
+  - `project_key`/`project_name`: 项目标识
+- 新增 `biliobjclint-server clear` 命令，交互式清空本地缓存数据
+- 新增 `AutofixTracker` 类，跟踪 Claude 自动修复统计
+- 新增服务端配置模板 `config/biliobjclint_server_config.json`
+
+### 重构
+- 重构 `scripts/core/` 目录结构
+  - lint 核心模块迁移至 `scripts/core/lint/`
+  - 新增 `scripts/core/server/` 存放服务端代码
+- 拆分 `server/cli.py` 为多个模块：
+  - `db.py` - 数据库操作
+  - `auth.py` - 认证模块
+  - `handlers.py` - HTTP 请求处理
+  - `utils.py` - 工具函数
+- 更新所有规则文件的 import 路径（`core.*` → `core.lint.*`）
+
+### 修复
+- 修复 `claude/fixer.py` 重复的 elapsed 赋值语句
+- 修复 `claude/cli.py` load_violations 返回值类型不一致
+
+### 文档
+- 新增 `LINTSERVER.md` 接口规范文档
+- 更新 `docs/DEVELOPMENT.md` 添加服务端使用说明
+
 ## v1.3.7 (2026-02-03)
 
 ### 修复

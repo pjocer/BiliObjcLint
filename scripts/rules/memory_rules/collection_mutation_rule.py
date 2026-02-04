@@ -5,7 +5,7 @@ import re
 from typing import List, Set
 
 from ..base_rule import BaseRule
-from core.reporter import Violation, Severity
+from core.lint.reporter import Violation, Severity
 
 
 class CollectionMutationRule(BaseRule):

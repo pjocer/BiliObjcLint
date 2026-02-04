@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
 
 from rules.base_rule import BaseRule
-from core.reporter import Violation
+from core.lint.reporter import Violation
 
 
 class NoMagicNumberRule(BaseRule):
