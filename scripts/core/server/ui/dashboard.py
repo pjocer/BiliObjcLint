@@ -23,6 +23,7 @@ def render_dashboard(
     start_date: Optional[str],
     end_date: Optional[str],
     chart_data: Sequence[Tuple[str, int, int, int]],
+    chart_granularity: str = "day",
 ) -> str:
     """Render the dashboard page."""
     proj_options = "".join(render_project_option(p, project_token) for p in projects)
@@ -36,7 +37,7 @@ def render_dashboard(
         for r in rules
     )
 
-    chart_html = render_trend_chart(chart_data)
+    chart_html = render_trend_chart(chart_data, granularity=chart_granularity, start_date=start_date, end_date=end_date)
 
     return f"""
     <html><head><title>Dashboard</title>{STYLE}</head><body>

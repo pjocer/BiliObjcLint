@@ -273,6 +273,62 @@ class Database:
         with self._connect() as conn:
             return conn.execute(query, params).fetchall()
 
+    def get_chart_stats(
+        self,
+        project_key: Optional[str],
+        project_name: Optional[str],
+        start_date: Optional[str],
+        end_date: Optional[str],
+        granularity: str = "day",
+    ) -> List[Tuple[str, int, int, int]]:
+        """获取趋势图统计数据（支持动态粒度）
+
+        Args:
+            project_key: 项目 key
+            project_name: 项目名称
+            start_date: 开始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
+            granularity: 粒度，"hour" 或 "day"
+
+        Returns:
+            List of (time_slot, total, warning, error) tuples
+        """
+        # 根据粒度选择时间截取长度
+        # hour: substr(created_at, 1, 13) -> "2026-02-04T10"
+        # day: substr(created_at, 1, 10) -> "2026-02-04"
+        if granularity == "hour":
+            time_expr = "substr(created_at, 1, 13)"
+        else:
+            time_expr = "substr(created_at, 1, 10)"
+
+        query = f"""
+            SELECT {time_expr} as time_slot,
+                   sum(total) as total,
+                   sum(warning) as warning,
+                   sum(error) as error
+            FROM runs
+            WHERE 1=1
+        """
+        params: List[Any] = []
+        if project_key:
+            query += " AND project_key = ?"
+            params.append(project_key)
+        if project_name:
+            query += " AND project_name = ?"
+            params.append(project_name)
+        if start_date:
+            query += " AND date(created_at) >= date(?)"
+            params.append(start_date)
+        if end_date:
+            query += " AND date(created_at) <= date(?)"
+            params.append(end_date)
+        if not start_date and not end_date:
+            # 默认最近 7 天
+            query += " AND date(created_at) >= date('now', '-7 days')"
+        query += " GROUP BY time_slot ORDER BY time_slot ASC"
+        with self._connect() as conn:
+            return conn.execute(query, params).fetchall()
+
     def get_rule_stats(
         self,
         project_key: Optional[str],

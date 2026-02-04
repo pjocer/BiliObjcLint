@@ -238,8 +238,17 @@ class RequestHandler(BaseHTTPRequestHandler):
         daily = state.db.get_daily_stats(project_key, project_name, start_date, end_date, days)
         rules = state.db.get_rule_stats(project_key, project_name, start_date, end_date, days)
         autofix = state.db.get_autofix_summary(project_key, project_name, start_date, end_date, days)
-        chart_days = None if (start_date or end_date) else 7
-        chart_data = state.db.get_daily_stats(project_key, project_name, start_date, end_date, chart_days)
+
+        # Determine chart granularity based on date range
+        # Same day query -> hourly granularity
+        # Otherwise -> daily granularity
+        chart_granularity = "day"
+        if start_date and end_date and start_date == end_date:
+            chart_granularity = "hour"
+
+        chart_data = state.db.get_chart_stats(
+            project_key, project_name, start_date, end_date, chart_granularity
+        )
 
         self._send_html(
             200,
@@ -254,6 +263,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 start_date,
                 end_date,
                 chart_data,
+                chart_granularity,
             ),
         )
 
