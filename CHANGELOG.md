@@ -2,6 +2,24 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.4.1 (2026-02-04)
+
+### 重构
+- 重构 scripts 目录结构，拆分模块到 wrapper/
+  - 迁移 `rules/` 到 `core/lint/rules/`
+  - 创建 `wrapper/update/`：checker.py, upgrader.py, phase_updater.py
+  - 拆分 `xcode_integrator.py` 到 `wrapper/xcode/`：integrator.py, project_loader.py, phase_manager.py, bootstrap.py, templates.py, cli.py
+  - 迁移 `biliobjclint.py` 到 `wrapper/lint/`
+  - 更新 `bin/*.sh` 脚本路径
+  - 更新 `code_style_check.sh` 脚本路径引用
+
+### 修复
+- 使用子进程彻底解决 brew upgrade 后 Build Phase 版本不更新的问题
+  - 根本原因：background_upgrade.py 从旧版本启动，进程中已加载旧版本模块
+  - 修复方案：使用子进程在新版本的 Python 环境中执行 Build Phase 更新，完全隔离旧版本模块
+- 添加 `xcode_integrator.py` 兼容层，确保旧版本升级时 Build Phase 更新正常
+- 修复 CLI 脚本相对导入问题（改用绝对导入）
+
 ## v1.4.0 (2026-02-04)
 
 ### 新增
