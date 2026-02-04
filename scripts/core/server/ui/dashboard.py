@@ -77,18 +77,18 @@ def render_dashboard(
         <div class="card">
           <h3>Autofix 汇总</h3>
           <div class="stat-grid">
-            <div class="stat"><div class="label">Attempts</div><div class="value">{autofix.get('attempts', 0)}</div></div>
-            <div class="stat"><div class="label">Success</div><div class="value">{autofix.get('success', 0)}</div></div>
-            <div class="stat"><div class="label">Failed</div><div class="value">{autofix.get('failed', 0)}</div></div>
-            <div class="stat"><div class="label">Cancelled</div><div class="value">{autofix.get('cancelled', 0)}</div></div>
-            <div class="stat"><div class="label">Target Total</div><div class="value">{autofix.get('target_total', 0)}</div></div>
+            <div class="stat"><div class="label">尝试次数</div><div class="value">{autofix.get('attempts', 0)}</div></div>
+            <div class="stat"><div class="label">成功</div><div class="value">{autofix.get('success', 0)}</div></div>
+            <div class="stat"><div class="label">失败</div><div class="value">{autofix.get('failed', 0)}</div></div>
+            <div class="stat"><div class="label">已取消</div><div class="value">{autofix.get('cancelled', 0)}</div></div>
+            <div class="stat"><div class="label">目标总数</div><div class="value">{autofix.get('target_total', 0)}</div></div>
           </div>
         </div>
 
         <div class="card">
           <h3>每日统计</h3>
           <table class="table">
-            <thead><tr><th>日期</th><th>总数</th><th>Warning</th><th>Error</th></tr></thead>
+            <thead><tr><th>日期</th><th>总数</th><th>警告</th><th>错误</th></tr></thead>
             <tbody>{daily_rows or '<tr><td colspan="4">暂无数据</td></tr>'}</tbody>
           </table>
         </div>

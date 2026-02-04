@@ -55,7 +55,8 @@ LOGIN_STYLE = """
   margin-bottom: 6px;
 }
 
-.login-card .form-group input {
+.login-card .form-group input[type="text"],
+.login-card .form-group input[type="password"] {
   width: 100%;
   padding: 12px 14px;
   border: 1px solid #e6ded4;
@@ -66,14 +67,36 @@ LOGIN_STYLE = """
 
 .login-card .form-group input:focus {
   outline: none;
-  border-color: #1f7a5b;
-  box-shadow: 0 0 0 3px rgba(31, 122, 91, 0.1);
+  border-color: #fb7299;
+  box-shadow: 0 0 0 3px rgba(251, 114, 153, 0.15);
+}
+
+.login-card .remember-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.login-card .remember-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #6b6b6b;
+  cursor: pointer;
+}
+
+.login-card .remember-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #fb7299;
 }
 
 .login-card .submit-btn {
   width: 100%;
   padding: 14px;
-  background: linear-gradient(135deg, #1f7a5b 0%, #2a9d70 100%);
+  background: linear-gradient(135deg, #fb7299 0%, #f25d8e 100%);
   color: #fff;
   border: none;
   border-radius: 10px;
@@ -86,7 +109,7 @@ LOGIN_STYLE = """
 
 .login-card .submit-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(31, 122, 91, 0.3);
+  box-shadow: 0 8px 20px rgba(251, 114, 153, 0.4);
 }
 
 .login-card .error {
@@ -97,6 +120,22 @@ LOGIN_STYLE = """
   font-size: 13px;
   margin-bottom: 16px;
   text-align: left;
+}
+
+.login-card .register-link {
+  margin-top: 20px;
+  font-size: 14px;
+  color: #6b6b6b;
+}
+
+.login-card .register-link a {
+  color: #fb7299;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.login-card .register-link a:hover {
+  text-decoration: underline;
 }
 </style>
 """
@@ -119,17 +158,21 @@ def render_login(error: str = "") -> str:
           <h2>BiliObjCLint</h2>
           <p class="subtitle">代码质量统计平台</p>
           {err}
-          <form method="post" action="/login" autocomplete="off">
+          <form method="post" action="/login">
             <div class="form-group">
               <label>用户名</label>
-              <input name="username" placeholder="请输入用户名" autocomplete="off" />
+              <input type="text" name="username" placeholder="请输入用户名" autocomplete="username" />
             </div>
             <div class="form-group">
               <label>密码</label>
-              <input name="password" type="password" placeholder="请输入密码" autocomplete="new-password" data-lpignore="true" />
+              <input type="password" name="password" placeholder="请输入密码" autocomplete="current-password" />
+            </div>
+            <div class="remember-row">
+              <label><input type="checkbox" name="remember" value="1" /> 记住密码</label>
             </div>
             <button type="submit" class="submit-btn">登 录</button>
           </form>
+          <p class="register-link">还没有账号？<a href="/register">立即注册</a></p>
         </div>
       </div>
     </body>

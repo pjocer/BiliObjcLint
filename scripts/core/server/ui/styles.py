@@ -4,15 +4,16 @@ from __future__ import annotations
 STYLE = """
 <style>
 :root {
-  --bg-1: #f7f2ea;
-  --bg-2: #e8f1e9;
+  --bg-1: #fff5f7;
+  --bg-2: #ffeef2;
   --ink: #1e1e1e;
   --muted: #6b6b6b;
-  --accent: #1f7a5b;
+  --accent: #fb7299;
+  --accent-dark: #f25d8e;
   --accent-2: #d97706;
   --card: #ffffff;
-  --border: #e6ded4;
-  --shadow: 0 18px 50px rgba(0,0,0,0.08);
+  --border: #fcd5df;
+  --shadow: 0 18px 50px rgba(251,114,153,0.08);
   --radius: 16px;
 }
 
@@ -22,8 +23,8 @@ body {
   margin: 0;
   font-family: "Space Grotesk", "IBM Plex Sans", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
   color: var(--ink);
-  background: radial-gradient(1200px 600px at 10% 10%, #fff6e8 0%, transparent 60%),
-              radial-gradient(900px 500px at 90% 0%, #e3f4e9 0%, transparent 60%),
+  background: radial-gradient(1200px 600px at 10% 10%, #fff0f3 0%, transparent 60%),
+              radial-gradient(900px 500px at 90% 0%, #ffe8ee 0%, transparent 60%),
               linear-gradient(180deg, var(--bg-1) 0%, var(--bg-2) 100%);
   min-height: 100vh;
 }
@@ -63,7 +64,7 @@ header {
   gap: 6px;
   padding: 6px 10px;
   border-radius: 999px;
-  background: #f2eee7;
+  background: #ffeef2;
   font-size: 12px;
 }
 
@@ -118,7 +119,7 @@ button {
 
 button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(31, 122, 91, 0.25);
+  box-shadow: 0 6px 16px rgba(251, 114, 153, 0.35);
 }
 
 .table {
@@ -135,12 +136,12 @@ button:hover {
 }
 
 .table th {
-  background: #f6f1ea;
+  background: #ffeef2;
   color: #3d3d3d;
 }
 
 .table tr:nth-child(even) td {
-  background: #fbf8f2;
+  background: #fff5f7;
 }
 
 .stat-grid {
@@ -232,7 +233,7 @@ button:hover {
 }
 
 .ios-switch.on .slider {
-  background-color: #34c759;
+  background-color: #fb7299;
 }
 
 .ios-switch.on .slider:before {

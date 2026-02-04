@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .db import Database
 from .auth import SessionStore
-from .ui import render_dashboard, render_login, render_users
+from .ui import render_dashboard, render_login, render_register, render_users
 
 
 PROJECT_TOKEN_SEP = "|||"
@@ -167,6 +167,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_html(200, render_login())
             return
 
+        if path == "/register":
+            self._send_html(200, render_register())
+            return
+
         if path == "/logout":
             self.send_response(302)
             self.send_header("Set-Cookie", "session_id=; Max-Age=0; Path=/; HttpOnly")
@@ -259,6 +263,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._handle_login()
             return
 
+        if path == "/register":
+            self._handle_register()
+            return
+
         if path == "/admin/users":
             self._handle_create_user()
             return
@@ -281,11 +289,52 @@ class RequestHandler(BaseHTTPRequestHandler):
         if role:
             session_id = self._get_state().sessions.create(username, role)
             self.send_response(302)
-            self.send_header("Set-Cookie", f"session_id={session_id}; Path=/; HttpOnly")
+            # 根据 remember 参数设置 cookie 过期时间
+            remember = (form.get("remember") or [""])[0]
+            if remember == "1":
+                # 记住密码：30天
+                self.send_header("Set-Cookie", f"session_id={session_id}; Path=/; HttpOnly; Max-Age=2592000")
+            else:
+                # 不记住：会话 cookie
+                self.send_header("Set-Cookie", f"session_id={session_id}; Path=/; HttpOnly")
             self.send_header("Location", "/dashboard")
             self.end_headers()
         else:
             self._send_html(401, render_login(error="用户名或密码错误"))
+
+    def _handle_register(self) -> None:
+        """处理注册请求"""
+        import re
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length).decode("utf-8")
+        form = parse_qs(body)
+        username = (form.get("username") or [""])[0].strip()
+        password = (form.get("password") or [""])[0]
+        confirm_password = (form.get("confirm_password") or [""])[0]
+
+        # 验证用户名
+        if not username or len(username) < 3 or len(username) > 32:
+            self._send_html(400, render_register(error="用户名长度需为 3-32 个字符"))
+            return
+        if not re.match(r'^[a-zA-Z0-9_]+$', username):
+            self._send_html(400, render_register(error="用户名只能包含字母、数字和下划线"))
+            return
+
+        # 验证密码
+        if not password or len(password) < 6:
+            self._send_html(400, render_register(error="密码长度至少 6 个字符"))
+            return
+        if password != confirm_password:
+            self._send_html(400, render_register(error="两次输入的密码不一致"))
+            return
+
+        # 创建用户（默认角色为 readonly）
+        db = self._get_state().db
+        success, msg = db.create_user(username, password, "readonly")
+        if success:
+            self._send_html(200, render_register(success="注册成功！请返回登录页面登录。"))
+        else:
+            self._send_html(400, render_register(error=msg))
 
     def _handle_create_user(self) -> None:
         """处理创建用户请求"""

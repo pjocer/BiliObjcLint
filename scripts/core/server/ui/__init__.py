@@ -5,6 +5,7 @@ The actual implementations are split into separate modules:
 - styles.py: Shared CSS styles
 - components.py: Reusable UI components (charts, toggles, etc.)
 - login.py: Login page
+- register.py: Register page
 - dashboard.py: Dashboard page
 - users.py: User management page
 """
@@ -12,6 +13,7 @@ from __future__ import annotations
 
 # Re-export all public render functions
 from .login import render_login
+from .register import render_register
 from .dashboard import render_dashboard
 from .users import render_users
 
@@ -30,6 +32,7 @@ from .components import (
 
 __all__ = [
     "render_login",
+    "render_register",
     "render_dashboard",
     "render_users",
     "STYLE",
