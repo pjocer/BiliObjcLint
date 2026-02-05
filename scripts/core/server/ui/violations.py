@@ -219,6 +219,35 @@ def _render_pagination(
     return "".join(parts)
 
 
+def _highlight_objc_simple(code: str) -> str:
+    """Simple ObjC syntax highlighting for server-side rendering.
+
+    Args:
+        code: Code line content (already HTML escaped)
+
+    Returns:
+        Code with syntax highlighting spans
+    """
+    import re
+
+    # Keywords
+    keywords = r'\b(if|else|for|while|do|switch|case|default|break|continue|return|goto|typedef|struct|enum|union|sizeof|static|extern|const|volatile|inline|void|char|short|int|long|float|double|bool|BOOL|YES|NO|nil|NULL|self|super|id|Class|SEL|IMP|instancetype)\b'
+    code = re.sub(keywords, r'<span class="hl-keyword">\1</span>', code)
+
+    # @keywords
+    at_keywords = r'(@interface|@implementation|@end|@protocol|@property|@synthesize|@dynamic|@class|@public|@private|@protected|@selector|@try|@catch|@finally|@throw|@synchronized|@autoreleasepool)'
+    code = re.sub(at_keywords, r'<span class="hl-at-keyword">\1</span>', code)
+
+    # Property keywords
+    prop_keywords = r'\b(nonatomic|atomic|strong|weak|copy|assign|retain|readonly|readwrite|nullable|nonnull)\b'
+    code = re.sub(prop_keywords, r'<span class="hl-prop">\1</span>', code)
+
+    # Numbers
+    code = re.sub(r'\b(\d+\.?\d*[fFlL]?)\b', r'<span class="hl-number">\1</span>', code)
+
+    return code
+
+
 def render_violation_detail(
     username: str,
     role: str,
@@ -252,12 +281,36 @@ def render_violation_detail(
 
     severity_class = "error" if severity == "error" else "warning"
 
-    # 格式化 context（代码上下文）
+    # 格式化 context（代码上下文）- 按行显示带高亮
     context_html = ""
     if context:
-        # 简单的代码高亮
-        escaped_context = context.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        context_html = f'<pre class="code-context">{escaped_context}</pre>'
+        # 按行分割 context
+        context_lines = context.split('\n') if '\n' in context else [context]
+
+        # 计算行号起始位置
+        if related_lines:
+            start_line = related_lines[0]
+        else:
+            # 如果没有 related_lines，从 line 开始
+            start_line = max(1, line - len(context_lines) // 2)
+
+        code_lines_html = []
+        for i, code_line in enumerate(context_lines):
+            current_line_num = start_line + i
+            # 问题行高亮
+            highlighted = 'highlighted' if current_line_num == line else ''
+            # HTML 转义
+            escaped_line = code_line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            # 语法高亮
+            highlighted_content = _highlight_objc_simple(escaped_line)
+            code_lines_html.append(
+                f'<div class="code-line {highlighted}">'
+                f'<span class="code-line-num">{current_line_num}</span>'
+                f'<span class="code-line-content">{highlighted_content}</span>'
+                f'</div>'
+            )
+
+        context_html = '<div class="code-block">' + ''.join(code_lines_html) + '</div>'
 
     related_lines_html = ""
     if related_lines:
@@ -277,7 +330,19 @@ def render_violation_detail(
     .detail-item .label {{ color: #6b6b6b; font-size: 12px; margin-bottom: 4px; }}
     .detail-item .value {{ color: #1e1e1e; font-size: 14px; word-break: break-all; }}
     .message-box {{ background: #fef9f3; border-left: 4px solid #fb7299; padding: 16px; margin: 16px 0; border-radius: 0 8px 8px 0; }}
-    .code-context {{ background: #2d2d2d; color: #f8f8f2; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'SF Mono', Monaco, monospace; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }}
+    /* 代码块样式 - 与 Claude html_report 一致 */
+    .code-block {{ background: #1e1e1e; border-radius: 8px; overflow: hidden; margin: 12px 0; }}
+    .code-line {{ display: flex; padding: 2px 12px; }}
+    .code-line.highlighted {{ background: rgba(255, 200, 0, 0.2); }}
+    .code-line-num {{ min-width: 45px; padding-right: 12px; text-align: right; color: #858585; user-select: none; border-right: 1px solid #404040; margin-right: 12px; font-family: 'SF Mono', Monaco, monospace; font-size: 13px; }}
+    .code-line-content {{ white-space: pre; color: #d4d4d4; font-family: 'SF Mono', Monaco, monospace; font-size: 13px; }}
+    /* ObjC 语法高亮 */
+    .hl-keyword {{ color: #569cd6; }}
+    .hl-at-keyword {{ color: #c586c0; }}
+    .hl-prop {{ color: #4ec9b0; }}
+    .hl-string {{ color: #ce9178; }}
+    .hl-number {{ color: #b5cea8; }}
+    .hl-comment {{ color: #6a9955; font-style: italic; }}
     </style>
     </head><body>
       <div class="container">

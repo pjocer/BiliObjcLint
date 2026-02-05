@@ -24,14 +24,19 @@ def render_ios_switch(enabled: bool) -> str:
 
 
 def render_rule_name(rule_id: str, rule_name: Optional[str] = None) -> str:
-    """Render rule name with tooltip showing rule_id.
+    """Render rule name with tooltip showing rule_id and rule_name.
 
     Args:
         rule_id: Rule identifier
         rule_name: Display name from Violation.rule_name
     """
     display_name = rule_name or rule_id
-    return f'<span class="rule-name" title="{rule_id}">{display_name}</span>'
+    # Tooltip: rule_id + 换行 + rule_name（如果有）
+    if rule_name and rule_name != rule_id:
+        tooltip = f"{rule_id}&#10;{rule_name}"  # &#10; 是换行符的 HTML 实体
+    else:
+        tooltip = rule_id
+    return f'<span class="rule-name" title="{tooltip}">{display_name}</span>'
 
 
 def _fill_time_slots(

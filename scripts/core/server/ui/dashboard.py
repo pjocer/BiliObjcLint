@@ -149,6 +149,11 @@ def render_dashboard(
     .clickable-row:hover {{ background: #faf6f0; }}
     .badge-new {{ background: #fee2e2; color: #b91c1c; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 8px; }}
     .badge-ok {{ background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 8px; }}
+    .hint-card {{ background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%); border: 1px solid #7dd3fc; border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; display: flex; align-items: flex-start; gap: 12px; }}
+    .hint-card .icon {{ font-size: 20px; }}
+    .hint-card .content {{ flex: 1; }}
+    .hint-card .title {{ font-weight: 600; font-size: 14px; color: #0369a1; margin-bottom: 4px; }}
+    .hint-card .desc {{ font-size: 13px; color: #0284c7; line-height: 1.4; }}
     </style>
     {DASHBOARD_SCRIPT}
     </head><body>
@@ -189,6 +194,16 @@ def render_dashboard(
           </form>
           <p class="muted" style="margin-top:8px;">选择项目组后可进一步筛选项目名称。不填日期则展示全部数据。</p>
         </div>
+
+        {f'''
+        <div class="hint-card">
+          <span class="icon">💡</span>
+          <div class="content">
+            <div class="title">查看违规详情</div>
+            <div class="desc">选择具体的「项目组」和「项目名称」后，可点击下方规则行查看该规则的所有违规详情及代码上下文。</div>
+          </div>
+        </div>
+        ''' if not (selected_project_key and selected_project_name) else ''}
 
         <div class="card">
           <h3>趋势图（{('筛选范围' if (start_date or end_date) else '近 7 天')}）</h3>
