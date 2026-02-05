@@ -2,6 +2,15 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.4.11 (2026-02-05)
+
+### 改进
+- **Dashboard 规则显示优化**
+  - 规则显示 `display_name`（中文），hover 展示 `rule_id` + `description`
+  - 「今日新增 Violation Type」与「规则统计」使用完全相同的显示逻辑
+  - Client 上报规则的 `display_name` 和 `description`
+  - Server `rule_counts` 表新增 `description` 字段存储规则描述
+
 ## v1.4.10 (2026-02-05)
 
 ### 修复
