@@ -66,10 +66,16 @@ class Database:
                     severity TEXT,
                     enabled INTEGER,
                     count INTEGER,
+                    order_index INTEGER DEFAULT 0,
                     PRIMARY KEY (run_id, rule_id)
                 )
                 """
             )
+            # 迁移：为旧表添加 order_index 列
+            try:
+                conn.execute("ALTER TABLE rule_counts ADD COLUMN order_index INTEGER DEFAULT 0")
+            except Exception:
+                pass  # 列已存在
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS users (
@@ -323,20 +329,21 @@ class Database:
         return True, "ok"
 
     def replace_rule_counts(self, run_id: str, rules: Dict[str, Any]) -> None:
-        """替换规则计数"""
+        """替换规则计数（保留配置中的顺序）"""
         with self._connect() as conn:
             conn.execute("DELETE FROM rule_counts WHERE run_id=?", (run_id,))
-            for rule_id, item in rules.items():
+            for order_index, (rule_id, item) in enumerate(rules.items()):
                 if not isinstance(item, dict):
                     continue
                 conn.execute(
-                    "INSERT INTO rule_counts (run_id, rule_id, severity, enabled, count) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO rule_counts (run_id, rule_id, severity, enabled, count, order_index) VALUES (?, ?, ?, ?, ?, ?)",
                     (
                         run_id,
                         rule_id,
                         item.get("severity", "warning"),
                         1 if item.get("enabled", True) else 0,
                         int(item.get("count", 0)),
+                        order_index,
                     )
                 )
 
@@ -809,6 +816,51 @@ class Database:
             ).fetchone()[0]
         return (total, warning, error)
 
+    def _get_latest_rule_configs(self, project_key: str) -> Dict[str, Dict[str, Any]]:
+        """获取指定 project_key 最近一次 run 的规则配置
+
+        一个 project_key 下所有 project_name 共享同一套 .biliobjclint.yaml 配置，
+        所以从该 project_key 最近一次 run 的 rule_counts 中获取规则的 enabled 状态和顺序。
+
+        Args:
+            project_key: 项目组标识
+
+        Returns:
+            Dict[rule_id, {"enabled": bool, "severity": str, "order": int}]
+        """
+        with self._connect() as conn:
+            # 获取该 project_key 最近一次 run
+            latest_run = conn.execute(
+                """
+                SELECT run_id FROM runs
+                WHERE project_key = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (project_key,)
+            ).fetchone()
+
+            if not latest_run:
+                return {}
+
+            run_id = latest_run[0]
+
+            # 获取该 run 的规则配置（按 order_index 排序）
+            rows = conn.execute(
+                """
+                SELECT rule_id, severity, enabled, COALESCE(order_index, 0) as order_index
+                FROM rule_counts
+                WHERE run_id = ?
+                ORDER BY order_index
+                """,
+                (run_id,)
+            ).fetchall()
+
+            return {
+                row[0]: {"severity": row[1], "enabled": bool(row[2]), "order": row[3]}
+                for row in rows
+            }
+
     def get_current_rule_stats(
         self,
         project_key: Optional[str],
@@ -817,7 +869,7 @@ class Database:
         """
         获取当前规则统计（去重后的实际违规数）
 
-        从 Per-project violations 表获取数据，返回去重后的真实规则违规计数。
+        从 Per-project violations 表获取违规计数，结合 rule_counts 表获取规则的 enabled 状态。
 
         Args:
             project_key: 项目组标识
@@ -847,7 +899,7 @@ class Database:
                             rule_stats[key] = (existing[0] + count, rule_name or existing[1])
                     except Exception:
                         continue
-            # 转换为返回格式并排序
+            # 转换为返回格式并排序（全局视图不显示 enabled 状态，默认为 1）
             result = [(k[0], v[1] or "", k[1], 1, v[0]) for k, v in rule_stats.items()]
             return sorted(result, key=lambda x: x[4], reverse=True)
 
@@ -863,15 +915,39 @@ class Database:
 
         table_name = row[0]
 
+        # 获取该 project_key 的最新规则配置
+        rule_configs = self._get_latest_rule_configs(project_key)
+
+        # 获取违规计数
         with self._connect() as conn:
-            return conn.execute(
+            violation_rows = conn.execute(
                 f"""
-                SELECT rule_id, MAX(rule_name) as rule_name, severity, 1 as enabled, COUNT(*) as count
+                SELECT rule_id, MAX(rule_name) as rule_name, severity, COUNT(*) as count
                 FROM {table_name}
                 GROUP BY rule_id, severity
                 ORDER BY count DESC
                 """
             ).fetchall()
+
+        # 合并违规计数和配置的 enabled 状态
+        # key: rule_id, value: (rule_name, severity, enabled, count, order)
+        result_map: Dict[str, Tuple[str, str, int, int, int]] = {}
+
+        # 1. 添加有违规的规则
+        for rule_id, rule_name, severity, count in violation_rows:
+            cfg = rule_configs.get(rule_id, {})
+            enabled = 1 if cfg.get("enabled", True) else 0
+            order = cfg.get("order", 9999)  # 配置中不存在的规则排在最后
+            result_map[rule_id] = (rule_name or "", severity, enabled, count, order)
+
+        # 2. 添加配置中存在但没有违规的规则（主要是 enabled=0 的规则）
+        for rule_id, cfg in rule_configs.items():
+            if rule_id not in result_map:
+                result_map[rule_id] = ("", cfg.get("severity", "warning"), 1 if cfg.get("enabled", True) else 0, 0, cfg.get("order", 9999))
+
+        # 转换为返回格式并按配置顺序排序
+        result = [(rule_id, data[0], data[1], data[2], data[3]) for rule_id, data in result_map.items()]
+        return sorted(result, key=lambda x: result_map[x[0]][4])
 
     def cleanup_stale_violations(
         self,
