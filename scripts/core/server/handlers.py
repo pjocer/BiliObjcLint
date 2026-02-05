@@ -502,6 +502,9 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         total_pages = (total + page_size - 1) // page_size
 
+        # 获取可用的筛选选项
+        available_rules, available_sub_types = state.db.get_available_filters(project_key, project_name)
+
         self._send_html(
             200,
             render_violations_list(
@@ -516,6 +519,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 rule_id=rule_id,
                 sub_type=sub_type,
                 search=search,
+                available_rules=available_rules,
+                available_sub_types=available_sub_types,
             ),
         )
 

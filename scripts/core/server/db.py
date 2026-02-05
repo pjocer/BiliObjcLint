@@ -698,6 +698,59 @@ class Database:
             "by_severity": {row[0]: row[1] for row in by_severity},
         }
 
+    def get_available_filters(
+        self,
+        project_key: str,
+        project_name: str,
+    ) -> Tuple[List[Tuple[str, Optional[str], int]], List[str]]:
+        """获取可用的筛选选项
+
+        Args:
+            project_key: 项目组标识
+            project_name: 项目名称
+
+        Returns:
+            (rules, sub_types) 元组:
+            - rules: List of (rule_id, rule_name, count)
+            - sub_types: List of sub_type values
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT table_name FROM projects WHERE project_key = ? AND project_name = ?",
+                (project_key, project_name)
+            ).fetchone()
+
+        if not row:
+            return [], []
+
+        table_name = row[0]
+
+        with self._connect() as conn:
+            # 获取规则列表（包含 rule_name 和 count）
+            rules_rows = conn.execute(
+                f"""
+                SELECT rule_id, rule_name, COUNT(*) as count
+                FROM {table_name}
+                GROUP BY rule_id
+                ORDER BY count DESC
+                """
+            ).fetchall()
+
+            # 获取子类型列表
+            sub_types_rows = conn.execute(
+                f"""
+                SELECT DISTINCT sub_type
+                FROM {table_name}
+                WHERE sub_type IS NOT NULL AND sub_type != ''
+                ORDER BY sub_type
+                """
+            ).fetchall()
+
+        rules = [(row[0], row[1], row[2]) for row in rules_rows]
+        sub_types = [row[0] for row in sub_types_rows]
+
+        return rules, sub_types
+
     def get_current_violations_summary(
         self,
         project_key: Optional[str],

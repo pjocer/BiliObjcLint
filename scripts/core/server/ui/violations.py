@@ -19,6 +19,8 @@ def render_violations_list(
     rule_id: Optional[str] = None,
     sub_type: Optional[str] = None,
     search: Optional[str] = None,
+    available_rules: Optional[List[tuple]] = None,
+    available_sub_types: Optional[List[str]] = None,
 ) -> str:
     """Render the violations list page.
 
@@ -34,6 +36,8 @@ def render_violations_list(
         rule_id: Filter by rule ID
         sub_type: Filter by sub type
         search: Search query
+        available_rules: List of (rule_id, rule_name, count) for filter dropdown
+        available_sub_types: List of sub_type values for filter dropdown
     """
     # 构建过滤条件描述
     filter_desc = []
@@ -89,6 +93,21 @@ def render_violations_list(
     # 构建搜索表单
     search_value = search or ""
 
+    # 构建规则下拉选项
+    rule_options = '<option value="">全部规则</option>'
+    if available_rules:
+        for rid, rname, cnt in available_rules:
+            selected = 'selected' if rid == rule_id else ''
+            display = rname or rid
+            rule_options += f'<option value="{rid}" {selected}>{display} ({cnt})</option>'
+
+    # 构建子类型下拉选项
+    sub_type_options = '<option value="">全部子类型</option>'
+    if available_sub_types:
+        for st in available_sub_types:
+            selected = 'selected' if st == sub_type else ''
+            sub_type_options += f'<option value="{st}" {selected}>{st}</option>'
+
     return f"""
     <html><head><title>Violations - {project_name}</title>{STYLE}
     <style>
@@ -102,9 +121,13 @@ def render_violations_list(
     .pagination a:hover {{ background: #efe5d7; }}
     .pagination .current {{ background: #fb7299; color: #fff; }}
     .pagination .disabled {{ color: #999; }}
-    .search-form {{ display: flex; gap: 8px; margin-bottom: 16px; }}
-    .search-form input[type="text"] {{ flex: 1; padding: 8px 12px; border: 1px solid #e6ded4; border-radius: 8px; }}
-    .search-form button {{ padding: 8px 16px; background: #fb7299; color: #fff; border: none; border-radius: 8px; cursor: pointer; }}
+    .filter-form {{ display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; align-items: flex-end; }}
+    .filter-form .filter-group {{ display: flex; flex-direction: column; gap: 4px; }}
+    .filter-form label {{ font-size: 12px; color: #6b6b6b; }}
+    .filter-form select {{ padding: 8px 12px; border: 1px solid #e6ded4; border-radius: 8px; min-width: 150px; background: #fff; }}
+    .filter-form input[type="text"] {{ padding: 8px 12px; border: 1px solid #e6ded4; border-radius: 8px; min-width: 200px; }}
+    .filter-form button {{ padding: 8px 16px; background: #fb7299; color: #fff; border: none; border-radius: 8px; cursor: pointer; height: 38px; }}
+    .filter-form .clear-link {{ padding: 8px 12px; color: #666; text-decoration: none; font-size: 13px; }}
     .filter-info {{ color: #6b6b6b; font-size: 14px; margin-bottom: 12px; }}
     .back-link {{ color: #fb7299; text-decoration: none; margin-bottom: 16px; display: inline-block; }}
     .back-link:hover {{ text-decoration: underline; }}
@@ -126,16 +149,25 @@ def render_violations_list(
         <a class="back-link" href="/dashboard?project_key={project_key}&project_name={project_name}">← 返回 Dashboard</a>
 
         <div class="card">
-          <form class="search-form" method="get" action="/violations">
+          <form class="filter-form" method="get" action="/violations">
             <input type="hidden" name="project_key" value="{project_key}" />
             <input type="hidden" name="project_name" value="{project_name}" />
-            {f'<input type="hidden" name="rule_id" value="{rule_id}" />' if rule_id else ''}
-            {f'<input type="hidden" name="sub_type" value="{sub_type}" />' if sub_type else ''}
-            <input type="text" name="search" value="{search_value}" placeholder="搜索文件路径或消息内容..." />
-            <button type="submit">搜索</button>
-            {f'<a href="/violations?project_key={project_key}&project_name={project_name}" style="padding:8px 12px;color:#666;">清除筛选</a>' if (rule_id or sub_type or search) else ''}
+            <div class="filter-group">
+              <label>规则</label>
+              <select name="rule_id">{rule_options}</select>
+            </div>
+            <div class="filter-group">
+              <label>子类型</label>
+              <select name="sub_type">{sub_type_options}</select>
+            </div>
+            <div class="filter-group">
+              <label>搜索</label>
+              <input type="text" name="search" value="{search_value}" placeholder="文件路径或消息内容..." />
+            </div>
+            <button type="submit">筛选</button>
+            {f'<a class="clear-link" href="/violations?project_key={project_key}&project_name={project_name}">清除筛选</a>' if (rule_id or sub_type or search) else ''}
           </form>
-          <p class="filter-info">筛选条件: {filter_text} | 共 {total} 条违规</p>
+          <p class="filter-info">共 {total} 条违规</p>
         </div>
 
         <div class="card">

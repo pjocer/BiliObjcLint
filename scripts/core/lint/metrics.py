@@ -75,8 +75,7 @@ def _build_violations_list(violations: Iterable[Violation], project_root: Path) 
         # metrics 上报不需要这些字段
         item.pop("source", None)
         item.pop("pod_name", None)
-        item.pop("related_lines", None)
-        item.pop("context", None)
+        # 保留 context 和 related_lines 用于 Server 详情页显示
 
         result.append(item)
     return result
