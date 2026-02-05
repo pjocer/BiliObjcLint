@@ -58,6 +58,7 @@ class EnumNamingRule(BaseRule):
                             line=line_num,
                             column=match.start(1) + 1,
                             message=f"枚举 '{enum_name}' 应使用指定前缀（{prefixes_str}）",
+                            lines=lines,
                             related_lines=related_lines
                         ))
 

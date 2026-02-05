@@ -41,6 +41,7 @@ class LineLengthRule(BaseRule):
                     line=line_num,
                     column=max_length + 1,
                     message=f"行长度 {visual_length} 超过限制 {max_length}",
+                    lines=lines,
                     related_lines=related_lines
                 ))
 

@@ -121,6 +121,48 @@ def read_code_context(file_path: str, line: int, context_lines: int = 3) -> List
         return []
 
 
+def read_code_context_by_range(
+    file_path: str,
+    related_lines: Tuple[int, int],
+    fallback_line: int = 0,
+    fallback_context: int = 3
+) -> List[Tuple[int, str]]:
+    """
+    读取指定范围的代码上下文
+
+    Args:
+        file_path: 文件路径
+        related_lines: (start, end) 1-indexed 范围
+        fallback_line: 如果 related_lines 为空，回退到该行号
+        fallback_context: 回退时的上下文行数
+
+    Returns:
+        [(line_number, code_line), ...]
+    """
+    if not related_lines:
+        # 回退到原始行为
+        if fallback_line > 0:
+            return read_code_context(file_path, fallback_line, fallback_context)
+        return []
+
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            all_lines = f.readlines()
+
+        start, end = related_lines
+        # 转换为 0-indexed
+        start_idx = max(0, start - 1)
+        end_idx = min(len(all_lines), end)
+
+        result = []
+        for i in range(start_idx, end_idx):
+            result.append((i + 1, all_lines[i].rstrip('\n\r')))
+        return result
+    except Exception as e:
+        logger.warning(f"Failed to read code context from {file_path}: {e}")
+        return []
+
+
 def cleanup_temp_files(*paths):
     """
     清理临时文件

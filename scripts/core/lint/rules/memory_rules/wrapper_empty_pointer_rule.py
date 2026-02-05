@@ -55,6 +55,7 @@ class WrapperEmptyPointerRule(BaseRule):
                         line=line_num,
                         column=col,
                         message=f"'{warn_value}' 可能为 nil，请确认其值一定不为空",
+                        lines=lines,
                         related_lines=related_lines
                     ))
 

@@ -57,25 +57,27 @@ def _sanitize_config_snapshot(raw: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _build_violations_list(violations: Iterable[Violation], project_root: Path) -> List[Dict[str, Any]]:
-    """构建违规列表（包含 code_hash 用于去重）"""
+    """构建违规列表（基于 Violation.to_dict()，转换为相对路径）"""
     result = []
     for v in violations:
-        # 计算相对路径
+        # 使用 to_dict() 获取基础数据
+        item = v.to_dict()
+
+        # 转换为相对路径并使用 "file" 作为 key（metrics 兼容格式）
         try:
             rel_path = str(Path(v.file_path).relative_to(project_root))
         except ValueError:
             rel_path = v.file_path
 
-        item = {
-            "file": rel_path,
-            "line": v.line,
-            "column": v.column,
-            "rule_id": v.rule_id,
-            "severity": v.severity.value,
-            "message": v.message,
-        }
-        if v.code_hash:
-            item["code_hash"] = v.code_hash
+        del item["file_path"]
+        item["file"] = rel_path
+
+        # metrics 上报不需要这些字段
+        item.pop("source", None)
+        item.pop("pod_name", None)
+        item.pop("related_lines", None)
+        item.pop("context", None)
+
         result.append(item)
     return result
 

@@ -6,7 +6,7 @@ from typing import List, Set, Optional, Tuple
 from dataclasses import dataclass
 
 from ..base_rule import BaseRule
-from ..rule_utils import find_matching_brace, get_method_range
+from ..rule_utils import get_method_range
 from core.lint.reporter import Violation, Severity
 
 
@@ -108,6 +108,7 @@ class BlockRetainCycleRule(BaseRule):
                     column=1,
                     message="不建议混用 __weak typeof(self) 和 @weakify(self)，请保持一致性",
                     severity=Severity.WARNING,
+                    lines=lines,
                     related_lines=related_lines
                 ))
 
@@ -125,6 +126,7 @@ class BlockRetainCycleRule(BaseRule):
                     strong_decls=strong_decls,
                     block_context=block_context,
                     line=line,
+                    lines=lines,
                     related_lines=related_lines
                 )
                 if violation:
@@ -352,6 +354,7 @@ class BlockRetainCycleRule(BaseRule):
                           usage_type: str, weak_decls: List[WeakDeclaration],
                           strong_decls: List[StrongDeclaration],
                           block_context: str, line: str,
+                          lines: List[str],
                           related_lines: Tuple[int, int]) -> Optional[Violation]:
         """
         检查单个 self 使用是否违规
@@ -376,6 +379,7 @@ class BlockRetainCycleRule(BaseRule):
                     column=column,
                     message="C 函数 (dispatch_async 等) 中使用 self 通常安全，但建议确认",
                     severity=Severity.WARNING,
+                    lines=lines,
                     related_lines=related_lines
                 )
             return None  # 其他情况 OK
@@ -389,6 +393,7 @@ class BlockRetainCycleRule(BaseRule):
                     column=column,
                     message="类方法中使用 self 可能安全，但建议使用 weakSelf 以确保无循环引用",
                     severity=Severity.WARNING,
+                    lines=lines,
                     related_lines=related_lines
                 )
             return None  # 类方法中其他情况 OK
@@ -404,6 +409,7 @@ class BlockRetainCycleRule(BaseRule):
                     column=column,
                     message="Block 内直接使用 self 可能导致循环引用，必须使用 weakSelf",
                     severity=Severity.ERROR,
+                    lines=lines,
                     related_lines=related_lines
                 )
 
@@ -421,6 +427,7 @@ class BlockRetainCycleRule(BaseRule):
                         column=column,
                         message=f"已声明 {strong_var_name or 'strongSelf'}，应使用它而不是 self",
                         severity=Severity.ERROR,
+                        lines=lines,
                         related_lines=related_lines
                     )
                 else:
@@ -430,6 +437,7 @@ class BlockRetainCycleRule(BaseRule):
                         column=column,
                         message=f"已声明 {weak_var_name}，应使用它而不是 self",
                         severity=Severity.ERROR,
+                        lines=lines,
                         related_lines=related_lines
                     )
 
@@ -443,6 +451,7 @@ class BlockRetainCycleRule(BaseRule):
                         column=column,
                         message=f"已声明 {strong_var_name or 'strongSelf'}，建议使用它而不是 weakSelf",
                         severity=Severity.WARNING,
+                        lines=lines,
                         related_lines=related_lines
                     )
                 else:
@@ -453,6 +462,7 @@ class BlockRetainCycleRule(BaseRule):
                         column=column,
                         message="使用 weakSelf 时建议先转为 strongSelf 并检查是否为 nil",
                         severity=Severity.WARNING,
+                        lines=lines,
                         related_lines=related_lines
                     )
 
@@ -474,6 +484,7 @@ class BlockRetainCycleRule(BaseRule):
                         column=column,
                         message="使用 @weakify 后应在 block 内添加 @strongify(self)，或使用 self_weak_",
                         severity=Severity.ERROR,
+                        lines=lines,
                         related_lines=related_lines
                     )
 
@@ -485,51 +496,11 @@ class BlockRetainCycleRule(BaseRule):
                     column=column,
                     message="建议添加 @strongify(self) 而不是直接使用 self_weak_",
                     severity=Severity.WARNING,
+                    lines=lines,
                     related_lines=related_lines
                 )
 
         return None
-
-    def get_hash_context(self, file_path: str, line: int, lines: List[str],
-                         violation: Violation) -> Tuple[int, int]:
-        """
-        获取 Block 范围作为哈希上下文
-
-        Block 范围从 ^{ 开始到匹配的 } 结束
-        """
-        block_start = self._find_block_start_line(lines, line)
-        block_end = self._find_block_end_line(lines, block_start)
-        return (block_start, block_end)
-
-    def _find_block_start_line(self, lines: List[str], line_num: int) -> int:
-        """向上查找 block 开始行"""
-        brace_count = 0
-        method_start = self._find_method_start(lines, line_num)
-
-        # 从当前行开始向上查找
-        for i in range(line_num - 1, method_start - 2, -1):
-            if i < 0:
-                break
-            line = lines[i]
-
-            # 如果遇到方法定义，停止搜索
-            if self.METHOD_START_PATTERN.match(line.strip()):
-                return i + 1
-
-            # 计算大括号（向上扫描时，} 表示进入作用域，{ 表示离开作用域）
-            brace_count += line.count('}') - line.count('{')
-
-            # 检测 block 开始
-            if self.BLOCK_START_PATTERN.search(line):
-                if brace_count < 0:
-                    return i + 1  # 1-indexed
-
-        return line_num  # 找不到则返回当前行
-
-    def _find_block_end_line(self, lines: List[str], start_line: int) -> int:
-        """从 block 开始行向下查找 block 结束行"""
-        # 使用括号配对算法
-        return find_matching_brace(lines, start_line, '{', '}')
 
     def get_related_lines(self, file_path: str, line: int, lines: List[str]) -> Tuple[int, int]:
         """

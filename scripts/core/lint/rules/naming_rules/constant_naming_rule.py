@@ -46,7 +46,7 @@ class ConstantNamingRule(BaseRule):
             # 1. 检查 #define 宏常量
             define_match = self.DEFINE_PATTERN.search(line)
             if define_match:
-                violation = self._check_define_naming(line, line_num, define_match, file_path, related_lines)
+                violation = self._check_define_naming(line, line_num, define_match, file_path, lines, related_lines)
                 if violation:
                     violations.append(violation)
                 continue
@@ -54,13 +54,13 @@ class ConstantNamingRule(BaseRule):
             # 2. 检查 const/static 常量
             const_match = self.CONST_PATTERN.search(line)
             if const_match:
-                violation = self._check_const_naming(line, line_num, const_match, file_path, related_lines)
+                violation = self._check_const_naming(line, line_num, const_match, file_path, lines, related_lines)
                 if violation:
                     violations.append(violation)
 
         return violations
 
-    def _check_define_naming(self, line: str, line_num: int, match, file_path: str, related_lines):
+    def _check_define_naming(self, line: str, line_num: int, match, file_path: str, lines: List[str], related_lines):
         """检查 #define 宏常量命名"""
         const_name = match.group(1)
 
@@ -82,11 +82,12 @@ class ConstantNamingRule(BaseRule):
                     line=line_num,
                     column=match.start(1) + 1,
                     message=f"宏常量 '{const_name}' 应使用全大写加下划线命名（如 MAX_COUNT）或 k 前缀命名（如 kMaxCount）",
+                    lines=lines,
                     related_lines=related_lines
                 )
         return None
 
-    def _check_const_naming(self, line: str, line_num: int, match, file_path: str, related_lines):
+    def _check_const_naming(self, line: str, line_num: int, match, file_path: str, lines: List[str], related_lines):
         """检查 const/static 常量命名"""
         const_name = match.group(1)
 
@@ -111,6 +112,7 @@ class ConstantNamingRule(BaseRule):
                     line=line_num,
                     column=match.start(1) + 1,
                     message=f"常量 '{const_name}' 应使用 k 前缀驼峰命名（如 kMaxCount）或全大写下划线命名（如 MAX_COUNT）",
+                    lines=lines,
                     related_lines=related_lines
                 )
 

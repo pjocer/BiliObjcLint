@@ -56,6 +56,7 @@ class PropertyNamingRule(BaseRule):
                             line=property_start,
                             column=1,
                             message=f"属性名 '{prop_name}' 应使用小驼峰命名（首字母小写）",
+                            lines=lines,
                             related_lines=related_lines
                         ))
 
@@ -66,6 +67,7 @@ class PropertyNamingRule(BaseRule):
                             line=property_start,
                             column=1,
                             message=f"属性名 '{prop_name}' 不应包含下划线，请使用小驼峰命名",
+                            lines=lines,
                             related_lines=related_lines
                         ))
 

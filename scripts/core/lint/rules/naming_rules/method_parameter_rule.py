@@ -56,6 +56,7 @@ class MethodParameterRule(BaseRule):
                         line=method_start,
                         column=1,
                         message=f"方法 '{method_selector}' 有 {param_count} 个参数，超过限制 {max_params} 个",
+                        lines=lines,
                         related_lines=related_lines
                     ))
 

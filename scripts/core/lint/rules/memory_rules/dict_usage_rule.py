@@ -54,6 +54,7 @@ class DictUsageRule(BaseRule):
                     line=line_num,
                     column=match.start() + 1,
                     message="请确认 object 非空，或使用 nil-safe 封装",
+                    lines=lines,
                     related_lines=related_lines
                 ))
 

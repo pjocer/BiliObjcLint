@@ -325,7 +325,11 @@ class BiliObjCLint:
         """过滤被忽略的违规"""
         filtered = []
         for v in self.reporter.violations:
-            if not self.ignore_cache.is_ignored(v.file_path, v.line, v.rule_id):
+            # 必须有 code_hash 才能进行忽略检查
+            if not v.code_hash:
+                filtered.append(v)
+                continue
+            if not self.ignore_cache.is_ignored(v):
                 filtered.append(v)
             else:
                 self.logger.debug(f"Filtered ignored violation: {v.file_path}:{v.line} [{v.rule_id}]")

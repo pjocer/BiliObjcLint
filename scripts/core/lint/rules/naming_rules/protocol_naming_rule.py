@@ -49,6 +49,7 @@ class ProtocolNamingRule(BaseRule):
                             line=line_num,
                             column=match.start(1) + 1,
                             message=f"协议 '{protocol_name}' 应使用指定前缀（{prefixes_str}）",
+                            lines=lines,
                             related_lines=self.get_related_lines(file_path, line_num, lines)
                         ))
 

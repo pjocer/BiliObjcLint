@@ -44,6 +44,7 @@ class MethodNamingRule(BaseRule):
                             line=line_num,
                             column=match.start(1) + 1,
                             message=f"方法名 '{method_name}' 应以小写字母开头",
+                            lines=lines,
                             related_lines=related_lines
                         ))
 

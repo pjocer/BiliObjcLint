@@ -41,6 +41,7 @@ class TodoFixmeRule(BaseRule):
                     line=line_num,
                     column=match.start() + 1,
                     message=message,
+                    lines=lines,
                     related_lines=related_lines
                 ))
 

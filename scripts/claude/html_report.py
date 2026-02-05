@@ -14,7 +14,7 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 from core.lint.logger import get_logger
-from claude.utils import escape_html, highlight_objc, read_code_context
+from claude.utils import escape_html, highlight_objc, read_code_context, read_code_context_by_range
 
 logger = get_logger("claude_fix")
 
@@ -521,7 +521,7 @@ def _generate_javascript(port: int) -> str:
         }}
 
         // 忽略单个违规
-        async function ignoreViolation(btn, file, line, rule, message) {{
+        async function ignoreViolation(btn, file, line, rule, message, relatedLines) {{
             event.stopPropagation();
             btn.disabled = true;
             btn.textContent = '处理中...';
@@ -529,7 +529,7 @@ def _generate_javascript(port: int) -> str:
             try {{
                 const response = await fetch(
                     `http://localhost:${{SERVER_PORT}}/ignore?` +
-                    `file=${{encodeURIComponent(file)}}&line=${{line}}&rule=${{rule}}&message=${{encodeURIComponent(message)}}`
+                    `file=${{encodeURIComponent(file)}}&line=${{line}}&rule=${{rule}}&message=${{encodeURIComponent(message)}}&related_lines=${{relatedLines}}`
                 );
                 const result = await response.json();
                 if (result.success) {{
@@ -901,10 +901,13 @@ class HtmlReportGenerator:
                 line = v.get('line', 0)
                 message = v.get('message', '')
                 rule = v.get('rule', '')
+                related_lines = v.get('related_lines')  # (start, end) 或 None
+                # 格式化为 "start,end" 字符串，供前端传递
+                related_lines_str = f"{related_lines[0]},{related_lines[1]}" if related_lines else f"{line},{line}"
                 violation_id = f"v-{hash(file_path)}-{idx}"
 
-                # 读取代码上下文
-                code_lines = read_code_context(file_path, line)
+                # 读取代码上下文（优先使用 related_lines 范围）
+                code_lines = read_code_context_by_range(file_path, related_lines, fallback_line=line)
 
                 # 生成代码预览 HTML
                 code_html = ''
@@ -933,7 +936,7 @@ class HtmlReportGenerator:
                 </div>
                 <div class="code-preview" onclick="event.stopPropagation()">
                     <div class="code-actions">
-                        <button class="btn-action btn-ignore" onclick="ignoreViolation(this, '{escaped_file_path}', {line}, '{rule}', '{escaped_message}')" data-state="normal">
+                        <button class="btn-action btn-ignore" onclick="ignoreViolation(this, '{escaped_file_path}', {line}, '{rule}', '{escaped_message}', '{related_lines_str}')" data-state="normal">
                             忽略
                         </button>
                         <button class="btn-action btn-fix-single" onclick="fixSingleViolation(this, '{escaped_file_path}', {line}, '{rule}', '{escaped_message}')" data-state="normal">

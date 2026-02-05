@@ -53,7 +53,7 @@ class WeakDelegateRule(BaseRule):
 
                         # 检查修饰符
                         violation = self._check_modifiers(
-                            file_path, property_start, prop_name, modifiers, related_lines
+                            file_path, property_start, prop_name, modifiers, lines, related_lines
                         )
                         if violation:
                             violations.append(violation)
@@ -65,7 +65,7 @@ class WeakDelegateRule(BaseRule):
         return violations
 
     def _check_modifiers(self, file_path: str, line: int, prop_name: str,
-                         modifiers: str, related_lines: Tuple[int, int]) -> Violation:
+                         modifiers: str, lines: List[str], related_lines: Tuple[int, int]) -> Violation:
         """检查属性修饰符"""
         # weak 是正确的
         if 'weak' in modifiers:
@@ -79,6 +79,7 @@ class WeakDelegateRule(BaseRule):
                 column=1,
                 message=f"'{prop_name}' 使用 unsafe_unretained，建议改为 weak 以避免野指针",
                 severity=Severity.WARNING,
+                lines=lines,
                 related_lines=related_lines
             )
 
@@ -89,6 +90,7 @@ class WeakDelegateRule(BaseRule):
                 line=line,
                 column=1,
                 message=f"'{prop_name}' 应使用 weak 修饰以避免循环引用",
+                lines=lines,
                 related_lines=related_lines
             )
 
@@ -102,6 +104,7 @@ class WeakDelegateRule(BaseRule):
             line=line,
             column=1,
             message=f"'{prop_name}' 建议使用 weak 修饰",
+            lines=lines,
             related_lines=related_lines
         )
 

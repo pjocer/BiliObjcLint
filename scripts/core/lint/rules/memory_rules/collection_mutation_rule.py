@@ -92,6 +92,7 @@ class CollectionMutationRule(BaseRule):
                     column=array_match.start() + 1,
                     message="禁止使用数组下标赋值，请使用 `addObject:`、`insertObject:atIndex:` 或 `replaceObjectAtIndex:withObject:` 方法",
                     severity=Severity.ERROR,
+                    lines=lines,
                     related_lines=related_lines
                 ))
                 continue  # 跳过后续检测，避免重复报告
@@ -107,6 +108,7 @@ class CollectionMutationRule(BaseRule):
                     column=array_var_match.start() + 1,
                     message=f"数组 '{var_name}' 下标赋值使用变量索引 '{index_var}'，请确认索引有效，建议使用安全方法替代",
                     severity=Severity.WARNING,
+                    lines=lines,
                     related_lines=related_lines
                 ))
                 continue  # 跳过后续检测，避免重复报告
@@ -121,6 +123,7 @@ class CollectionMutationRule(BaseRule):
                         line=line_num,
                         column=dict_match.start(2) + 1,
                         message=f"字典下标赋值时请确认 key '{key}' 不为 nil",
+                        lines=lines,
                         related_lines=related_lines
                     ))
 
@@ -134,6 +137,7 @@ class CollectionMutationRule(BaseRule):
                         line=line_num,
                         column=add_match.start(2) + 1,
                         message=f"请确认 '{value}' 不为 nil",
+                        lines=lines,
                         related_lines=related_lines
                     ))
 
@@ -147,6 +151,7 @@ class CollectionMutationRule(BaseRule):
                         line=line_num,
                         column=insert_match.start(2) + 1,
                         message=f"请确认 '{value}' 不为 nil",
+                        lines=lines,
                         related_lines=related_lines
                     ))
 
@@ -160,6 +165,7 @@ class CollectionMutationRule(BaseRule):
                         line=line_num,
                         column=replace_match.start(2) + 1,
                         message=f"请确认 '{value}' 不为 nil",
+                        lines=lines,
                         related_lines=related_lines
                     ))
 

@@ -38,6 +38,7 @@ class FileHeaderRule(BaseRule):
                     line=1,
                     column=1,
                     message=f"文件头注释缺少必要信息: {keyword}",
+                    lines=lines,
                     related_lines=related_lines
                 ))
                 break  # 只报告一次

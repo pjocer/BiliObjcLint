@@ -13,6 +13,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from .utils import ensure_dir
 from .auth import hash_password, verify_password
 
+# 延迟导入避免循环依赖
+# from ..lint.reporter import Violation, Severity
+
 
 class Database:
     """SQLite 数据库封装"""
@@ -91,12 +94,27 @@ class Database:
                     severity TEXT,
                     message TEXT,
                     code_hash TEXT,
+                    source TEXT,
+                    pod_name TEXT,
+                    related_lines TEXT,
+                    context TEXT,
                     first_seen TEXT NOT NULL,
                     last_seen TEXT NOT NULL,
                     UNIQUE(project_key, file_path, rule_id, code_hash)
                 )
                 """
             )
+            # 尝试添加新字段（兼容旧数据库）
+            for col, col_type in [
+                ("source", "TEXT"),
+                ("pod_name", "TEXT"),
+                ("related_lines", "TEXT"),
+                ("context", "TEXT"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE violations ADD COLUMN {col} {col_type}")
+                except sqlite3.OperationalError:
+                    pass  # 字段已存在
             # 创建索引加速查询
             conn.execute(
                 """
@@ -263,12 +281,16 @@ class Database:
                     )
                 )
 
-    def upsert_violations(self, project_key: str, violations: List[Dict[str, Any]]) -> Tuple[int, int]:
+    def upsert_violations(self, project_key: str, violations: list) -> Tuple[int, int]:
         """
         Upsert 违规记录（基于 code_hash 去重）
 
         相同 (project_key, file_path, rule_id, code_hash) 的记录只更新 last_seen，
         不同的记录则插入新行。
+
+        支持两种输入格式：
+        - List[Violation]: Violation 对象列表（推荐）
+        - List[Dict]: 字典列表（兼容旧格式）
 
         注意：SQLite 的 UNIQUE 约束对 NULL 的处理是 NULL != NULL，
         所以如果 code_hash 为空，需要生成一个基于位置的 fallback hash。
@@ -287,47 +309,67 @@ class Database:
 
         with self._connect() as conn:
             for v in violations:
-                if not isinstance(v, dict):
+                # 支持 Violation 对象和字典两种格式
+                if hasattr(v, 'to_dict'):
+                    # Violation 对象
+                    file_path = v.file_path
+                    line = v.line
+                    column = v.column
+                    rule_id = v.rule_id
+                    severity = v.severity.value if hasattr(v.severity, 'value') else str(v.severity)
+                    message = v.message
+                    code_hash = v.code_hash
+                    source = v.source
+                    pod_name = v.pod_name
+                    related_lines = json.dumps(list(v.related_lines)) if v.related_lines else None
+                    context = v.context
+                elif isinstance(v, dict):
+                    # 字典格式（兼容）
+                    file_path = v.get("file") or v.get("file_path", "")
+                    line = v.get("line", 0)
+                    column = v.get("column", 0)
+                    rule_id = v.get("rule_id", "")
+                    severity = v.get("severity", "warning")
+                    message = v.get("message", "")
+                    code_hash = v.get("code_hash")
+                    source = v.get("source")
+                    pod_name = v.get("pod_name")
+                    related_lines = json.dumps(v.get("related_lines")) if v.get("related_lines") else None
+                    context = v.get("context")
+                else:
                     continue
-
-                file_path = v.get("file", "")
-                line = v.get("line", 0)
-                column = v.get("column", 0)
-                rule_id = v.get("rule_id", "")
-                severity = v.get("severity", "warning")
-                message = v.get("message", "")
-                code_hash = v.get("code_hash")
 
                 if not file_path or not rule_id:
                     continue
 
                 # 如果没有 code_hash，生成一个基于位置的 fallback hash
-                # 这样可以避免 NULL 导致的重复插入问题
                 if not code_hash:
                     fallback_input = f"{file_path}:{line}:{rule_id}"
                     code_hash = hashlib.md5(fallback_input.encode()).hexdigest()[:16]
 
                 # 尝试 upsert
-                # SQLite 3.24+ 支持 ON CONFLICT ... DO UPDATE
                 try:
-                    cursor = conn.execute(
+                    conn.execute(
                         """
                         INSERT INTO violations
-                            (project_key, file_path, line, column, rule_id, severity, message, code_hash, first_seen, last_seen)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            (project_key, file_path, line, column, rule_id, severity, message, code_hash,
+                             source, pod_name, related_lines, context, first_seen, last_seen)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(project_key, file_path, rule_id, code_hash)
                         DO UPDATE SET
                             line = excluded.line,
                             column = excluded.column,
                             severity = excluded.severity,
                             message = excluded.message,
+                            source = excluded.source,
+                            pod_name = excluded.pod_name,
+                            related_lines = excluded.related_lines,
+                            context = excluded.context,
                             last_seen = excluded.last_seen
                         """,
-                        (project_key, file_path, line, column, rule_id, severity, message, code_hash, now, now)
+                        (project_key, file_path, line, column, rule_id, severity, message, code_hash,
+                         source, pod_name, related_lines, context, now, now)
                     )
-                    # rowcount == 1 表示插入，rowcount == 0 表示更新（SQLite 的行为）
-                    # 实际上 SQLite ON CONFLICT DO UPDATE 总是返回 1
-                    # 所以这里我们无法精确区分，简化为总数统计
                     inserted += 1
                 except Exception as e:
                     self.logger.debug(f"Failed to upsert violation: {e}")
@@ -341,9 +383,14 @@ class Database:
         file_path: Optional[str] = None,
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
-        """获取违规详情"""
+        """
+        获取违规详情
+
+        返回字典格式，可通过 Violation.from_dict() 反序列化为 Violation 对象。
+        """
         query = """
-            SELECT file_path, line, column, rule_id, severity, message, code_hash, first_seen, last_seen
+            SELECT file_path, line, column, rule_id, severity, message, code_hash,
+                   source, pod_name, related_lines, context, first_seen, last_seen
             FROM violations
             WHERE project_key = ?
         """
@@ -362,20 +409,33 @@ class Database:
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
 
-        return [
-            {
-                "file": row[0],
+        results = []
+        for row in rows:
+            item = {
+                "file_path": row[0],
                 "line": row[1],
                 "column": row[2],
                 "rule_id": row[3],
                 "severity": row[4],
                 "message": row[5],
                 "code_hash": row[6],
-                "first_seen": row[7],
-                "last_seen": row[8],
+                "source": row[7],
+                "pod_name": row[8],
+                "first_seen": row[11],
+                "last_seen": row[12],
             }
-            for row in rows
-        ]
+            # 解析 related_lines JSON
+            if row[9]:
+                try:
+                    item["related_lines"] = json.loads(row[9])
+                except json.JSONDecodeError:
+                    pass
+            # context
+            if row[10]:
+                item["context"] = row[10]
+            results.append(item)
+
+        return results
 
     def get_violations_stats(self, project_key: str) -> Dict[str, Any]:
         """获取违规统计（去重后的实际违规数）"""

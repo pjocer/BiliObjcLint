@@ -50,6 +50,7 @@ class ClassPrefixRule(BaseRule):
                         line=line_num,
                         column=match.start(1) + 1,
                         message=f"类名 '{class_name}' 应使用前缀 '{prefix}'",
+                        lines=lines,
                         related_lines=related_lines
                     ))
 

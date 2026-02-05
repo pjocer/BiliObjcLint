@@ -161,6 +161,7 @@ class ForbiddenApiRule(BaseRule):
                             column=1,
                             message=message,
                             severity=severity,
+                            lines=lines,
                             related_lines=related_lines
                         ))
                     else:
@@ -169,6 +170,7 @@ class ForbiddenApiRule(BaseRule):
                             line=line_num,
                             column=1,
                             message=message,
+                            lines=lines,
                             related_lines=related_lines
                         ))
 

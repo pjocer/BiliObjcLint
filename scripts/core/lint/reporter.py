@@ -30,6 +30,7 @@ class Violation:
     source: str = "biliobjclint"
     pod_name: Optional[str] = None  # 所属本地 Pod 名称（None 表示主工程）
     related_lines: Optional[Tuple[int, int]] = None  # 关联行范围 (start, end)，用于增量过滤
+    context: Optional[str] = None  # 关联行的代码内容
     code_hash: Optional[str] = None  # 代码内容哈希，用于 Metrics 上报去重
 
     def to_xcode_format(self) -> str:
@@ -41,21 +42,55 @@ class Violation:
         return f"{self.file_path}:{self.line}:{self.column}: {severity_str}: {self.message} [{self.rule_id}]"
 
     def to_dict(self) -> dict:
-        """转换为字典"""
+        """
+        唯一序列化入口
+
+        Returns:
+            包含所有非空字段的字典
+        """
         result = {
-            "file": self.file_path,
+            "file_path": self.file_path,
             "line": self.line,
             "column": self.column,
             "severity": self.severity.value,
             "message": self.message,
-            "rule": self.rule_id,
+            "rule_id": self.rule_id,
             "source": self.source
         }
         if self.pod_name:
             result["pod_name"] = self.pod_name
+        if self.related_lines:
+            result["related_lines"] = list(self.related_lines)
+        if self.context:
+            result["context"] = self.context
         if self.code_hash:
             result["code_hash"] = self.code_hash
         return result
+
+    @classmethod
+    def from_dict(cls, d: dict) -> 'Violation':
+        """
+        唯一反序列化入口（兼容旧格式）
+
+        Args:
+            d: 字典数据，支持旧格式 (file/rule) 和新格式 (file_path/rule_id)
+
+        Returns:
+            Violation 对象
+        """
+        return cls(
+            file_path=d.get("file_path") or d.get("file", ""),
+            line=d.get("line", 0),
+            column=d.get("column", 0),
+            severity=Severity(d.get("severity", "warning")),
+            message=d.get("message", ""),
+            rule_id=d.get("rule_id") or d.get("rule", ""),
+            source=d.get("source", "biliobjclint"),
+            pod_name=d.get("pod_name"),
+            related_lines=tuple(d["related_lines"]) if d.get("related_lines") else None,
+            context=d.get("context"),
+            code_hash=d.get("code_hash"),
+        )
 
 
 class Reporter:

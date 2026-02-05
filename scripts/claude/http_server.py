@@ -124,14 +124,28 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
         line = int(params.get('line', ['0'])[0])
         rule = params.get('rule', [''])[0]
         message = unquote(params.get('message', [''])[0])
+        # related_lines 格式: "start,end"，如 "10,15"
+        related_lines_str = params.get('related_lines', [''])[0]
 
         if not file_path or not line or not rule:
             self._send_json_response({'success': False, 'message': '参数不完整'})
             return
 
+        # 解析 related_lines
+        if related_lines_str:
+            try:
+                parts = related_lines_str.split(',')
+                related_lines = (int(parts[0]), int(parts[1]))
+            except (ValueError, IndexError):
+                self._send_json_response({'success': False, 'message': 'related_lines 格式错误，应为 "start,end"'})
+                return
+        else:
+            self._send_json_response({'success': False, 'message': '缺少 related_lines 参数'})
+            return
+
         try:
             if _ignore_cache:
-                success = _ignore_cache.add_ignore(file_path, line, rule, message)
+                success = _ignore_cache.add_ignore_from_request(file_path, line, rule, message, related_lines)
                 if success:
                     _timeout_reset_time = time.time()  # 重置超时
                     self._send_json_response({'success': True, 'message': '已添加到忽略列表'})

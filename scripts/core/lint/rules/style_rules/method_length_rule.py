@@ -50,6 +50,7 @@ class MethodLengthRule(BaseRule):
                         line=method_start_line,
                         column=1,
                         message=f"方法 '{method_name}' 共 {method_length} 行，超过限制 {max_lines} 行",
+                        lines=lines,
                         related_lines=related_lines
                     ))
 

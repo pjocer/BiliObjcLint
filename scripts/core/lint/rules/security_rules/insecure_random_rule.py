@@ -41,6 +41,7 @@ class InsecureRandomRule(BaseRule):
                         line=line_num,
                         column=1,
                         message=message,
+                        lines=lines,
                         related_lines=related_lines
                     ))
 

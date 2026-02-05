@@ -60,6 +60,7 @@ class HardcodedCredentialsRule(BaseRule):
                         line=line_num,
                         column=1,
                         message=message,
+                        lines=lines,
                         related_lines=related_lines
                     ))
                     break  # 每行只报告一次

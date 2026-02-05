@@ -7,87 +7,18 @@ Rule Engine Module - Python 规则引擎
 - 规则结果缓存（持久化）
 """
 import sys
-import json
 import importlib.util
 from pathlib import Path
-from typing import List, Dict, Set, Optional, Tuple, Any
-from abc import ABC, abstractmethod
+from typing import List, Dict, Set, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
-from .reporter import Violation, Severity
+from .reporter import Violation
 from .config import RuleConfig
 from .logger import get_logger
 from .file_cache import get_file_cache
 from .result_cache import ResultCache
-
-
-class BaseRule(ABC):
-    """规则基类"""
-
-    # 子类必须定义
-    identifier: str = ""
-    name: str = ""
-    description: str = ""
-    default_severity: str = "warning"
-
-    def __init__(self, config: Optional[RuleConfig] = None):
-        self.config = config or RuleConfig()
-        self.severity = Severity(self.config.severity if self.config else self.default_severity)
-
-    @property
-    def enabled(self) -> bool:
-        return self.config.enabled if self.config else True
-
-    def get_param(self, key: str, default=None):
-        """获取配置参数"""
-        if self.config and self.config.params:
-            return self.config.params.get(key, default)
-        return default
-
-    @abstractmethod
-    def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
-        """
-        执行规则检查
-
-        Args:
-            file_path: 文件路径
-            content: 文件完整内容
-            lines: 文件按行分割的列表
-            changed_lines: 变更的行号集合（空集合表示检查全部）
-        Returns:
-            违规列表
-        """
-        pass
-
-    def should_check_line(self, line_num: int, changed_lines: Set[int]) -> bool:
-        """判断是否应该检查该行"""
-        if not changed_lines:
-            return True
-        return line_num in changed_lines
-
-    def create_violation(self, file_path: str, line: int, column: int, message: str,
-                         related_lines: Optional[Tuple[int, int]] = None) -> Violation:
-        """
-        创建违规记录
-
-        Args:
-            file_path: 文件路径
-            line: 违规行号
-            column: 违规列号
-            message: 违规消息
-            related_lines: 关联行范围 (start, end)，用于增量过滤时判断是否保留
-        """
-        return Violation(
-            file_path=file_path,
-            line=line,
-            column=column,
-            severity=self.severity,
-            message=message,
-            rule_id=self.identifier,
-            source='biliobjclint',
-            related_lines=related_lines
-        )
+from .rules.base_rule import BaseRule
 
 
 class RuleEngine:
@@ -208,8 +139,8 @@ class RuleEngine:
         if use_result_cache:
             cached_violations = self._result_cache.get(file_path, self._config_hash)
             if cached_violations is not None:
-                # 反序列化缓存的 violations
-                return [self._deserialize_violation(v) for v in cached_violations]
+                # 使用 Violation.from_dict() 反序列化
+                return [Violation.from_dict(v) for v in cached_violations]
 
         violations = []
 
@@ -231,52 +162,18 @@ class RuleEngine:
                     lines=lines,
                     changed_lines=changed_lines or set()
                 )
-                # 为每个 violation 计算 code_hash
-                for v in rule_violations:
-                    v.code_hash = rule.get_hash_context_value(
-                        file_path, v.line, lines, v
-                    )
+                # code_hash 已在 create_violation 时计算，无需事后处理
                 violations.extend(rule_violations)
             except Exception as e:
                 self.logger.warning(f"Rule {rule.identifier} failed on {file_path}: {e}")
                 print(f"Warning: Rule {rule.identifier} failed on {file_path}: {e}", file=sys.stderr)
 
-        # 存储到结果缓存
+        # 存储到结果缓存（使用 Violation.to_dict()）
         if use_result_cache and violations is not None:
-            serialized = [self._serialize_violation(v) for v in violations]
+            serialized = [v.to_dict() for v in violations]
             self._result_cache.put(file_path, self._config_hash, serialized)
 
         return violations
-
-    def _serialize_violation(self, v: Violation) -> Dict[str, Any]:
-        """序列化 Violation 为 dict"""
-        data = {
-            "file_path": v.file_path,
-            "line": v.line,
-            "column": v.column,
-            "severity": v.severity.value,
-            "message": v.message,
-            "rule_id": v.rule_id,
-            "source": v.source,
-            "related_lines": v.related_lines
-        }
-        if v.code_hash:
-            data["code_hash"] = v.code_hash
-        return data
-
-    def _deserialize_violation(self, d: Dict[str, Any]) -> Violation:
-        """反序列化 dict 为 Violation"""
-        return Violation(
-            file_path=d["file_path"],
-            line=d["line"],
-            column=d["column"],
-            severity=Severity(d["severity"]),
-            message=d["message"],
-            rule_id=d["rule_id"],
-            source=d.get("source", "biliobjclint"),
-            related_lines=tuple(d["related_lines"]) if d.get("related_lines") else None,
-            code_hash=d.get("code_hash")
-        )
 
     def check_files(self, files: List[str], changed_lines_map: Dict[str, Set[int]] = None) -> List[Violation]:
         """
