@@ -2,6 +2,18 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.4.5 (2026-02-05)
+
+### 重构
+- **P0.5 Violation 固有属性重构**
+  - Violation 不可变性：所有属性在 `create_violation()` 时一次性确定，创建后不可修改
+  - 统一序列化：所有序列化/反序列化通过 `Violation.to_dict()` / `Violation.from_dict()`
+  - BaseRule 重构：删除 `get_hash_context()`，新增 `get_context()` 和 `compute_code_hash()`
+  - `create_violation()` 签名变更：新增必填参数 `lines`，自动计算 `context` 和 `code_hash`
+  - IgnoreCache 接口重构：`add_ignore()` / `is_ignored()` / `remove_ignore()` 改为接收 Violation 对象
+  - Metrics 上报重构：使用 `Violation.to_dict()` 作为基础
+  - Server 模块扩展：violations 表新增 `source`、`pod_name`、`related_lines`、`context` 字段
+
 ## v1.4.4 (2026-02-05)
 
 ### 修复
