@@ -123,15 +123,15 @@ class BaseRule(ABC):
             related_lines: 关联行范围 (start, end)，1-indexed, inclusive
 
         Returns:
-            归一化后的代码内容（去除空白差异）
+            代码内容（保留缩进和换行）
         """
         start, end = related_lines
         # 边界检查
         start = max(1, start)
         end = min(len(lines), end)
-        # 提取并归一化（去除空白差异）
+        # 提取代码（保留缩进，去除行尾空白）
         context_lines = lines[start - 1:end]  # 转为 0-indexed
-        return ''.join(line.strip() for line in context_lines)
+        return '\n'.join(line.rstrip() for line in context_lines)
 
     def compute_code_hash(self, context: str) -> str:
         """
