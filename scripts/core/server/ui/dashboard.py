@@ -56,13 +56,13 @@ def render_dashboard(
     selected_project_key: Optional[str],
     selected_project_name: Optional[str],
     daily: Iterable[Tuple[str, int, int, int]],
-    rules: Iterable[Tuple[str, str, str, int, int]],
+    rules: Iterable[Tuple[str, str, str, int, int, str]],
     autofix: dict,
     start_date: Optional[str],
     end_date: Optional[str],
     chart_data: Sequence[Tuple[str, int, int, int]],
     chart_granularity: str = "day",
-    new_violation_types: Optional[List[Tuple[str, Optional[str], Optional[str], int]]] = None,
+    new_violation_types: Optional[List[Tuple[str, Optional[str], Optional[str], int, Optional[str]]]] = None,
 ) -> str:
     """Render the dashboard page.
 
@@ -80,7 +80,7 @@ def render_dashboard(
         end_date: End date filter
         chart_data: Trend chart data
         chart_granularity: Chart granularity ("day" or "hour")
-        new_violation_types: Today's new violation types (rule_id, sub_type, count)
+        new_violation_types: Today's new violation types (rule_id, rule_name, sub_type, count, description)
     """
     # 构建 project_key 下拉选项
     pk_options = "".join(
@@ -103,8 +103,8 @@ def render_dashboard(
     # 规则统计行（可点击跳转到违规列表）
     rule_rows_list = []
     for r in rules:
-        rule_id, rule_name, severity, enabled, count = r
-        display_name = render_rule_name(rule_id, rule_name)
+        rule_id, rule_name, severity, enabled, count, description = r
+        display_name = render_rule_name(rule_id, rule_name, description)
         toggle = render_ios_switch(enabled)
         # 构建违规列表链接
         if selected_project_key and selected_project_name:
@@ -119,7 +119,7 @@ def render_dashboard(
     new_types_html = ""
     if new_violation_types:
         new_types_rows = "".join(
-            f"<tr><td>{get_rule_display_name(t[0], t[1])}</td><td>{t[2] or '-'}</td><td>{t[3]}</td></tr>"
+            f"<tr><td>{render_rule_name(t[0], t[1], t[4] if len(t) > 4 else None)}</td><td>{t[2] or '-'}</td><td>{t[3]}</td></tr>"
             for t in new_violation_types
         )
         new_types_html = f"""

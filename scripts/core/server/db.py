@@ -67,13 +67,23 @@ class Database:
                     enabled INTEGER,
                     count INTEGER,
                     order_index INTEGER DEFAULT 0,
+                    rule_name TEXT DEFAULT '',
+                    description TEXT DEFAULT '',
                     PRIMARY KEY (run_id, rule_id)
                 )
                 """
             )
-            # 迁移：为旧表添加 order_index 列
+            # 迁移：为旧表添加新列
             try:
                 conn.execute("ALTER TABLE rule_counts ADD COLUMN order_index INTEGER DEFAULT 0")
+            except Exception:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE rule_counts ADD COLUMN rule_name TEXT DEFAULT ''")
+            except Exception:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE rule_counts ADD COLUMN description TEXT DEFAULT ''")
             except Exception:
                 pass  # 列已存在
             conn.execute(
@@ -329,14 +339,14 @@ class Database:
         return True, "ok"
 
     def replace_rule_counts(self, run_id: str, rules: Dict[str, Any]) -> None:
-        """替换规则计数（保留配置中的顺序）"""
+        """替换规则计数（保留配置中的顺序、规则名称和描述）"""
         with self._connect() as conn:
             conn.execute("DELETE FROM rule_counts WHERE run_id=?", (run_id,))
             for order_index, (rule_id, item) in enumerate(rules.items()):
                 if not isinstance(item, dict):
                     continue
                 conn.execute(
-                    "INSERT INTO rule_counts (run_id, rule_id, severity, enabled, count, order_index) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO rule_counts (run_id, rule_id, severity, enabled, count, order_index, rule_name, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         run_id,
                         rule_id,
@@ -344,6 +354,8 @@ class Database:
                         1 if item.get("enabled", True) else 0,
                         int(item.get("count", 0)),
                         order_index,
+                        item.get("rule_name", ""),
+                        item.get("description", ""),
                     )
                 )
 
@@ -820,13 +832,13 @@ class Database:
         """获取指定 project_key 最近一次 run 的规则配置
 
         一个 project_key 下所有 project_name 共享同一套 .biliobjclint.yaml 配置，
-        所以从该 project_key 最近一次 run 的 rule_counts 中获取规则的 enabled 状态和顺序。
+        所以从该 project_key 最近一次 run 的 rule_counts 中获取规则的 enabled 状态、顺序、名称和描述。
 
         Args:
             project_key: 项目组标识
 
         Returns:
-            Dict[rule_id, {"enabled": bool, "severity": str, "order": int}]
+            Dict[rule_id, {"enabled": bool, "severity": str, "order": int, "rule_name": str, "description": str}]
         """
         with self._connect() as conn:
             # 获取该 project_key 最近一次 run
@@ -848,7 +860,8 @@ class Database:
             # 获取该 run 的规则配置（按 order_index 排序）
             rows = conn.execute(
                 """
-                SELECT rule_id, severity, enabled, COALESCE(order_index, 0) as order_index
+                SELECT rule_id, severity, enabled, COALESCE(order_index, 0) as order_index,
+                       COALESCE(rule_name, '') as rule_name, COALESCE(description, '') as description
                 FROM rule_counts
                 WHERE run_id = ?
                 ORDER BY order_index
@@ -857,7 +870,7 @@ class Database:
             ).fetchall()
 
             return {
-                row[0]: {"severity": row[1], "enabled": bool(row[2]), "order": row[3]}
+                row[0]: {"severity": row[1], "enabled": bool(row[2]), "order": row[3], "rule_name": row[4], "description": row[5]}
                 for row in rows
             }
 
@@ -865,7 +878,7 @@ class Database:
         self,
         project_key: Optional[str],
         project_name: Optional[str] = None,
-    ) -> List[Tuple[str, str, str, int, int]]:
+    ) -> List[Tuple[str, str, str, int, int, str]]:
         """
         获取当前规则统计（去重后的实际违规数）
 
@@ -876,7 +889,7 @@ class Database:
             project_name: 项目名称
 
         Returns:
-            List of (rule_id, rule_name, severity, enabled, count) tuples
+            List of (rule_id, rule_name, severity, enabled, count, description) tuples
         """
         if not project_key or not project_name:
             # 聚合所有表的规则统计
@@ -899,8 +912,8 @@ class Database:
                             rule_stats[key] = (existing[0] + count, rule_name or existing[1])
                     except Exception:
                         continue
-            # 转换为返回格式并排序（全局视图不显示 enabled 状态，默认为 1）
-            result = [(k[0], v[1] or "", k[1], 1, v[0]) for k, v in rule_stats.items()]
+            # 转换为返回格式并排序（全局视图不显示 enabled 状态，默认为 1，无 description）
+            result = [(k[0], v[1] or "", k[1], 1, v[0], "") for k, v in rule_stats.items()]
             return sorted(result, key=lambda x: x[4], reverse=True)
 
         # 获取特定项目的表名
@@ -930,23 +943,26 @@ class Database:
             ).fetchall()
 
         # 合并违规计数和配置的 enabled 状态
-        # key: rule_id, value: (rule_name, severity, enabled, count, order)
-        result_map: Dict[str, Tuple[str, str, int, int, int]] = {}
+        # key: rule_id, value: (rule_name, severity, enabled, count, order, description)
+        result_map: Dict[str, Tuple[str, str, int, int, int, str]] = {}
 
         # 1. 添加有违规的规则
         for rule_id, rule_name, severity, count in violation_rows:
             cfg = rule_configs.get(rule_id, {})
             enabled = 1 if cfg.get("enabled", True) else 0
             order = cfg.get("order", 9999)  # 配置中不存在的规则排在最后
-            result_map[rule_id] = (rule_name or "", severity, enabled, count, order)
+            # 优先使用配置中的 rule_name（来自 rule_counts 表），其次使用 violations 表中的
+            display_name = cfg.get("rule_name") or rule_name or ""
+            description = cfg.get("description", "")
+            result_map[rule_id] = (display_name, severity, enabled, count, order, description)
 
         # 2. 添加配置中存在但没有违规的规则（主要是 enabled=0 的规则）
         for rule_id, cfg in rule_configs.items():
             if rule_id not in result_map:
-                result_map[rule_id] = ("", cfg.get("severity", "warning"), 1 if cfg.get("enabled", True) else 0, 0, cfg.get("order", 9999))
+                result_map[rule_id] = (cfg.get("rule_name", ""), cfg.get("severity", "warning"), 1 if cfg.get("enabled", True) else 0, 0, cfg.get("order", 9999), cfg.get("description", ""))
 
         # 转换为返回格式并按配置顺序排序
-        result = [(rule_id, data[0], data[1], data[2], data[3]) for rule_id, data in result_map.items()]
+        result = [(rule_id, data[0], data[1], data[2], data[3], data[5]) for rule_id, data in result_map.items()]
         return sorted(result, key=lambda x: result_map[x[0]][4])
 
     def cleanup_stale_violations(
@@ -1024,7 +1040,7 @@ class Database:
         self,
         project_key: str,
         project_name: str,
-    ) -> List[Tuple[str, Optional[str], Optional[str], int]]:
+    ) -> List[Tuple[str, Optional[str], Optional[str], int, Optional[str]]]:
         """获取今日新增的 Violation Type（rule_id + sub_type 组合）
 
         对比今天和昨天的 violations，返回今天新出现的 (rule_id, sub_type) 组合。
@@ -1034,7 +1050,7 @@ class Database:
             project_name: 项目名称
 
         Returns:
-            List of (rule_id, rule_name, sub_type, count) tuples
+            List of (rule_id, rule_name, sub_type, count, description) tuples
         """
         # 获取表名
         with self._connect() as conn:
@@ -1048,10 +1064,11 @@ class Database:
 
         table_name = row[0]
 
+        # 获取 violation types
         with self._connect() as conn:
             # 获取今天首次出现的 violation types
             # 即 first_seen 为今天的 (rule_id, sub_type) 组合
-            rows = conn.execute(
+            violation_rows = conn.execute(
                 f"""
                 SELECT rule_id, MAX(rule_name) as rule_name, sub_type, COUNT(*) as count
                 FROM {table_name}
@@ -1061,7 +1078,20 @@ class Database:
                 """
             ).fetchall()
 
-        return rows
+        if not violation_rows:
+            return []
+
+        # 获取最新的 rule configs（包含 description）
+        rule_configs = self._get_latest_rule_configs(project_key)
+
+        # 合并 description
+        result = []
+        for row in violation_rows:
+            rule_id, rule_name, sub_type, count = row
+            description = rule_configs.get(rule_id, {}).get("description", "")
+            result.append((rule_id, rule_name, sub_type, count, description))
+
+        return result
 
     # -------------------- 统计查询 --------------------
 

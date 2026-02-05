@@ -178,6 +178,8 @@ class BiliObjCLint:
             # 统计上报（不影响 lint 结果）
             try:
                 if self.config and self.config.metrics.enabled:
+                    # 获取规则的 display_name 和 description 映射
+                    rule_display_info = RuleEngine.get_all_rule_display_names()
                     payload = metrics_mod.build_lint_payload(
                         run_id=self.run_id,
                         config=self.config,
@@ -186,6 +188,7 @@ class BiliObjCLint:
                         project_root=self.project_root,
                         duration_ms=int(elapsed * 1000),
                         started_at_iso=self.started_at_iso,
+                        rule_display_info=rule_display_info,
                     )
                     metrics_mod.send_payload(payload, self.config.metrics, self.logger)
             except Exception as e:

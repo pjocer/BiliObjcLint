@@ -81,9 +81,14 @@ def _build_violations_list(violations: Iterable[Violation], project_root: Path) 
     return result
 
 
-def _build_rules_summary(violations: Iterable[Violation], rule_configs: Dict[str, RuleConfig]) -> Dict[str, Dict[str, Any]]:
+def _build_rules_summary(
+    violations: Iterable[Violation],
+    rule_configs: Dict[str, RuleConfig],
+    rule_display_info: Optional[Dict[str, Dict[str, str]]] = None,
+) -> Dict[str, Dict[str, Any]]:
     counts: Dict[str, int] = {}
     severities: Dict[str, str] = {}
+    rule_display_info = rule_display_info or {}
 
     for v in violations:
         counts[v.rule_id] = counts.get(v.rule_id, 0) + 1
@@ -93,19 +98,25 @@ def _build_rules_summary(violations: Iterable[Violation], rule_configs: Dict[str
     rules: Dict[str, Dict[str, Any]] = {}
 
     for rule_id, cfg in rule_configs.items():
+        info = rule_display_info.get(rule_id, {})
         rules[rule_id] = {
             "count": counts.get(rule_id, 0),
             "severity": cfg.severity,
             "enabled": cfg.enabled,
+            "rule_name": info.get("display_name", ""),
+            "description": info.get("description", ""),
         }
 
     for rule_id, count in counts.items():
         if rule_id in rules:
             continue
+        info = rule_display_info.get(rule_id, {})
         rules[rule_id] = {
             "count": count,
             "severity": severities.get(rule_id, "warning"),
             "enabled": True,
+            "rule_name": info.get("display_name", ""),
+            "description": info.get("description", ""),
         }
 
     return rules
@@ -149,6 +160,7 @@ def build_lint_payload(
     project_root: Path,
     duration_ms: int,
     started_at_iso: Optional[str] = None,
+    rule_display_info: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
     created_at = started_at_iso or _now_iso()
     project_key = _safe_project_key(project_root, config.metrics)
@@ -174,7 +186,7 @@ def build_lint_payload(
             "version": tool_version,
         },
         "summary": summary,
-        "rules": _build_rules_summary(reporter.violations, config.python_rules),
+        "rules": _build_rules_summary(reporter.violations, config.python_rules, rule_display_info),
         "violations": _build_violations_list(reporter.violations, project_root),
         "autofix": _build_autofix_stub(config, reporter.violations),
         "config_snapshot": _sanitize_config_snapshot(raw_config),

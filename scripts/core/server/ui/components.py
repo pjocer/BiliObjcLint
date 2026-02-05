@@ -23,17 +23,20 @@ def render_ios_switch(enabled: bool) -> str:
     return f'<span class="ios-switch {on_class}"><span class="slider"></span></span>'
 
 
-def render_rule_name(rule_id: str, rule_name: Optional[str] = None) -> str:
-    """Render rule name with tooltip showing rule_id and rule_name.
+def render_rule_name(rule_id: str, rule_name: Optional[str] = None, description: Optional[str] = None) -> str:
+    """Render rule name with tooltip showing rule_id and description.
+
+    显示 display_name（中文），hover 显示 rule_id + description
 
     Args:
-        rule_id: Rule identifier
-        rule_name: Display name from Violation.rule_name
+        rule_id: Rule identifier (e.g., "forbidden_api")
+        rule_name: Display name (e.g., "禁止调用")
+        description: Rule description
     """
     display_name = rule_name or rule_id
-    # Tooltip: rule_id + 换行 + rule_name（如果有）
-    if rule_name and rule_name != rule_id:
-        tooltip = f"{rule_id}&#10;{rule_name}"  # &#10; 是换行符的 HTML 实体
+    # Tooltip: rule_id + 换行 + description
+    if description:
+        tooltip = f"{rule_id}&#10;{description}"  # &#10; 是换行符的 HTML 实体
     else:
         tooltip = rule_id
     return f'<span class="rule-name" title="{tooltip}">{display_name}</span>'

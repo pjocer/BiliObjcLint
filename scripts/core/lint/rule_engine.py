@@ -74,6 +74,22 @@ class RuleEngine:
         self._config_hash = ResultCache.compute_config_hash(config_dict)
         self.logger.debug(f"Config hash: {self._config_hash}")
 
+    @staticmethod
+    def get_all_rule_display_names() -> Dict[str, Dict[str, str]]:
+        """获取所有规则的显示信息
+
+        Returns:
+            Dict[rule_id, {"display_name": str, "description": str}]
+        """
+        from .rules import get_all_rules
+        return {
+            rule_class.identifier: {
+                "display_name": getattr(rule_class, 'display_name', rule_class.identifier),
+                "description": getattr(rule_class, 'description', ''),
+            }
+            for rule_class in get_all_rules()
+        }
+
     def load_custom_rules(self, custom_rules_path: str):
         """加载自定义 Python 规则"""
         rules_dir = self.project_root / custom_rules_path
