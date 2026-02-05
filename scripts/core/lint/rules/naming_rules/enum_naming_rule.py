@@ -6,7 +6,16 @@ from typing import List, Set, Tuple
 
 from ..base_rule import BaseRule
 from ..rule_utils import find_statement_end
-from core.lint.reporter import Violation
+from core.lint.reporter import Violation, ViolationType
+
+
+# SubType 定义
+class SubType:
+    """enum_naming 规则的子类型"""
+    MISSING_PREFIX = ViolationType(
+        "missing_prefix",
+        "枚举 '{enum}' 应使用指定前缀（{prefixes}）"
+    )
 
 
 class EnumNamingRule(BaseRule):
@@ -15,6 +24,7 @@ class EnumNamingRule(BaseRule):
     identifier = "enum_naming"
     name = "Enum Naming Check"
     description = "检查枚举命名是否使用指定前缀"
+    display_name = "枚举命名"
     default_severity = "warning"
 
     # typedef NS_ENUM(NSInteger, XXXType) { ... };
@@ -57,9 +67,10 @@ class EnumNamingRule(BaseRule):
                             file_path=file_path,
                             line=line_num,
                             column=match.start(1) + 1,
-                            message=f"枚举 '{enum_name}' 应使用指定前缀（{prefixes_str}）",
                             lines=lines,
-                            related_lines=related_lines
+                            violation_type=SubType.MISSING_PREFIX,
+                            related_lines=related_lines,
+                            message_vars={"enum": enum_name, "prefixes": prefixes_str}
                         ))
 
                 line_num = enum_end + 1

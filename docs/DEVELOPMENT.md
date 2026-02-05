@@ -309,9 +309,31 @@ rm /path/to/App/scripts/.biliobjclint_debug
 
 ## 规则开发 API
 
+### ViolationType
+
+`ViolationType` 是一个命名元组，用于定义违规类型。每个规则应定义自己的违规类型集合：
+
+```python
+from core.lint.reporter import ViolationType, Severity
+
+class MyRule(BaseRule):
+    identifier = "my_rule"
+    display_name = "我的规则"  # 中文显示名，用于 UI 展示
+
+    class SubType:
+        """规则子类型定义"""
+        TYPE_A = ViolationType("type_a", "发现 A 类问题")
+        TYPE_B = ViolationType("type_b", "发现 B 类问题", Severity.ERROR)  # 自定义 severity
+```
+
+**ViolationType 参数说明：**
+- `sub_type`: 违规子类型标识（字符串，用于去重和统计）
+- `message`: 违规消息模板（支持 `{var}` 格式化）
+- `severity`: 严重级别（可选，默认继承规则级别）
+
 ### create_violation 方法
 
-所有规则都继承自 `BaseRule`，可以使用 `create_violation` 方法创建违规记录：
+所有规则都继承自 `BaseRule`，使用 `create_violation` 方法创建违规记录：
 
 ```python
 def create_violation(
@@ -319,10 +341,21 @@ def create_violation(
     file_path: str,                              # 文件路径
     line: int,                                   # 违规行号（从 1 开始）
     column: int,                                 # 违规列号（从 1 开始）
-    message: str,                                # 违规消息
-    related_lines: Optional[Tuple[int, int]] = None  # 关联行范围（可选）
+    lines: List[str],                            # 文件内容行列表
+    violation_type: ViolationType,               # 违规类型
+    related_lines: Optional[Tuple[int, int]] = None,  # 关联行范围（可选）
+    message_vars: Optional[Dict[str, str]] = None     # 消息变量替换（可选）
 ) -> Violation
 ```
+
+**自动计算的字段：**
+- `context`: 从 `related_lines` 范围提取的代码内容
+- `code_hash`: 基于 `context` 计算的 MD5 哈希
+- `violation_id`: 基于 `file_path + rule_id + sub_type + code_hash + line_offset + column` 的唯一标识
+- `rule_name`: 从规则的 `display_name` 属性获取
+- `sub_type`: 从 `violation_type.id` 获取
+- `message`: 从 `violation_type.message` 获取（支持变量替换）
+- `severity`: 从 `violation_type.severity` 或规则默认级别获取
 
 ### related_lines 参数
 
@@ -340,45 +373,62 @@ def create_violation(
 
 ### 使用示例
 
-**基本用法**（不使用 related_lines）：
+**基本用法**（使用 ViolationType）：
 
 ```python
-def check(self, file_path, content, lines, changed_lines):
-    violations = []
-    for line_num, line in enumerate(lines, 1):
-        if self.detect_issue(line):
-            violations.append(self.create_violation(
-                file_path=file_path,
-                line=line_num,
-                column=1,
-                message="发现问题"
-            ))
-    return violations
+class MyRule(BaseRule):
+    identifier = "my_rule"
+    display_name = "我的规则"
+
+    class SubType:
+        ISSUE_FOUND = ViolationType("issue_found", "发现问题")
+
+    def check(self, file_path, content, lines, changed_lines):
+        violations = []
+        for line_num, line in enumerate(lines, 1):
+            if self.detect_issue(line):
+                violations.append(self.create_violation(
+                    file_path=file_path,
+                    line=line_num,
+                    column=1,
+                    lines=lines,
+                    violation_type=self.SubType.ISSUE_FOUND
+                ))
+        return violations
 ```
 
 **使用 related_lines**（检查代码块整体）：
 
 ```python
-def check(self, file_path, content, lines, changed_lines):
-    violations = []
+class MethodLengthRule(BaseRule):
+    identifier = "method_length"
+    display_name = "方法长度"
 
-    # 假设检测到一个方法从第 10 行到第 100 行
-    method_start = 10
-    method_end = 100
-    method_length = method_end - method_start + 1
+    class SubType:
+        TOO_LONG = ViolationType("too_long", "方法 '{method}' 共 {length} 行，超过限制 {max} 行")
 
-    if method_length > 80:
-        # 警告报告在方法定义行（第 10 行）
-        # 但增量过滤时会检查整个方法范围（10-100 行）是否有改动
-        violations.append(self.create_violation(
-            file_path=file_path,
-            line=method_start,  # 报告位置：方法定义行
-            column=1,
-            message=f"方法过长，共 {method_length} 行",
-            related_lines=(method_start, method_end)  # 关联范围：整个方法
-        ))
+    def check(self, file_path, content, lines, changed_lines):
+        violations = []
 
-    return violations
+        # 假设检测到一个方法从第 10 行到第 100 行
+        method_start = 10
+        method_end = 100
+        method_length = method_end - method_start + 1
+
+        if method_length > 80:
+            # 警告报告在方法定义行（第 10 行）
+            # 但增量过滤时会检查整个方法范围（10-100 行）是否有改动
+            violations.append(self.create_violation(
+                file_path=file_path,
+                line=method_start,  # 报告位置：方法定义行
+                column=1,
+                lines=lines,
+                violation_type=self.SubType.TOO_LONG,
+                related_lines=(method_start, method_end),  # 关联范围：整个方法
+                message_vars={"method": "example", "length": str(method_length), "max": "80"}
+            ))
+
+        return violations
 ```
 
 ### 增量过滤流程

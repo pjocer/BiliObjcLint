@@ -6,7 +6,26 @@ from typing import List, Set, Tuple
 
 from ..base_rule import BaseRule
 from ..rule_utils import find_statement_end, get_property_range
-from core.lint.reporter import Violation, Severity
+from core.lint.reporter import Violation, Severity, ViolationType
+
+
+# SubType 定义
+class SubType:
+    """weak_delegate 规则的子类型"""
+    UNSAFE_UNRETAINED = ViolationType(
+        "unsafe_unretained",
+        "'{prop}' 使用 unsafe_unretained，建议改为 weak 以避免野指针"
+    )
+    STRONG_RETAIN_COPY = ViolationType(
+        "strong_retain_copy",
+        "'{prop}' 应使用 weak 修饰以避免循环引用",
+        Severity.ERROR
+    )
+    NO_MEMORY_SEMANTIC = ViolationType(
+        "no_memory_semantic",
+        "'{prop}' 建议使用 weak 修饰",
+        Severity.ERROR
+    )
 
 
 class WeakDelegateRule(BaseRule):
@@ -15,6 +34,7 @@ class WeakDelegateRule(BaseRule):
     identifier = "weak_delegate"
     name = "Weak Delegate Check"
     description = "检查 delegate 属性是否使用 weak 修饰"
+    display_name = "弱引用代理"
     default_severity = "error"
 
     # @property 开始模式
@@ -73,14 +93,14 @@ class WeakDelegateRule(BaseRule):
 
         # unsafe_unretained - 警告，建议改用 weak
         if 'unsafe_unretained' in modifiers:
-            return self.create_violation_with_severity(
+            return self.create_violation(
                 file_path=file_path,
                 line=line,
                 column=1,
-                message=f"'{prop_name}' 使用 unsafe_unretained，建议改为 weak 以避免野指针",
-                severity=Severity.WARNING,
                 lines=lines,
-                related_lines=related_lines
+                violation_type=SubType.UNSAFE_UNRETAINED,
+                related_lines=related_lines,
+                message_vars={"prop": prop_name}
             )
 
         # strong/retain/copy - 错误，可能导致循环引用
@@ -89,9 +109,10 @@ class WeakDelegateRule(BaseRule):
                 file_path=file_path,
                 line=line,
                 column=1,
-                message=f"'{prop_name}' 应使用 weak 修饰以避免循环引用",
                 lines=lines,
-                related_lines=related_lines
+                violation_type=SubType.STRONG_RETAIN_COPY,
+                related_lines=related_lines,
+                message_vars={"prop": prop_name}
             )
 
         # assign 是可以接受的（传统方式）
@@ -103,9 +124,10 @@ class WeakDelegateRule(BaseRule):
             file_path=file_path,
             line=line,
             column=1,
-            message=f"'{prop_name}' 建议使用 weak 修饰",
             lines=lines,
-            related_lines=related_lines
+            violation_type=SubType.NO_MEMORY_SEMANTIC,
+            related_lines=related_lines,
+            message_vars={"prop": prop_name}
         )
 
     def get_related_lines(self, file_path: str, line: int, lines: List[str]) -> Tuple[int, int]:

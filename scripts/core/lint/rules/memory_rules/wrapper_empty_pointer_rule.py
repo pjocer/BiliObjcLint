@@ -6,7 +6,16 @@ from typing import List, Set, Optional, Tuple
 
 from ..base_rule import BaseRule
 from ..rule_utils import find_matching_brace, is_safe_value, SAFE_VALUE_PATTERNS
-from core.lint.reporter import Violation
+from core.lint.reporter import Violation, ViolationType
+
+
+# SubType 定义
+class SubType:
+    """wrapper_empty_pointer 规则的子类型"""
+    NIL_VALUE = ViolationType(
+        "nil_value",
+        "'{value}' 可能为 nil，请确认其值一定不为空"
+    )
 
 
 class WrapperEmptyPointerRule(BaseRule):
@@ -18,6 +27,7 @@ class WrapperEmptyPointerRule(BaseRule):
     identifier = "wrapper_empty_pointer"
     name = "Wrapper Empty Pointer Check"
     description = "检查容器字面量中的元素是否可能为 nil"
+    display_name = "空指针检查"
     default_severity = "warning"
 
     def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
@@ -54,9 +64,10 @@ class WrapperEmptyPointerRule(BaseRule):
                         file_path=file_path,
                         line=line_num,
                         column=col,
-                        message=f"'{warn_value}' 可能为 nil，请确认其值一定不为空",
                         lines=lines,
-                        related_lines=related_lines
+                        violation_type=SubType.NIL_VALUE,
+                        related_lines=related_lines,
+                        message_vars={"value": warn_value}
                     ))
 
         return violations

@@ -6,7 +6,37 @@ from typing import List, Set
 
 from ..base_rule import BaseRule
 from ..rule_utils import SAFE_VALUE_PATTERNS
-from core.lint.reporter import Violation, Severity
+from core.lint.reporter import Violation, Severity, ViolationType
+
+
+# SubType 定义
+class SubType:
+    """collection_mutation 规则的子类型"""
+    ARRAY_NUMERIC_SUBSCRIPT = ViolationType(
+        "array_numeric_subscript",
+        "禁止使用数组下标赋值，请使用 `addObject:`、`insertObject:atIndex:` 或 `replaceObjectAtIndex:withObject:` 方法",
+        Severity.ERROR
+    )
+    ARRAY_VAR_SUBSCRIPT = ViolationType(
+        "array_var_subscript",
+        "数组 '{var}' 下标赋值使用变量索引 '{index}'，请确认索引有效，建议使用安全方法替代"
+    )
+    DICT_KEY_NIL = ViolationType(
+        "dict_key_nil",
+        "字典下标赋值时请确认 key '{key}' 不为 nil"
+    )
+    ADD_OBJECT_NIL = ViolationType(
+        "add_object_nil",
+        "请确认 '{value}' 不为 nil"
+    )
+    INSERT_OBJECT_NIL = ViolationType(
+        "insert_object_nil",
+        "请确认 '{value}' 不为 nil"
+    )
+    REPLACE_OBJECT_NIL = ViolationType(
+        "replace_object_nil",
+        "请确认 '{value}' 不为 nil"
+    )
 
 
 class CollectionMutationRule(BaseRule):
@@ -24,6 +54,7 @@ class CollectionMutationRule(BaseRule):
     identifier = "collection_mutation"
     name = "Collection Mutation Safety Check"
     description = "检查集合修改操作的安全性"
+    display_name = "集合变异"
     default_severity = "warning"
 
     # 字典下标赋值: dict[key] = value 或 self.dict[key] = value
@@ -86,13 +117,12 @@ class CollectionMutationRule(BaseRule):
             # 1. 检测数组数字下标赋值（错误用法）
             array_match = self.ARRAY_SUBSCRIPT_PATTERN.search(check_line)
             if array_match:
-                violations.append(self.create_violation_with_severity(
+                violations.append(self.create_violation(
                     file_path=file_path,
                     line=line_num,
                     column=array_match.start() + 1,
-                    message="禁止使用数组下标赋值，请使用 `addObject:`、`insertObject:atIndex:` 或 `replaceObjectAtIndex:withObject:` 方法",
-                    severity=Severity.ERROR,
                     lines=lines,
+                    violation_type=SubType.ARRAY_NUMERIC_SUBSCRIPT,
                     related_lines=related_lines
                 ))
                 continue  # 跳过后续检测，避免重复报告
@@ -102,14 +132,14 @@ class CollectionMutationRule(BaseRule):
             if array_var_match:
                 var_name = array_var_match.group(1)
                 index_var = array_var_match.group(2)
-                violations.append(self.create_violation_with_severity(
+                violations.append(self.create_violation(
                     file_path=file_path,
                     line=line_num,
                     column=array_var_match.start() + 1,
-                    message=f"数组 '{var_name}' 下标赋值使用变量索引 '{index_var}'，请确认索引有效，建议使用安全方法替代",
-                    severity=Severity.WARNING,
                     lines=lines,
-                    related_lines=related_lines
+                    violation_type=SubType.ARRAY_VAR_SUBSCRIPT,
+                    related_lines=related_lines,
+                    message_vars={"var": var_name, "index": index_var}
                 ))
                 continue  # 跳过后续检测，避免重复报告
 
@@ -122,9 +152,10 @@ class CollectionMutationRule(BaseRule):
                         file_path=file_path,
                         line=line_num,
                         column=dict_match.start(2) + 1,
-                        message=f"字典下标赋值时请确认 key '{key}' 不为 nil",
                         lines=lines,
-                        related_lines=related_lines
+                        violation_type=SubType.DICT_KEY_NIL,
+                        related_lines=related_lines,
+                        message_vars={"key": key}
                     ))
 
             # 4. 检测 addObject:
@@ -136,9 +167,10 @@ class CollectionMutationRule(BaseRule):
                         file_path=file_path,
                         line=line_num,
                         column=add_match.start(2) + 1,
-                        message=f"请确认 '{value}' 不为 nil",
                         lines=lines,
-                        related_lines=related_lines
+                        violation_type=SubType.ADD_OBJECT_NIL,
+                        related_lines=related_lines,
+                        message_vars={"value": value}
                     ))
 
             # 5. 检测 insertObject:atIndex:
@@ -150,9 +182,10 @@ class CollectionMutationRule(BaseRule):
                         file_path=file_path,
                         line=line_num,
                         column=insert_match.start(2) + 1,
-                        message=f"请确认 '{value}' 不为 nil",
                         lines=lines,
-                        related_lines=related_lines
+                        violation_type=SubType.INSERT_OBJECT_NIL,
+                        related_lines=related_lines,
+                        message_vars={"value": value}
                     ))
 
             # 6. 检测 replaceObjectAtIndex:withObject:
@@ -164,9 +197,10 @@ class CollectionMutationRule(BaseRule):
                         file_path=file_path,
                         line=line_num,
                         column=replace_match.start(2) + 1,
-                        message=f"请确认 '{value}' 不为 nil",
                         lines=lines,
-                        related_lines=related_lines
+                        violation_type=SubType.REPLACE_OBJECT_NIL,
+                        related_lines=related_lines,
+                        message_vars={"value": value}
                     ))
 
         return violations

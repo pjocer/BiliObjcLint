@@ -2,9 +2,12 @@
 Violation Hash Module - 违规代码内容哈希计算
 
 用于 Metrics 上报去重：相同文件 + 相同 violations + 相同代码内容 = 重复数据
+
+注意：code_hash 不含 rule_id，由 rule_utils.compute_context_hash() 统一计算。
 """
-import hashlib
 from typing import List, Optional, TYPE_CHECKING
+
+from .rules.rule_utils import compute_context_hash
 
 if TYPE_CHECKING:
     from .reporter import Violation
@@ -27,7 +30,7 @@ def calculate_violation_hash(
 
     Args:
         violation: 违规对象
-        rule: 对应的规则实例（用于调用 get_hash_context）
+        rule: 对应的规则实例（用于调用 get_related_lines）
         lines: 文件内容行列表
 
     Returns:
@@ -37,15 +40,14 @@ def calculate_violation_hash(
         return None
 
     try:
-        # 调用规则的 get_hash_context() 获取哈希范围
-        start, end = rule.get_hash_context(
+        # 调用规则的 get_related_lines() 获取哈希范围
+        start, end = rule.get_related_lines(
             violation.file_path,
             violation.line,
-            lines,
-            violation
+            lines
         )
 
-        return compute_hash_from_range(violation.rule_id, lines, start, end)
+        return compute_hash_from_range(lines, start, end)
 
     except Exception:
         # 计算失败时返回 None，不影响主流程
@@ -53,16 +55,14 @@ def calculate_violation_hash(
 
 
 def compute_hash_from_range(
-    rule_id: str,
     lines: List[str],
     start: int,
     end: int,
 ) -> Optional[str]:
     """
-    从代码范围计算哈希值
+    从代码范围计算哈希值（不含 rule_id）
 
     Args:
-        rule_id: 规则 ID
         lines: 文件内容行列表
         start: 开始行号（1-indexed, inclusive）
         end: 结束行号（1-indexed, inclusive）
@@ -78,15 +78,11 @@ def compute_hash_from_range(
         if start > end:
             return None
 
-        # 提取代码上下文并归一化（去除空白差异）
-        context = lines[start - 1:end]  # 转为 0-indexed
-        normalized = ''.join(line.strip() for line in context)
+        # 提取代码上下文
+        context = ''.join(lines[start - 1:end])
 
-        # 构建哈希输入：rule_id + 归一化代码
-        hash_input = f"{rule_id}:{normalized}"
-
-        # 计算 MD5 并截取前 16 字符
-        return hashlib.md5(hash_input.encode()).hexdigest()[:16]
+        # 使用统一的哈希计算函数（不含 rule_id）
+        return compute_context_hash(context)
 
     except Exception:
         return None

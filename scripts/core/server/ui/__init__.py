@@ -8,6 +8,7 @@ The actual implementations are split into separate modules:
 - register.py: Register page
 - dashboard.py: Dashboard page
 - users.py: User management page
+- violations.py: Violations list and detail pages
 """
 from __future__ import annotations
 
@@ -16,13 +17,13 @@ from .login import render_login
 from .register import render_register
 from .dashboard import render_dashboard
 from .users import render_users
+from .violations import render_violations_list, render_violation_detail
 
 # Re-export styles for any direct usage
 from .styles import STYLE
 
 # Re-export components for extensibility
 from .components import (
-    RULE_NAMES,
     get_rule_display_name,
     render_ios_switch,
     render_rule_name,
@@ -35,8 +36,9 @@ __all__ = [
     "render_register",
     "render_dashboard",
     "render_users",
+    "render_violations_list",
+    "render_violation_detail",
     "STYLE",
-    "RULE_NAMES",
     "get_rule_display_name",
     "render_ios_switch",
     "render_rule_name",

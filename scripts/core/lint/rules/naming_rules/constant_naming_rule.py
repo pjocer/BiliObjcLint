@@ -5,7 +5,20 @@ import re
 from typing import List, Set
 
 from ..base_rule import BaseRule
-from core.lint.reporter import Violation
+from core.lint.reporter import Violation, ViolationType
+
+
+# SubType 定义
+class SubType:
+    """constant_naming 规则的子类型"""
+    DEFINE_NAMING = ViolationType(
+        "define_naming",
+        "宏常量 '{name}' 应使用全大写加下划线命名（如 MAX_COUNT）或 k 前缀命名（如 kMaxCount）"
+    )
+    CONST_NAMING = ViolationType(
+        "const_naming",
+        "常量 '{name}' 应使用 k 前缀驼峰命名（如 kMaxCount）或全大写下划线命名（如 MAX_COUNT）"
+    )
 
 
 class ConstantNamingRule(BaseRule):
@@ -14,6 +27,7 @@ class ConstantNamingRule(BaseRule):
     identifier = "constant_naming"
     name = "Constant Naming Check"
     description = "检查常量命名是否符合规范"
+    display_name = "常量命名"
     default_severity = "warning"
 
     # #define 宏常量模式
@@ -81,9 +95,10 @@ class ConstantNamingRule(BaseRule):
                     file_path=file_path,
                     line=line_num,
                     column=match.start(1) + 1,
-                    message=f"宏常量 '{const_name}' 应使用全大写加下划线命名（如 MAX_COUNT）或 k 前缀命名（如 kMaxCount）",
                     lines=lines,
-                    related_lines=related_lines
+                    violation_type=SubType.DEFINE_NAMING,
+                    related_lines=related_lines,
+                    message_vars={"name": const_name}
                 )
         return None
 
@@ -111,9 +126,10 @@ class ConstantNamingRule(BaseRule):
                     file_path=file_path,
                     line=line_num,
                     column=match.start(1) + 1,
-                    message=f"常量 '{const_name}' 应使用 k 前缀驼峰命名（如 kMaxCount）或全大写下划线命名（如 MAX_COUNT）",
                     lines=lines,
-                    related_lines=related_lines
+                    violation_type=SubType.CONST_NAMING,
+                    related_lines=related_lines,
+                    message_vars={"name": const_name}
                 )
 
         return None

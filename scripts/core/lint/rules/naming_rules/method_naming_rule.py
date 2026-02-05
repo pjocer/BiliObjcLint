@@ -6,7 +6,16 @@ from typing import List, Set, Tuple
 
 from ..base_rule import BaseRule
 from ..rule_utils import strip_line_comment
-from core.lint.reporter import Violation
+from core.lint.reporter import Violation, ViolationType
+
+
+# SubType 定义
+class SubType:
+    """method_naming 规则的子类型"""
+    UPPERCASE_START = ViolationType(
+        "uppercase_start",
+        "方法名 '{method}' 应以小写字母开头"
+    )
 
 
 class MethodNamingRule(BaseRule):
@@ -15,6 +24,7 @@ class MethodNamingRule(BaseRule):
     identifier = "method_naming"
     name = "Method Naming Check"
     description = "检查方法命名是否符合小驼峰规范"
+    display_name = "方法命名"
     default_severity = "warning"
 
     # 方法声明模式
@@ -43,9 +53,10 @@ class MethodNamingRule(BaseRule):
                             file_path=file_path,
                             line=line_num,
                             column=match.start(1) + 1,
-                            message=f"方法名 '{method_name}' 应以小写字母开头",
                             lines=lines,
-                            related_lines=related_lines
+                            violation_type=SubType.UPPERCASE_START,
+                            related_lines=related_lines,
+                            message_vars={"method": method_name}
                         ))
 
         return violations

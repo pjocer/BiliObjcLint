@@ -3,6 +3,7 @@ Rule Utilities - 规则公共工具模块
 
 抽取所有规则共享的工具方法，减少代码重复。
 """
+import hashlib
 import re
 from typing import List, Tuple, Optional
 
@@ -307,3 +308,20 @@ def get_property_range(lines: List[str], property_start_line: int) -> Tuple[int,
     """
     property_end = find_statement_end(lines, property_start_line, ';')
     return (property_start_line, property_end)
+
+
+def compute_context_hash(context: str) -> str:
+    """
+    计算代码内容哈希（不含 rule_id）
+
+    这是统一的哈希计算入口，供 BaseRule 和 violation_hash 模块使用。
+
+    Args:
+        context: 代码内容字符串（已归一化）
+
+    Returns:
+        MD5 哈希字符串（16 字符）
+    """
+    # 归一化：去除空白差异
+    normalized = ''.join(line.strip() for line in context.splitlines())
+    return hashlib.md5(normalized.encode()).hexdigest()[:16]

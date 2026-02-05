@@ -2,6 +2,32 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.4.6 (2026-02-05)
+
+### 重构
+- **P0.6 violation_id 统一设计**
+  - 新增 `ViolationType` 命名元组：统一 `sub_type`、`message`、`severity`
+  - 所有规则迁移到 ViolationType API，`create_violation()` 使用 `violation_type` 参数
+  - Violation 新增 `rule_name` 字段：存储规则中文显示名称（如"循环引用"、"禁用 API"）
+  - 移除 `create_violation_with_severity()` 方法（ViolationType 已支持自定义 severity）
+  - `violation_id` 计算公式：`hash(file_path + rule_id + sub_type + code_hash + line_offset + column)`
+  - 确保同一代码位置的同类违规产生稳定唯一 ID
+
+- **P1 Server DB 重构**
+  - Per-project violations 表设计：每个项目组合（project_key + project_name）独立表
+  - 表名格式：`violations_{8字符MD5哈希}`
+  - Dashboard 级联选择：project_key → project_name 联动下拉框
+  - 修复 upsert 逻辑正确区分 insert/update 计数
+
+### 新增
+- 新增 `test_server_db.py` 测试模块（11 个测试用例）
+  - DB Schema 验证：基础表创建、Per-project 表创建、表结构完整性
+  - Violations Upsert：Violation 对象/字典格式、去重验证、数据完整性
+
+### 改进
+- `test_base_rule.py` 重写适配 ViolationType API
+- 所有 133 个测试通过
+
 ## v1.4.5 (2026-02-05)
 
 ### 重构

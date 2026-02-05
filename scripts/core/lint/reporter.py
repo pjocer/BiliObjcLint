@@ -1,11 +1,12 @@
 """
 Reporter Module - 输出格式化 (Xcode 兼容)
 """
+import hashlib
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple, NamedTuple
 from pathlib import Path
 
 from .logger import get_logger
@@ -16,6 +17,22 @@ class Severity(Enum):
     ERROR = "error"
     WARNING = "warning"
     NOTE = "note"
+
+
+class ViolationType(NamedTuple):
+    """
+    违规类型定义（sub_type + message + severity 绑定）
+
+    用于在规则中定义 SubType，将 sub_type、message、severity 统一管理。
+
+    Attributes:
+        id: sub_type 标识（稳定，用于系统匹配/去重）
+        message: 用户可读描述（可包含 {var} 占位符）
+        severity: 违规级别，默认 WARNING
+    """
+    id: str
+    message: str
+    severity: Severity = Severity.WARNING
 
 
 @dataclass
@@ -31,7 +48,40 @@ class Violation:
     pod_name: Optional[str] = None  # 所属本地 Pod 名称（None 表示主工程）
     related_lines: Optional[Tuple[int, int]] = None  # 关联行范围 (start, end)，用于增量过滤
     context: Optional[str] = None  # 关联行的代码内容
-    code_hash: Optional[str] = None  # 代码内容哈希，用于 Metrics 上报去重
+    code_hash: Optional[str] = None  # 代码内容哈希（纯代码内容，不含 rule_id）
+    sub_type: Optional[str] = None  # 规则子类型（稳定标识，用于区分同一规则的不同违规类型）
+    rule_name: Optional[str] = None  # 规则中文名称（用于 UI 显示，如"禁用 API"）
+    _violation_id: Optional[str] = field(default=None, repr=False)  # 缓存的 violation_id
+
+    @property
+    def violation_id(self) -> str:
+        """
+        获取违规唯一标识（懒计算，缓存结果）
+
+        组成：hash(file_path + rule_id + sub_type + code_hash + line_offset + column)
+        """
+        if self._violation_id is None:
+            self._violation_id = self._compute_violation_id()
+        return self._violation_id
+
+    def _compute_violation_id(self) -> str:
+        """
+        计算违规唯一标识
+
+        组成元素：
+        - file_path: 文件路径
+        - rule_id: 规则标识
+        - sub_type: 规则子类型（稳定标识）
+        - code_hash: context 的 hash（纯代码内容）
+        - line_offset: 相对行号（对代码块外部变化免疫）
+        - column: 列号
+        """
+        line_offset = self.line - self.related_lines[0] if self.related_lines else 0
+        sub_type = self.sub_type or "default"
+        code_hash = self.code_hash or ""
+
+        id_input = f"{self.file_path}:{self.rule_id}:{sub_type}:{code_hash}:{line_offset}:{self.column}"
+        return hashlib.md5(id_input.encode()).hexdigest()[:16]
 
     def to_xcode_format(self) -> str:
         """
@@ -55,7 +105,8 @@ class Violation:
             "severity": self.severity.value,
             "message": self.message,
             "rule_id": self.rule_id,
-            "source": self.source
+            "source": self.source,
+            "violation_id": self.violation_id  # 始终包含（唯一标识）
         }
         if self.pod_name:
             result["pod_name"] = self.pod_name
@@ -65,6 +116,10 @@ class Violation:
             result["context"] = self.context
         if self.code_hash:
             result["code_hash"] = self.code_hash
+        if self.sub_type:
+            result["sub_type"] = self.sub_type
+        if self.rule_name:
+            result["rule_name"] = self.rule_name
         return result
 
     @classmethod
@@ -90,6 +145,8 @@ class Violation:
             related_lines=tuple(d["related_lines"]) if d.get("related_lines") else None,
             context=d.get("context"),
             code_hash=d.get("code_hash"),
+            sub_type=d.get("sub_type"),
+            rule_name=d.get("rule_name"),
         )
 
 

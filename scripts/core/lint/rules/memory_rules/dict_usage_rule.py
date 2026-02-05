@@ -5,7 +5,16 @@ import re
 from typing import List, Set
 
 from ..base_rule import BaseRule
-from core.lint.reporter import Violation
+from core.lint.reporter import Violation, ViolationType
+
+
+# SubType 定义
+class SubType:
+    """dict_usage 规则的子类型"""
+    SET_OBJECT_FOR_KEY = ViolationType(
+        "set_object_for_key",
+        "请确认 object 非空，或使用 nil-safe 封装"
+    )
 
 
 class DictUsageRule(BaseRule):
@@ -18,6 +27,7 @@ class DictUsageRule(BaseRule):
     identifier = "dict_usage"
     name = "Dictionary Usage Check"
     description = "检查 NSMutableDictionary 的 setObject:forKey: 使用"
+    display_name = "字典访问"
     default_severity = "warning"
 
     # 匹配 setObject:forKey: 方法调用
@@ -53,8 +63,8 @@ class DictUsageRule(BaseRule):
                     file_path=file_path,
                     line=line_num,
                     column=match.start() + 1,
-                    message="请确认 object 非空，或使用 nil-safe 封装",
                     lines=lines,
+                    violation_type=SubType.SET_OBJECT_FOR_KEY,
                     related_lines=related_lines
                 ))
 

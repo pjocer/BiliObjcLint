@@ -85,7 +85,6 @@ class IgnoreCache:
     def _calculate_code_hash(
         self,
         file_path: str,
-        rule_id: str,
         related_lines: Tuple[int, int]
     ) -> Optional[str]:
         """
@@ -93,7 +92,6 @@ class IgnoreCache:
 
         Args:
             file_path: 文件路径
-            rule_id: 规则 ID
             related_lines: 关联行范围 (start, end)，1-indexed
 
         Returns:
@@ -104,7 +102,7 @@ class IgnoreCache:
                 lines = f.readlines()
 
             start, end = related_lines
-            return compute_hash_from_range(rule_id, lines, start, end)
+            return compute_hash_from_range(lines, start, end)
         except Exception as e:
             self.logger.debug(f"Failed to calculate code hash for {file_path}: {e}")
             return None
@@ -176,7 +174,7 @@ class IgnoreCache:
             是否成功添加
         """
         # 计算代码哈希
-        code_hash = self._calculate_code_hash(file_path, rule_id, related_lines)
+        code_hash = self._calculate_code_hash(file_path, related_lines)
         if not code_hash:
             return False
 

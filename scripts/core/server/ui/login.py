@@ -75,17 +75,18 @@ LOGIN_STYLE = """
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
+  gap: 4px;
   margin-bottom: 16px;
   font-size: 13px;
   color: #6b6b6b;
   cursor: pointer;
   text-align: left;
+  padding-left: 14px;  /* 与输入框内边距对齐 */
 }
 
 .login-card .remember-row input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   margin: 0;
   accent-color: #fb7299;
   cursor: pointer;
@@ -95,6 +96,7 @@ LOGIN_STYLE = """
 .login-card .remember-row label {
   margin: 0;
   cursor: pointer;
+  line-height: 1;
 }
 
 .login-card .submit-btn {
@@ -154,6 +156,34 @@ LOGIN_STYLE = """
 </style>
 """
 
+LOGIN_SCRIPT = """
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('login-form');
+    const usernameInput = document.getElementById('username');
+    const rememberCheckbox = document.getElementById('remember');
+
+    // 页面加载时：检查是否有保存的用户名
+    const savedUsername = localStorage.getItem('biliobjclint_username');
+    if (savedUsername) {
+        usernameInput.value = savedUsername;
+        rememberCheckbox.checked = true;
+        // 聚焦到密码框
+        document.getElementById('password').focus();
+    }
+
+    // 表单提交时：根据"记住密码"选项保存或清除用户名
+    form.addEventListener('submit', function() {
+        if (rememberCheckbox.checked) {
+            localStorage.setItem('biliobjclint_username', usernameInput.value);
+        } else {
+            localStorage.removeItem('biliobjclint_username');
+        }
+    });
+});
+</script>
+"""
+
 
 def render_login(error: str = "", success: str = "") -> str:
     """Render the login page."""
@@ -174,14 +204,14 @@ def render_login(error: str = "", success: str = "") -> str:
           <p class="subtitle">代码质量统计平台</p>
           {succ}
           {err}
-          <form method="post" action="/login">
+          <form id="login-form" method="post" action="/login" autocomplete="on">
             <div class="form-group">
-              <label>用户名</label>
-              <input type="text" name="username" placeholder="请输入用户名" autocomplete="username" />
+              <label for="username">用户名</label>
+              <input type="text" id="username" name="username" placeholder="请输入用户名" autocomplete="username" />
             </div>
             <div class="form-group">
-              <label>密码</label>
-              <input type="password" name="password" placeholder="请输入密码" autocomplete="current-password" />
+              <label for="password">密码</label>
+              <input type="password" id="password" name="password" placeholder="请输入密码" autocomplete="current-password" />
             </div>
             <div class="remember-row">
               <input type="checkbox" name="remember" value="1" id="remember" />
@@ -192,6 +222,7 @@ def render_login(error: str = "", success: str = "") -> str:
           <p class="register-link">还没有账号？<a href="/register">立即注册</a></p>
         </div>
       </div>
+      {LOGIN_SCRIPT}
     </body>
     </html>
     """

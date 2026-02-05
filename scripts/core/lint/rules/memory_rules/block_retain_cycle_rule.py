@@ -7,7 +7,58 @@ from dataclasses import dataclass
 
 from ..base_rule import BaseRule
 from ..rule_utils import get_method_range
-from core.lint.reporter import Violation, Severity
+from core.lint.reporter import Violation, Severity, ViolationType
+
+
+# SubType 定义（sub_type + message + severity 绑定）
+class SubType:
+    """block_retain_cycle 规则的子类型"""
+    # ERROR 级别
+    DIRECT_SELF = ViolationType(
+        "direct_self",
+        "Block 内直接使用 self 可能导致循环引用，必须使用 weakSelf",
+        Severity.ERROR
+    )
+    HAS_WEAK_USE_SELF = ViolationType(
+        "has_weak_use_self",
+        "已声明 {var}，应使用它而不是 self",
+        Severity.ERROR
+    )
+    HAS_STRONG_USE_SELF = ViolationType(
+        "has_strong_use_self",
+        "已声明 {var}，应使用它而不是 self",
+        Severity.ERROR
+    )
+    NEED_STRONGIFY = ViolationType(
+        "need_strongify",
+        "使用 @weakify 后应在 block 内添加 @strongify(self)，或使用 self_weak_",
+        Severity.ERROR
+    )
+    # WARNING 级别
+    WEAK_WITHOUT_STRONG = ViolationType(
+        "weak_without_strong",
+        "使用 weakSelf 时建议先转为 strongSelf 并检查是否为 nil"
+    )
+    HAS_STRONG_USE_WEAK = ViolationType(
+        "has_strong_use_weak",
+        "已声明 {var}，建议使用它而不是 weakSelf"
+    )
+    MIXED_WEAK_STYLE = ViolationType(
+        "mixed_weak_style",
+        "不建议混用 __weak typeof(self) 和 @weakify(self)，请保持一致性"
+    )
+    SELF_WEAK_USAGE = ViolationType(
+        "self_weak_usage",
+        "建议添加 @strongify(self) 而不是直接使用 self_weak_"
+    )
+    C_FUNCTION_SELF = ViolationType(
+        "c_function_self",
+        "C 函数 (dispatch_async 等) 中使用 self 通常安全，但建议确认"
+    )
+    CLASS_METHOD_SELF = ViolationType(
+        "class_method_self",
+        "类方法中使用 self 可能安全，但建议使用 weakSelf 以确保无循环引用"
+    )
 
 
 @dataclass
@@ -32,6 +83,7 @@ class BlockRetainCycleRule(BaseRule):
     identifier = "block_retain_cycle"
     name = "Block Retain Cycle Check"
     description = "检测 Block 中可能的循环引用，检查 weak/strong self 使用"
+    display_name = "循环引用"
     default_severity = "warning"
 
     # 正则表达式
@@ -102,13 +154,12 @@ class BlockRetainCycleRule(BaseRule):
 
             # 检测混用 warning
             if self._has_mixed_usage(weak_decls):
-                violations.append(self.create_violation_with_severity(
+                violations.append(self.create_violation(
                     file_path=file_path,
                     line=line_num,
                     column=1,
-                    message="不建议混用 __weak typeof(self) 和 @weakify(self)，请保持一致性",
-                    severity=Severity.WARNING,
                     lines=lines,
+                    violation_type=SubType.MIXED_WEAK_STYLE,
                     related_lines=related_lines
                 ))
 
@@ -267,11 +318,14 @@ class BlockRetainCycleRule(BaseRule):
         """
         获取 block 的调用上下文
         返回: 'c_function' | 'class_method' | 'instance_method'
+
+        策略：找到包含 block 开始 (^{) 的那一行，只分析该行的调用上下文
         """
-        # 向上查找包含 block 的方法调用
-        # 不在 block 开始处停止，继续查找外层上下文
-        # line_num 是 1-indexed，lines 是 0-indexed
         method_start = self._find_method_start(lines, line_num)
+
+        # 先找到 block 开始的行
+        block_start_line = None
+        block_start_idx = -1
 
         for i in range(line_num - 2, method_start - 2, -1):
             if i < 0:
@@ -282,17 +336,28 @@ class BlockRetainCycleRule(BaseRule):
             if self.METHOD_START_PATTERN.match(line.strip()):
                 break
 
-            # 检测 C 函数
-            if self.C_FUNCTION_PATTERN.search(line):
-                return 'c_function'
+            # 找到 block 开始的行
+            if self.BLOCK_START_PATTERN.search(line):
+                block_start_line = line
+                block_start_idx = i
+                break
 
-            # 检测类方法调用（同一行内的类方法调用）
-            class_match = self.CLASS_METHOD_PATTERN.search(line)
+        if block_start_line is None:
+            return 'instance_method'
+
+        # 只分析 block 开始那一行的调用上下文
+        # 检测 C 函数
+        if self.C_FUNCTION_PATTERN.search(block_start_line):
+            return 'c_function'
+
+        # 检测类方法调用：[ClassName methodName:^{...}]
+        # 类方法调用必须在 block 开始之前
+        block_match = self.BLOCK_START_PATTERN.search(block_start_line)
+        if block_match:
+            line_before_block = block_start_line[:block_match.start()]
+            class_match = self.CLASS_METHOD_PATTERN.search(line_before_block)
             if class_match:
-                # 确保这不是在 block 内部的类方法调用
-                # 检查这行是否同时有 block 开始
-                if not self.BLOCK_START_PATTERN.search(line[:class_match.start()]):
-                    return 'class_method'
+                return 'class_method'
 
         return 'instance_method'
 
@@ -373,13 +438,12 @@ class BlockRetainCycleRule(BaseRule):
         # 规则 0: C 函数中的 block -> WARNING 或不检测
         if block_context == 'c_function':
             if usage_type == 'self':
-                return self.create_violation_with_severity(
+                return self.create_violation(
                     file_path=file_path,
                     line=line_num,
                     column=column,
-                    message="C 函数 (dispatch_async 等) 中使用 self 通常安全，但建议确认",
-                    severity=Severity.WARNING,
                     lines=lines,
+                    violation_type=SubType.C_FUNCTION_SELF,
                     related_lines=related_lines
                 )
             return None  # 其他情况 OK
@@ -387,13 +451,12 @@ class BlockRetainCycleRule(BaseRule):
         # 规则 1: 类方法调用中的 block -> WARNING
         if block_context == 'class_method':
             if usage_type == 'self' and not has_weak:
-                return self.create_violation_with_severity(
+                return self.create_violation(
                     file_path=file_path,
                     line=line_num,
                     column=column,
-                    message="类方法中使用 self 可能安全，但建议使用 weakSelf 以确保无循环引用",
-                    severity=Severity.WARNING,
                     lines=lines,
+                    violation_type=SubType.CLASS_METHOD_SELF,
                     related_lines=related_lines
                 )
             return None  # 类方法中其他情况 OK
@@ -403,13 +466,12 @@ class BlockRetainCycleRule(BaseRule):
         # 规则 2: 无 weak 转换 -> ERROR
         if not has_weak:
             if usage_type == 'self':
-                return self.create_violation_with_severity(
+                return self.create_violation(
                     file_path=file_path,
                     line=line_num,
                     column=column,
-                    message="Block 内直接使用 self 可能导致循环引用，必须使用 weakSelf",
-                    severity=Severity.ERROR,
                     lines=lines,
+                    violation_type=SubType.DIRECT_SELF,
                     related_lines=related_lines
                 )
 
@@ -421,48 +483,47 @@ class BlockRetainCycleRule(BaseRule):
             if usage_type == 'self':
                 # 有 weak 但使用了 self -> ERROR
                 if has_strong:
-                    return self.create_violation_with_severity(
+                    return self.create_violation(
                         file_path=file_path,
                         line=line_num,
                         column=column,
-                        message=f"已声明 {strong_var_name or 'strongSelf'}，应使用它而不是 self",
-                        severity=Severity.ERROR,
                         lines=lines,
-                        related_lines=related_lines
+                        violation_type=SubType.HAS_STRONG_USE_SELF,
+                        related_lines=related_lines,
+                        message_vars={"var": strong_var_name or "strongSelf"}
                     )
                 else:
-                    return self.create_violation_with_severity(
+                    return self.create_violation(
                         file_path=file_path,
                         line=line_num,
                         column=column,
-                        message=f"已声明 {weak_var_name}，应使用它而不是 self",
-                        severity=Severity.ERROR,
                         lines=lines,
-                        related_lines=related_lines
+                        violation_type=SubType.HAS_WEAK_USE_SELF,
+                        related_lines=related_lines,
+                        message_vars={"var": weak_var_name or "weakSelf"}
                     )
 
             elif usage_type == 'weak_var':
                 # 使用 weak 变量
                 if has_strong:
                     # 有 strong 但用了 weak -> WARNING
-                    return self.create_violation_with_severity(
+                    return self.create_violation(
                         file_path=file_path,
                         line=line_num,
                         column=column,
-                        message=f"已声明 {strong_var_name or 'strongSelf'}，建议使用它而不是 weakSelf",
-                        severity=Severity.WARNING,
                         lines=lines,
-                        related_lines=related_lines
+                        violation_type=SubType.HAS_STRONG_USE_WEAK,
+                        related_lines=related_lines,
+                        message_vars={"var": strong_var_name or "strongSelf"}
                     )
                 else:
                     # 无 strong，用 weak -> WARNING
-                    return self.create_violation_with_severity(
+                    return self.create_violation(
                         file_path=file_path,
                         line=line_num,
                         column=column,
-                        message="使用 weakSelf 时建议先转为 strongSelf 并检查是否为 nil",
-                        severity=Severity.WARNING,
                         lines=lines,
+                        violation_type=SubType.WEAK_WITHOUT_STRONG,
                         related_lines=related_lines
                     )
 
@@ -478,25 +539,23 @@ class BlockRetainCycleRule(BaseRule):
                     return None
                 else:
                     # 无 @strongify，使用 self -> ERROR
-                    return self.create_violation_with_severity(
+                    return self.create_violation(
                         file_path=file_path,
                         line=line_num,
                         column=column,
-                        message="使用 @weakify 后应在 block 内添加 @strongify(self)，或使用 self_weak_",
-                        severity=Severity.ERROR,
                         lines=lines,
+                        violation_type=SubType.NEED_STRONGIFY,
                         related_lines=related_lines
                     )
 
             elif usage_type == 'self_weak_':
                 # 使用 self_weak_ -> WARNING (建议用 @strongify)
-                return self.create_violation_with_severity(
+                return self.create_violation(
                     file_path=file_path,
                     line=line_num,
                     column=column,
-                    message="建议添加 @strongify(self) 而不是直接使用 self_weak_",
-                    severity=Severity.WARNING,
                     lines=lines,
+                    violation_type=SubType.SELF_WEAK_USAGE,
                     related_lines=related_lines
                 )
 

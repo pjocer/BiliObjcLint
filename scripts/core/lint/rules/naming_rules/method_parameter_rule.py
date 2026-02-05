@@ -6,7 +6,16 @@ from typing import List, Set, Tuple
 
 from ..base_rule import BaseRule
 from ..rule_utils import strip_line_comment
-from core.lint.reporter import Violation
+from core.lint.reporter import Violation, ViolationType
+
+
+# SubType 定义
+class SubType:
+    """method_parameter 规则的子类型"""
+    TOO_MANY_PARAMS = ViolationType(
+        "too_many_params",
+        "方法 '{method}' 有 {count} 个参数，超过限制 {max} 个"
+    )
 
 
 class MethodParameterRule(BaseRule):
@@ -15,6 +24,7 @@ class MethodParameterRule(BaseRule):
     identifier = "method_parameter"
     name = "Method Parameter Count Check"
     description = "检查方法参数数量是否超过限制"
+    display_name = "参数数量"
     default_severity = "warning"
 
     # 方法声明模式
@@ -55,9 +65,10 @@ class MethodParameterRule(BaseRule):
                         file_path=file_path,
                         line=method_start,
                         column=1,
-                        message=f"方法 '{method_selector}' 有 {param_count} 个参数，超过限制 {max_params} 个",
                         lines=lines,
-                        related_lines=related_lines
+                        violation_type=SubType.TOO_MANY_PARAMS,
+                        related_lines=related_lines,
+                        message_vars={"method": method_selector, "count": str(param_count), "max": str(max_params)}
                     ))
 
                 line_num = method_end + 1

@@ -6,7 +6,20 @@ from typing import List, Set, Tuple
 
 from ..base_rule import BaseRule
 from ..rule_utils import find_statement_end, get_property_range
-from core.lint.reporter import Violation
+from core.lint.reporter import Violation, ViolationType
+
+
+# SubType 定义
+class SubType:
+    """property_naming 规则的子类型"""
+    UPPERCASE_START = ViolationType(
+        "uppercase_start",
+        "属性名 '{prop}' 应使用小驼峰命名（首字母小写）"
+    )
+    CONTAINS_UNDERSCORE = ViolationType(
+        "contains_underscore",
+        "属性名 '{prop}' 不应包含下划线，请使用小驼峰命名"
+    )
 
 
 class PropertyNamingRule(BaseRule):
@@ -15,6 +28,7 @@ class PropertyNamingRule(BaseRule):
     identifier = "property_naming"
     name = "Property Naming Check"
     description = "检查属性命名是否符合小驼峰规范"
+    display_name = "属性命名"
     default_severity = "warning"
 
     # @property 开始模式
@@ -55,9 +69,10 @@ class PropertyNamingRule(BaseRule):
                             file_path=file_path,
                             line=property_start,
                             column=1,
-                            message=f"属性名 '{prop_name}' 应使用小驼峰命名（首字母小写）",
                             lines=lines,
-                            related_lines=related_lines
+                            violation_type=SubType.UPPERCASE_START,
+                            related_lines=related_lines,
+                            message_vars={"prop": prop_name}
                         ))
 
                     # 检查是否包含下划线（IBOutlet 除外）
@@ -66,9 +81,10 @@ class PropertyNamingRule(BaseRule):
                             file_path=file_path,
                             line=property_start,
                             column=1,
-                            message=f"属性名 '{prop_name}' 不应包含下划线，请使用小驼峰命名",
                             lines=lines,
-                            related_lines=related_lines
+                            violation_type=SubType.CONTAINS_UNDERSCORE,
+                            related_lines=related_lines,
+                            message_vars={"prop": prop_name}
                         ))
 
                 line_num = property_end + 1

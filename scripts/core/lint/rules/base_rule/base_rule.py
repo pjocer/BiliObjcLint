@@ -2,16 +2,16 @@
 Base Rule - 规则基类
 """
 from abc import ABC, abstractmethod
-from typing import List, Set, Optional, Tuple
-import hashlib
+from typing import List, Set, Optional, Tuple, Dict
 import sys
 
 # 添加路径以便导入
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from core.lint.reporter import Violation, Severity
+from core.lint.reporter import Violation, Severity, ViolationType
 from core.lint.config import RuleConfig
+from ..rule_utils import compute_context_hash
 
 
 class BaseRule(ABC):
@@ -25,6 +25,7 @@ class BaseRule(ABC):
     identifier: str = ""       # 规则唯一标识符，如 "class_prefix"
     name: str = ""             # 规则名称，如 "Class Prefix Check"
     description: str = ""      # 规则描述
+    display_name: str = ""     # 规则中文名称（用于 UI 显示），如 "类名前缀"
     default_severity: str = "warning"  # 默认严重级别: warning | error
 
     def __init__(self, config: Optional[RuleConfig] = None):
@@ -132,23 +133,22 @@ class BaseRule(ABC):
         context_lines = lines[start - 1:end]  # 转为 0-indexed
         return ''.join(line.strip() for line in context_lines)
 
-    def compute_code_hash(self, rule_id: str, context: str) -> str:
+    def compute_code_hash(self, context: str) -> str:
         """
-        计算代码内容哈希
+        计算代码内容哈希（不含 rule_id）
 
         Args:
-            rule_id: 规则 ID
             context: 归一化后的代码内容
 
         Returns:
             MD5 哈希字符串（16 字符）
         """
-        hash_input = f"{rule_id}:{context}"
-        return hashlib.md5(hash_input.encode()).hexdigest()[:16]
+        return compute_context_hash(context)
 
-    def create_violation(self, file_path: str, line: int, column: int, message: str,
-                         lines: List[str],
-                         related_lines: Optional[Tuple[int, int]] = None) -> Violation:
+    def create_violation(self, file_path: str, line: int, column: int,
+                         lines: List[str], violation_type: ViolationType,
+                         related_lines: Optional[Tuple[int, int]] = None,
+                         message_vars: Optional[Dict[str, str]] = None) -> Violation:
         """
         创建违规记录（一次性确定所有属性）
 
@@ -156,9 +156,10 @@ class BaseRule(ABC):
             file_path: 文件路径
             line: 行号（从 1 开始）
             column: 列号（从 1 开始）
-            message: 违规消息
             lines: 文件所有行（用于计算 context 和 code_hash）
+            violation_type: 违规类型（包含 sub_type、message 模板、severity）
             related_lines: 关联行范围 (start, end)，不传则自动计算
+            message_vars: message 模板中的变量替换，如 {"var": "self"}
         Returns:
             Violation 对象（所有属性不可变）
         """
@@ -169,63 +170,27 @@ class BaseRule(ABC):
         # 2. 提取 context
         context = self.get_context(lines, related_lines)
 
-        # 3. 计算 code_hash
-        code_hash = self.compute_code_hash(self.identifier, context)
+        # 3. 计算 code_hash（不含 rule_id）
+        code_hash = self.compute_code_hash(context)
+
+        # 4. 格式化 message（替换占位符）
+        message = violation_type.message
+        if message_vars:
+            message = message.format(**message_vars)
 
         return Violation(
             file_path=file_path,
             line=line,
             column=column,
-            severity=self.severity,
+            severity=violation_type.severity,
             message=message,
             rule_id=self.identifier,
             source='biliobjclint',
             related_lines=related_lines,
             context=context,
-            code_hash=code_hash
-        )
-
-    def create_violation_with_severity(self, file_path: str, line: int, column: int,
-                                       message: str, severity: Severity,
-                                       lines: List[str],
-                                       related_lines: Optional[Tuple[int, int]] = None) -> Violation:
-        """
-        创建带自定义 severity 的违规记录
-
-        用于需要覆盖默认 severity 的场景（如同一规则中不同级别的问题）。
-
-        Args:
-            file_path: 文件路径
-            line: 行号（从 1 开始）
-            column: 列号（从 1 开始）
-            message: 违规消息
-            severity: 严重级别
-            lines: 文件所有行（用于计算 context 和 code_hash）
-            related_lines: 关联行范围 (start, end)，不传则自动计算
-        Returns:
-            Violation 对象（所有属性不可变）
-        """
-        # 1. 确定 related_lines
-        if related_lines is None:
-            related_lines = self.get_related_lines(file_path, line, lines)
-
-        # 2. 提取 context
-        context = self.get_context(lines, related_lines)
-
-        # 3. 计算 code_hash
-        code_hash = self.compute_code_hash(self.identifier, context)
-
-        return Violation(
-            file_path=file_path,
-            line=line,
-            column=column,
-            severity=severity,
-            message=message,
-            rule_id=self.identifier,
-            source='biliobjclint',
-            related_lines=related_lines,
-            context=context,
-            code_hash=code_hash
+            code_hash=code_hash,
+            sub_type=violation_type.id,
+            rule_name=self.display_name or None
         )
 
     def __repr__(self):

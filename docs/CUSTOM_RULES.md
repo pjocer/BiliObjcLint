@@ -11,7 +11,8 @@ Python 规则开发简单，无需重新编译，适合大多数场景。
 在 `custom_rules/python/` 目录下创建 `.py` 文件：
 
 ```python
-from core.lint.rule_engine import BaseRule
+from core.lint.rules.base_rule import BaseRule
+from core.lint.reporter import ViolationType, Severity
 
 class MyCustomRule(BaseRule):
     # 规则标识符（必须唯一）
@@ -20,11 +21,19 @@ class MyCustomRule(BaseRule):
     # 规则名称
     name = "My Custom Rule"
 
+    # 规则中文显示名称
+    display_name = "自定义规则"
+
     # 规则描述
     description = "检查自定义模式"
 
     # 默认严重级别: warning | error
     default_severity = "warning"
+
+    # 定义 ViolationType（sub_type + message + severity 绑定）
+    class SubType:
+        BAD_PATTERN = ViolationType("bad_pattern", "发现不良模式: {desc}")
+        CRITICAL_ISSUE = ViolationType("critical_issue", "发现严重问题", Severity.ERROR)
 
     def check(self, file_path, content, lines, changed_lines):
         """
@@ -49,10 +58,12 @@ class MyCustomRule(BaseRule):
             # 你的检查逻辑
             if "bad_pattern" in line:
                 violations.append(self.create_violation(
-                    file_path,
-                    line_num,
-                    1,  # column
-                    "发现不良模式"
+                    file_path=file_path,
+                    line=line_num,
+                    column=1,
+                    lines=lines,
+                    violation_type=self.SubType.BAD_PATTERN,
+                    message_vars={"desc": line.strip()}  # 可选：替换消息中的变量
                 ))
 
         return violations
@@ -86,13 +97,18 @@ def check(self, file_path, content, lines, changed_lines):
 
 ```python
 import re
-from core.lint.rule_engine import BaseRule
+from core.lint.rules.base_rule import BaseRule
+from core.lint.reporter import ViolationType
 
 class HardcodedStringRule(BaseRule):
     identifier = "hardcoded_string"
     name = "Hardcoded String Check"
+    display_name = "硬编码字符串"
     description = "检查硬编码的中文字符串"
     default_severity = "warning"
+
+    class SubType:
+        CHINESE_STRING = ViolationType("chinese_string", "发现硬编码中文字符串: {text}")
 
     def check(self, file_path, content, lines, changed_lines):
         violations = []
@@ -107,10 +123,12 @@ class HardcodedStringRule(BaseRule):
             matches = pattern.finditer(line)
             for match in matches:
                 violations.append(self.create_violation(
-                    file_path,
-                    line_num,
-                    match.start() + 1,
-                    f"发现硬编码中文字符串: {match.group()}"
+                    file_path=file_path,
+                    line=line_num,
+                    column=match.start() + 1,
+                    lines=lines,
+                    violation_type=self.SubType.CHINESE_STRING,
+                    message_vars={"text": match.group()}
                 ))
 
         return violations

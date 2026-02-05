@@ -5,7 +5,16 @@ import re
 from typing import List, Set, Tuple
 
 from ..base_rule import BaseRule
-from core.lint.reporter import Violation
+from core.lint.reporter import Violation, ViolationType
+
+
+# SubType 定义
+class SubType:
+    """protocol_naming 规则的子类型"""
+    MISSING_PREFIX = ViolationType(
+        "missing_prefix",
+        "协议 '{protocol}' 应使用指定前缀（{prefixes}）"
+    )
 
 
 class ProtocolNamingRule(BaseRule):
@@ -14,6 +23,7 @@ class ProtocolNamingRule(BaseRule):
     identifier = "protocol_naming"
     name = "Protocol Naming Check"
     description = "检查协议命名是否使用指定前缀"
+    display_name = "协议命名"
     default_severity = "warning"
 
     # @protocol XXXDelegate <NSObject>
@@ -48,9 +58,10 @@ class ProtocolNamingRule(BaseRule):
                             file_path=file_path,
                             line=line_num,
                             column=match.start(1) + 1,
-                            message=f"协议 '{protocol_name}' 应使用指定前缀（{prefixes_str}）",
                             lines=lines,
-                            related_lines=self.get_related_lines(file_path, line_num, lines)
+                            violation_type=SubType.MISSING_PREFIX,
+                            related_lines=self.get_related_lines(file_path, line_num, lines),
+                            message_vars={"protocol": protocol_name, "prefixes": prefixes_str}
                         ))
 
         return violations

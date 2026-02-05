@@ -5,7 +5,16 @@ import re
 from typing import List, Set
 
 from ..base_rule import BaseRule
-from core.lint.reporter import Violation
+from core.lint.reporter import Violation, ViolationType
+
+
+# SubType 定义
+class SubType:
+    """class_prefix 规则的子类型"""
+    MISSING_PREFIX = ViolationType(
+        "missing_prefix",
+        "类名 '{class_name}' 应使用前缀 '{prefix}'"
+    )
 
 
 class ClassPrefixRule(BaseRule):
@@ -14,6 +23,7 @@ class ClassPrefixRule(BaseRule):
     identifier = "class_prefix"
     name = "Class Prefix Check"
     description = "检查类名是否使用指定前缀"
+    display_name = "类名前缀"
     default_severity = "warning"
 
     def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
@@ -49,9 +59,10 @@ class ClassPrefixRule(BaseRule):
                         file_path=file_path,
                         line=line_num,
                         column=match.start(1) + 1,
-                        message=f"类名 '{class_name}' 应使用前缀 '{prefix}'",
                         lines=lines,
-                        related_lines=related_lines
+                        violation_type=SubType.MISSING_PREFIX,
+                        related_lines=related_lines,
+                        message_vars={"class_name": class_name, "prefix": prefix}
                     ))
 
         return violations

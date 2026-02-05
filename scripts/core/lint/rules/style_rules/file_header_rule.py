@@ -1,11 +1,16 @@
 """
 File Header Rule - 文件头注释检查
 """
-import re
 from typing import List, Set, Tuple
 
 from ..base_rule import BaseRule
-from core.lint.reporter import Violation
+from core.lint.reporter import Violation, ViolationType
+
+
+# SubType 定义
+class SubType:
+    """file_header 规则的子类型"""
+    MISSING_KEYWORD = ViolationType("missing_keyword", "文件头注释缺少必要信息: {keyword}")
 
 
 class FileHeaderRule(BaseRule):
@@ -14,6 +19,7 @@ class FileHeaderRule(BaseRule):
     identifier = "file_header"
     name = "File Header Check"
     description = "检查文件是否包含必要的头注释"
+    display_name = "文件头注释"
     default_severity = "warning"
 
     def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
@@ -37,9 +43,10 @@ class FileHeaderRule(BaseRule):
                     file_path=file_path,
                     line=1,
                     column=1,
-                    message=f"文件头注释缺少必要信息: {keyword}",
                     lines=lines,
-                    related_lines=related_lines
+                    violation_type=SubType.MISSING_KEYWORD,
+                    related_lines=related_lines,
+                    message_vars={"keyword": keyword}
                 ))
                 break  # 只报告一次
 

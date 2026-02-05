@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 from .db import Database
 from .auth import SessionStore
 from .ui import render_dashboard, render_login, render_register, render_users
+from .ui.violations import render_violations_list, render_violation_detail
 
 
 PROJECT_TOKEN_SEP = "|||"
@@ -205,6 +206,33 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_html(200, render_users(users))
             return
 
+        # Violations 列表页
+        if path == "/violations":
+            session = self._require_login()
+            if not session:
+                return
+            self._handle_violations_page(session, query)
+            return
+
+        # Violation 详情页
+        if path.startswith("/violations/"):
+            session = self._require_login()
+            if not session:
+                return
+            violation_id = path[12:]  # 去掉 "/violations/" 前缀
+            self._handle_violation_detail_page(session, query, violation_id)
+            return
+
+        # API: 获取 project_key 列表
+        if path == "/api/v1/project_keys":
+            self._handle_get_project_keys()
+            return
+
+        # API: 获取 project_name 列表（级联选择）
+        if path == "/api/v1/project_names":
+            self._handle_get_project_names(query)
+            return
+
         # API: 获取违规详情
         if path == "/api/v1/violations":
             self._handle_get_violations(query)
@@ -222,10 +250,13 @@ class RequestHandler(BaseHTTPRequestHandler):
         username, role = session
         state = self._get_state()
 
+        # 级联选择：project_key → project_name
+        project_key = query.get("project_key", [""])[0].strip() or None
+        project_name = query.get("project_name", [""])[0].strip() or None
+
+        # 兼容旧的 project token 格式
         project_token = query.get("project", [""])[0].strip()
-        project_key = None
-        project_name = None
-        if project_token:
+        if project_token and not project_key:
             if PROJECT_TOKEN_SEP in project_token:
                 parts = project_token.split(PROJECT_TOKEN_SEP, 1)
                 project_key = parts[0] or None
@@ -244,10 +275,12 @@ class RequestHandler(BaseHTTPRequestHandler):
                 except ValueError:
                     days = None
 
-        projects = state.db.list_projects()
+        # 获取 project_keys 列表（用于级联选择）
+        project_keys = state.db.list_project_keys()
+        # 获取当前 project_key 下的 project_names
+        project_names = state.db.list_project_names(project_key) if project_key else []
 
         # 使用去重后的 violations 表数据作为主要统计
-        # daily 现在返回单条记录：(今日, total, warning, error)
         current_stats = state.db.get_current_violations_summary(project_key, project_name)
         # 构造兼容的 daily 格式：[(day, total, warning, error)]
         from datetime import date
@@ -258,9 +291,12 @@ class RequestHandler(BaseHTTPRequestHandler):
         rules = state.db.get_current_rule_stats(project_key, project_name)
         autofix = state.db.get_autofix_summary(project_key, project_name, start_date, end_date, days)
 
+        # 获取今日新增 Violation Type
+        new_types = []
+        if project_key and project_name:
+            new_types = state.db.get_new_violation_types_today(project_key, project_name)
+
         # Determine chart granularity based on date range
-        # Same day query -> hourly granularity
-        # Otherwise -> daily granularity
         chart_granularity = "day"
         if start_date and end_date and start_date == end_date:
             chart_granularity = "hour"
@@ -272,17 +308,20 @@ class RequestHandler(BaseHTTPRequestHandler):
         self._send_html(
             200,
             render_dashboard(
-                username,
-                role,
-                projects,
-                daily,
-                rules,
-                autofix,
-                project_token or None,
-                start_date,
-                end_date,
-                chart_data,
-                chart_granularity,
+                username=username,
+                role=role,
+                project_keys=project_keys,
+                project_names=project_names,
+                selected_project_key=project_key,
+                selected_project_name=project_name,
+                daily=daily,
+                rules=rules,
+                autofix=autofix,
+                start_date=start_date,
+                end_date=end_date,
+                chart_data=chart_data,
+                chart_granularity=chart_granularity,
+                new_violation_types=new_types,
             ),
         )
 
@@ -434,40 +473,149 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         self._send_json(200, {"success": True})
 
-    def _handle_get_violations(self, query: Dict) -> None:
-        """处理获取违规详情请求"""
+    def _handle_violations_page(self, session: Tuple[str, str], query: Dict) -> None:
+        """处理 Violations 列表页"""
+        username, role = session
+        state = self._get_state()
+
+        project_key = (query.get("project_key") or [""])[0].strip()
+        project_name = (query.get("project_name") or [""])[0].strip()
+
+        if not project_key or not project_name:
+            self._send_html(400, "<h1>Bad Request</h1><p>缺少 project_key 或 project_name 参数</p>")
+            return
+
+        rule_id = (query.get("rule_id") or [""])[0].strip() or None
+        sub_type = (query.get("sub_type") or [""])[0].strip() or None
+        search = (query.get("search") or [""])[0].strip() or None
+        page = 1
+        try:
+            page = int((query.get("page") or ["1"])[0])
+        except ValueError:
+            pass
+        page_size = 50
+        offset = (page - 1) * page_size
+
+        violations, total = state.db.get_violations(
+            project_key, project_name, rule_id, sub_type, None, search, page_size, offset
+        )
+
+        total_pages = (total + page_size - 1) // page_size
+
+        self._send_html(
+            200,
+            render_violations_list(
+                username=username,
+                role=role,
+                project_key=project_key,
+                project_name=project_name,
+                violations=violations,
+                total=total,
+                page=page,
+                total_pages=total_pages,
+                rule_id=rule_id,
+                sub_type=sub_type,
+                search=search,
+            ),
+        )
+
+    def _handle_violation_detail_page(
+        self,
+        session: Tuple[str, str],
+        query: Dict,
+        violation_id: str,
+    ) -> None:
+        """处理 Violation 详情页"""
+        username, role = session
+        state = self._get_state()
+
+        project_key = (query.get("project_key") or [""])[0].strip()
+        project_name = (query.get("project_name") or [""])[0].strip()
+
+        if not project_key or not project_name:
+            self._send_html(400, "<h1>Bad Request</h1><p>缺少 project_key 或 project_name 参数</p>")
+            return
+
+        violation = state.db.get_violation_by_id(project_key, project_name, violation_id)
+
+        if not violation:
+            self._send_html(404, "<h1>Not Found</h1><p>找不到该违规记录</p>")
+            return
+
+        self._send_html(
+            200,
+            render_violation_detail(
+                username=username,
+                role=role,
+                project_key=project_key,
+                project_name=project_name,
+                violation=violation,
+            ),
+        )
+
+    def _handle_get_project_keys(self) -> None:
+        """处理获取 project_key 列表请求"""
+        project_keys = self._get_state().db.list_project_keys()
+        self._send_json(200, {"project_keys": project_keys})
+
+    def _handle_get_project_names(self, query: Dict) -> None:
+        """处理获取 project_name 列表请求（级联选择）"""
         project_key = (query.get("project_key") or [""])[0].strip()
         if not project_key:
             self._send_json(400, {"error": "missing project_key"})
             return
 
+        project_names = self._get_state().db.list_project_names(project_key)
+        self._send_json(200, {
+            "project_key": project_key,
+            "project_names": project_names,
+        })
+
+    def _handle_get_violations(self, query: Dict) -> None:
+        """处理获取违规详情请求"""
+        project_key = (query.get("project_key") or [""])[0].strip()
+        project_name = (query.get("project_name") or [""])[0].strip()
+        if not project_key or not project_name:
+            self._send_json(400, {"error": "missing project_key or project_name"})
+            return
+
         rule_id = (query.get("rule_id") or [""])[0].strip() or None
+        sub_type = (query.get("sub_type") or [""])[0].strip() or None
         file_path = (query.get("file") or [""])[0].strip() or None
+        search = (query.get("search") or [""])[0].strip() or None
         limit = 100
+        offset = 0
         try:
             limit = int((query.get("limit") or ["100"])[0])
+            offset = int((query.get("offset") or ["0"])[0])
         except ValueError:
             pass
 
-        violations = self._get_state().db.get_violations(
-            project_key, rule_id, file_path, limit
+        violations, total = self._get_state().db.get_violations(
+            project_key, project_name, rule_id, sub_type, file_path, search, limit, offset
         )
         self._send_json(200, {
             "project_key": project_key,
+            "project_name": project_name,
+            "total": total,
             "count": len(violations),
+            "offset": offset,
+            "limit": limit,
             "violations": violations,
         })
 
     def _handle_violations_stats(self, query: Dict) -> None:
         """处理获取违规统计请求（去重后的实际违规数）"""
         project_key = (query.get("project_key") or [""])[0].strip()
-        if not project_key:
-            self._send_json(400, {"error": "missing project_key"})
+        project_name = (query.get("project_name") or [""])[0].strip()
+        if not project_key or not project_name:
+            self._send_json(400, {"error": "missing project_key or project_name"})
             return
 
-        stats = self._get_state().db.get_violations_stats(project_key)
+        stats = self._get_state().db.get_violations_stats(project_key, project_name)
         self._send_json(200, {
             "project_key": project_key,
+            "project_name": project_name,
             **stats,
         })
 
@@ -491,13 +639,14 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         project_key = data.get("project_key", "")
+        project_name = data.get("project_name", "")
         days = data.get("days", 30)
 
-        if not project_key:
-            self._send_json(400, {"error": "missing project_key"})
+        if not project_key or not project_name:
+            self._send_json(400, {"error": "missing project_key or project_name"})
             return
 
-        deleted = self._get_state().db.cleanup_stale_violations(project_key, days)
+        deleted = self._get_state().db.cleanup_stale_violations(project_key, project_name, days)
         self._send_json(200, {
             "success": True,
             "deleted": deleted,

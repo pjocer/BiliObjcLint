@@ -4,7 +4,13 @@ Line Length Rule - 行长度检查
 from typing import List, Set
 
 from ..base_rule import BaseRule
-from core.lint.reporter import Violation
+from core.lint.reporter import Violation, ViolationType
+
+
+# SubType 定义
+class SubType:
+    """line_length 规则的子类型"""
+    TOO_LONG = ViolationType("too_long", "行长度 {length} 超过限制 {max_length}")
 
 
 class LineLengthRule(BaseRule):
@@ -13,6 +19,7 @@ class LineLengthRule(BaseRule):
     identifier = "line_length"
     name = "Line Length Check"
     description = "检查代码行是否超过最大长度"
+    display_name = "行长度"
     default_severity = "warning"
 
     def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
@@ -40,9 +47,10 @@ class LineLengthRule(BaseRule):
                     file_path=file_path,
                     line=line_num,
                     column=max_length + 1,
-                    message=f"行长度 {visual_length} 超过限制 {max_length}",
                     lines=lines,
-                    related_lines=related_lines
+                    violation_type=SubType.TOO_LONG,
+                    related_lines=related_lines,
+                    message_vars={"length": str(visual_length), "max_length": str(max_length)}
                 ))
 
         return violations

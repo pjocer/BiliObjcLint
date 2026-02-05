@@ -6,7 +6,13 @@ from typing import List, Set, Tuple
 
 from ..base_rule import BaseRule
 from ..rule_utils import find_matching_brace
-from core.lint.reporter import Violation
+from core.lint.reporter import Violation, ViolationType
+
+
+# SubType 定义
+class SubType:
+    """method_length 规则的子类型"""
+    TOO_LONG = ViolationType("too_long", "方法 '{method}' 共 {length} 行，超过限制 {max_lines} 行")
 
 
 class MethodLengthRule(BaseRule):
@@ -15,6 +21,7 @@ class MethodLengthRule(BaseRule):
     identifier = "method_length"
     name = "Method Length Check"
     description = "检查方法是否超过最大行数"
+    display_name = "方法长度"
     default_severity = "warning"
 
     # 方法声明模式
@@ -49,9 +56,10 @@ class MethodLengthRule(BaseRule):
                         file_path=file_path,
                         line=method_start_line,
                         column=1,
-                        message=f"方法 '{method_name}' 共 {method_length} 行，超过限制 {max_lines} 行",
                         lines=lines,
-                        related_lines=related_lines
+                        violation_type=SubType.TOO_LONG,
+                        related_lines=related_lines,
+                        message_vars={"method": method_name, "length": str(method_length), "max_lines": str(max_lines)}
                     ))
 
                 # 跳到方法结束行之后继续扫描
