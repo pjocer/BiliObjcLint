@@ -6,6 +6,7 @@ from typing import List, Set, Optional, Tuple
 from dataclasses import dataclass
 
 from ..base_rule import BaseRule
+from ..rule_utils import find_matching_brace, get_method_range
 from core.lint.reporter import Violation, Severity
 
 
@@ -96,14 +97,18 @@ class BlockRetainCycleRule(BaseRule):
             weak_decls = self._find_weak_declarations(lines, method_start, line_num)
             strong_decls = self._find_strong_declarations(lines, method_start, line_num)
 
+            # 获取 related_lines
+            related_lines = self.get_related_lines(file_path, line_num, lines)
+
             # 检测混用 warning
             if self._has_mixed_usage(weak_decls):
-                violations.append(self._create_violation_with_severity(
+                violations.append(self.create_violation_with_severity(
                     file_path=file_path,
                     line=line_num,
                     column=1,
                     message="不建议混用 __weak typeof(self) 和 @weakify(self)，请保持一致性",
-                    severity=Severity.WARNING
+                    severity=Severity.WARNING,
+                    related_lines=related_lines
                 ))
 
             # 检测 block 调用上下文
@@ -119,25 +124,13 @@ class BlockRetainCycleRule(BaseRule):
                     weak_decls=weak_decls,
                     strong_decls=strong_decls,
                     block_context=block_context,
-                    line=line
+                    line=line,
+                    related_lines=related_lines
                 )
                 if violation:
                     violations.append(violation)
 
         return violations
-
-    def _create_violation_with_severity(self, file_path: str, line: int, column: int,
-                                        message: str, severity: Severity) -> Violation:
-        """创建带自定义 severity 的 violation"""
-        return Violation(
-            file_path=file_path,
-            line=line,
-            column=column,
-            severity=severity,
-            message=message,
-            rule_id=self.identifier,
-            source='biliobjclint'
-        )
 
     def _line_contains_self(self, line: str) -> bool:
         """检查行是否包含 self（排除注释和字符串中的）"""
@@ -173,7 +166,12 @@ class BlockRetainCycleRule(BaseRule):
                 if 'self' in after_block:
                     return True
 
-        for i in range(line_num - 2, max(0, line_num - 100), -1):
+        # 获取方法起始行，作为搜索边界
+        method_start = self._find_method_start(lines, line_num)
+
+        for i in range(line_num - 2, method_start - 2, -1):
+            if i < 0:
+                break
             line = lines[i]
 
             # 如果遇到方法定义，停止搜索（已离开当前方法作用域）
@@ -271,7 +269,11 @@ class BlockRetainCycleRule(BaseRule):
         # 向上查找包含 block 的方法调用
         # 不在 block 开始处停止，继续查找外层上下文
         # line_num 是 1-indexed，lines 是 0-indexed
-        for i in range(line_num - 2, max(0, line_num - 30), -1):
+        method_start = self._find_method_start(lines, line_num)
+
+        for i in range(line_num - 2, method_start - 2, -1):
+            if i < 0:
+                break
             line = lines[i]
 
             # 如果遇到方法定义，停止搜索
@@ -349,7 +351,8 @@ class BlockRetainCycleRule(BaseRule):
     def _check_self_usage(self, file_path: str, line_num: int, column: int,
                           usage_type: str, weak_decls: List[WeakDeclaration],
                           strong_decls: List[StrongDeclaration],
-                          block_context: str, line: str) -> Optional[Violation]:
+                          block_context: str, line: str,
+                          related_lines: Tuple[int, int]) -> Optional[Violation]:
         """
         检查单个 self 使用是否违规
 
@@ -367,24 +370,26 @@ class BlockRetainCycleRule(BaseRule):
         # 规则 0: C 函数中的 block -> WARNING 或不检测
         if block_context == 'c_function':
             if usage_type == 'self':
-                return self._create_violation_with_severity(
+                return self.create_violation_with_severity(
                     file_path=file_path,
                     line=line_num,
                     column=column,
                     message="C 函数 (dispatch_async 等) 中使用 self 通常安全，但建议确认",
-                    severity=Severity.WARNING
+                    severity=Severity.WARNING,
+                    related_lines=related_lines
                 )
             return None  # 其他情况 OK
 
         # 规则 1: 类方法调用中的 block -> WARNING
         if block_context == 'class_method':
             if usage_type == 'self' and not has_weak:
-                return self._create_violation_with_severity(
+                return self.create_violation_with_severity(
                     file_path=file_path,
                     line=line_num,
                     column=column,
                     message="类方法中使用 self 可能安全，但建议使用 weakSelf 以确保无循环引用",
-                    severity=Severity.WARNING
+                    severity=Severity.WARNING,
+                    related_lines=related_lines
                 )
             return None  # 类方法中其他情况 OK
 
@@ -393,12 +398,13 @@ class BlockRetainCycleRule(BaseRule):
         # 规则 2: 无 weak 转换 -> ERROR
         if not has_weak:
             if usage_type == 'self':
-                return self._create_violation_with_severity(
+                return self.create_violation_with_severity(
                     file_path=file_path,
                     line=line_num,
                     column=column,
                     message="Block 内直接使用 self 可能导致循环引用，必须使用 weakSelf",
-                    severity=Severity.ERROR
+                    severity=Severity.ERROR,
+                    related_lines=related_lines
                 )
 
         # 规则 3: 使用 manual weak 方式
@@ -409,41 +415,45 @@ class BlockRetainCycleRule(BaseRule):
             if usage_type == 'self':
                 # 有 weak 但使用了 self -> ERROR
                 if has_strong:
-                    return self._create_violation_with_severity(
+                    return self.create_violation_with_severity(
                         file_path=file_path,
                         line=line_num,
                         column=column,
                         message=f"已声明 {strong_var_name or 'strongSelf'}，应使用它而不是 self",
-                        severity=Severity.ERROR
+                        severity=Severity.ERROR,
+                        related_lines=related_lines
                     )
                 else:
-                    return self._create_violation_with_severity(
+                    return self.create_violation_with_severity(
                         file_path=file_path,
                         line=line_num,
                         column=column,
                         message=f"已声明 {weak_var_name}，应使用它而不是 self",
-                        severity=Severity.ERROR
+                        severity=Severity.ERROR,
+                        related_lines=related_lines
                     )
 
             elif usage_type == 'weak_var':
                 # 使用 weak 变量
                 if has_strong:
                     # 有 strong 但用了 weak -> WARNING
-                    return self._create_violation_with_severity(
+                    return self.create_violation_with_severity(
                         file_path=file_path,
                         line=line_num,
                         column=column,
                         message=f"已声明 {strong_var_name or 'strongSelf'}，建议使用它而不是 weakSelf",
-                        severity=Severity.WARNING
+                        severity=Severity.WARNING,
+                        related_lines=related_lines
                     )
                 else:
                     # 无 strong，用 weak -> WARNING
-                    return self._create_violation_with_severity(
+                    return self.create_violation_with_severity(
                         file_path=file_path,
                         line=line_num,
                         column=column,
                         message="使用 weakSelf 时建议先转为 strongSelf 并检查是否为 nil",
-                        severity=Severity.WARNING
+                        severity=Severity.WARNING,
+                        related_lines=related_lines
                     )
 
             elif usage_type == 'strong_var':
@@ -458,22 +468,24 @@ class BlockRetainCycleRule(BaseRule):
                     return None
                 else:
                     # 无 @strongify，使用 self -> ERROR
-                    return self._create_violation_with_severity(
+                    return self.create_violation_with_severity(
                         file_path=file_path,
                         line=line_num,
                         column=column,
                         message="使用 @weakify 后应在 block 内添加 @strongify(self)，或使用 self_weak_",
-                        severity=Severity.ERROR
+                        severity=Severity.ERROR,
+                        related_lines=related_lines
                     )
 
             elif usage_type == 'self_weak_':
                 # 使用 self_weak_ -> WARNING (建议用 @strongify)
-                return self._create_violation_with_severity(
+                return self.create_violation_with_severity(
                     file_path=file_path,
                     line=line_num,
                     column=column,
                     message="建议添加 @strongify(self) 而不是直接使用 self_weak_",
-                    severity=Severity.WARNING
+                    severity=Severity.WARNING,
+                    related_lines=related_lines
                 )
 
         return None
@@ -492,9 +504,12 @@ class BlockRetainCycleRule(BaseRule):
     def _find_block_start_line(self, lines: List[str], line_num: int) -> int:
         """向上查找 block 开始行"""
         brace_count = 0
+        method_start = self._find_method_start(lines, line_num)
 
         # 从当前行开始向上查找
-        for i in range(line_num - 1, max(0, line_num - 100), -1):
+        for i in range(line_num - 1, method_start - 2, -1):
+            if i < 0:
+                break
             line = lines[i]
 
             # 如果遇到方法定义，停止搜索
@@ -513,19 +528,14 @@ class BlockRetainCycleRule(BaseRule):
 
     def _find_block_end_line(self, lines: List[str], start_line: int) -> int:
         """从 block 开始行向下查找 block 结束行"""
-        brace_count = 0
-        found_open_brace = False
+        # 使用括号配对算法
+        return find_matching_brace(lines, start_line, '{', '}')
 
-        for i in range(start_line - 1, min(len(lines), start_line + 200)):
-            line = lines[i]
+    def get_related_lines(self, file_path: str, line: int, lines: List[str]) -> Tuple[int, int]:
+        """
+        获取 Block 所在方法的范围
 
-            for char in line:
-                if char == '{':
-                    brace_count += 1
-                    found_open_brace = True
-                elif char == '}':
-                    brace_count -= 1
-                    if found_open_brace and brace_count == 0:
-                        return i + 1  # 1-indexed
-
-        return min(start_line + 50, len(lines))  # 找不到则返回合理范围
+        审查范围是整个方法，因为需要检查 weak/strong 声明
+        """
+        method_start = self._find_method_start(lines, line)
+        return get_method_range(lines, method_start)

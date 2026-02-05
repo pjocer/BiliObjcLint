@@ -35,11 +35,13 @@ class TodoFixmeRule(BaseRule):
                 if desc:
                     message += f": {desc}"
 
+                related_lines = self.get_related_lines(file_path, line_num, lines)
                 violations.append(self.create_violation(
                     file_path=file_path,
                     line=line_num,
                     column=match.start() + 1,
-                    message=message
+                    message=message,
+                    related_lines=related_lines
                 ))
 
         return violations

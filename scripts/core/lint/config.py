@@ -14,7 +14,7 @@ from .logger import get_logger
 class RuleConfig:
     """规则配置"""
     enabled: bool = True
-    severity: str = "warning"  # warning | error
+    severity: Optional[str] = None  # None 表示使用规则的 default_severity
     params: Dict[str, Any] = field(default_factory=dict)
 
 

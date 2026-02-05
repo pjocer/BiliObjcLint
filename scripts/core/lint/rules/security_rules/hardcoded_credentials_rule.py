@@ -38,6 +38,7 @@ class HardcodedCredentialsRule(BaseRule):
 
         # AWS
         (r'AKIA[0-9A-Z]{16}', "检测到 AWS Access Key ID"),
+        (r'(?i)aws[_-]?secret[_-]?access[_-]?key\s*[:=]\s*@?"[^"]{20,}"', "检测到 AWS Secret Access Key"),
     ]
 
     def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
@@ -47,10 +48,10 @@ class HardcodedCredentialsRule(BaseRule):
             if not self.should_check_line(line_num, changed_lines):
                 continue
 
-            # 跳过注释
-            stripped = line.strip()
-            if stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*'):
-                continue
+            # 注释中也检测凭证（凭证不应该出现在任何地方，包括注释）
+
+            # 获取 related_lines（单行）
+            related_lines = self.get_related_lines(file_path, line_num, lines)
 
             for pattern, message in self.SENSITIVE_PATTERNS:
                 if re.search(pattern, line):
@@ -58,7 +59,8 @@ class HardcodedCredentialsRule(BaseRule):
                         file_path=file_path,
                         line=line_num,
                         column=1,
-                        message=message
+                        message=message,
+                        related_lines=related_lines
                     ))
                     break  # 每行只报告一次
 

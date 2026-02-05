@@ -32,20 +32,21 @@ class FileHeaderRule(BaseRule):
 
         for keyword in required_keywords:
             if keyword not in header_lines:
+                related_lines = self.get_related_lines(file_path, 1, lines)
                 violations.append(self.create_violation(
                     file_path=file_path,
                     line=1,
                     column=1,
-                    message=f"文件头注释缺少必要信息: {keyword}"
+                    message=f"文件头注释缺少必要信息: {keyword}",
+                    related_lines=related_lines
                 ))
                 break  # 只报告一次
 
         return violations
 
-    def get_hash_context(self, file_path: str, line: int, lines: List[str],
-                         violation: Violation) -> Tuple[int, int]:
+    def get_related_lines(self, file_path: str, line: int, lines: List[str]) -> Tuple[int, int]:
         """
-        获取文件头范围作为哈希上下文
+        获取文件头范围
 
         文件头检查范围为前 20 行
         """

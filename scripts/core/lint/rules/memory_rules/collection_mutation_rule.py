@@ -5,6 +5,7 @@ import re
 from typing import List, Set
 
 from ..base_rule import BaseRule
+from ..rule_utils import SAFE_VALUE_PATTERNS
 from core.lint.reporter import Violation, Severity
 
 
@@ -13,10 +14,11 @@ class CollectionMutationRule(BaseRule):
 
     检测以下场景：
     1. dict[key] = value - 字典下标赋值，需确认 key 不为空
-    2. array[index] = value - 数组下标赋值，禁止使用，应使用 addObject: 等方法
-    3. [array addObject:value] - 需确认 value 不为空
-    4. [array insertObject:value atIndex:] - 需确认 value 不为空
-    5. [array replaceObjectAtIndex:index withObject:value] - 需确认 value 不为空
+    2. array[index] = value - 数组下标赋值（数字索引），禁止使用
+    3. array[var] = value - 数组下标赋值（变量索引），给警告
+    4. [array addObject:value] - 需确认 value 不为空
+    5. [array insertObject:value atIndex:] - 需确认 value 不为空
+    6. [array replaceObjectAtIndex:index withObject:value] - 需确认 value 不为空
     """
 
     identifier = "collection_mutation"
@@ -36,6 +38,12 @@ class CollectionMutationRule(BaseRule):
         r'(\w+(?:\.\w+)*)\s*\[\s*(\d+)\s*\]\s*='
     )
 
+    # 数组变量下标赋值: array[index] = value（警告用法）
+    # 检测下标是变量的情况
+    ARRAY_VAR_SUBSCRIPT_PATTERN = re.compile(
+        r'(\w+(?:\.\w+)*)\s*\[\s*([a-zA-Z_]\w*)\s*\]\s*='
+    )
+
     # addObject: 方法
     ADD_OBJECT_PATTERN = re.compile(
         r'\[\s*(\S+)\s+addObject\s*:\s*([^\]]+)\s*\]'
@@ -50,16 +58,6 @@ class CollectionMutationRule(BaseRule):
     REPLACE_OBJECT_PATTERN = re.compile(
         r'\[\s*(\S+)\s+replaceObjectAtIndex\s*:\s*\S+\s+withObject\s*:\s*([^\]]+)\s*\]'
     )
-
-    # 安全的值模式（与 WrapperEmptyPointerRule 相同）
-    SAFE_VALUE_PATTERNS = [
-        re.compile(r'^@".*"$'),           # 字符串字面量
-        re.compile(r'^@\d+\.?\d*$'),      # 数字字面量
-        re.compile(r'^@\(.+\)$'),         # 装箱表达式
-        re.compile(r'^@(YES|NO|TRUE|FALSE|true|false)$'),  # 布尔字面量
-        re.compile(r'^@\{.*\}$'),         # 嵌套字典
-        re.compile(r'^@\[.*\]$'),         # 嵌套数组
-    ]
 
     def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
         del content  # unused
@@ -82,19 +80,38 @@ class CollectionMutationRule(BaseRule):
             if self._is_variable_declaration(check_line):
                 continue
 
-            # 1. 检测数组下标赋值（错误用法）
+            # 获取 related_lines（单行）
+            related_lines = self.get_related_lines(file_path, line_num, lines)
+
+            # 1. 检测数组数字下标赋值（错误用法）
             array_match = self.ARRAY_SUBSCRIPT_PATTERN.search(check_line)
             if array_match:
-                violations.append(self._create_violation_with_severity(
+                violations.append(self.create_violation_with_severity(
                     file_path=file_path,
                     line=line_num,
                     column=array_match.start() + 1,
                     message="禁止使用数组下标赋值，请使用 `addObject:`、`insertObject:atIndex:` 或 `replaceObjectAtIndex:withObject:` 方法",
-                    severity=Severity.ERROR
+                    severity=Severity.ERROR,
+                    related_lines=related_lines
                 ))
                 continue  # 跳过后续检测，避免重复报告
 
-            # 2. 检测字典下标赋值
+            # 2. 检测数组变量下标赋值（警告用法）
+            array_var_match = self.ARRAY_VAR_SUBSCRIPT_PATTERN.search(check_line)
+            if array_var_match:
+                var_name = array_var_match.group(1)
+                index_var = array_var_match.group(2)
+                violations.append(self.create_violation_with_severity(
+                    file_path=file_path,
+                    line=line_num,
+                    column=array_var_match.start() + 1,
+                    message=f"数组 '{var_name}' 下标赋值使用变量索引 '{index_var}'，请确认索引有效，建议使用安全方法替代",
+                    severity=Severity.WARNING,
+                    related_lines=related_lines
+                ))
+                continue  # 跳过后续检测，避免重复报告
+
+            # 3. 检测字典下标赋值
             dict_match = self.DICT_SUBSCRIPT_PATTERN.search(check_line)
             if dict_match:
                 key = dict_match.group(2).strip()
@@ -103,10 +120,11 @@ class CollectionMutationRule(BaseRule):
                         file_path=file_path,
                         line=line_num,
                         column=dict_match.start(2) + 1,
-                        message=f"字典下标赋值时请确认 key '{key}' 不为 nil"
+                        message=f"字典下标赋值时请确认 key '{key}' 不为 nil",
+                        related_lines=related_lines
                     ))
 
-            # 3. 检测 addObject:
+            # 4. 检测 addObject:
             add_match = self.ADD_OBJECT_PATTERN.search(check_line)
             if add_match:
                 value = add_match.group(2).strip()
@@ -115,10 +133,11 @@ class CollectionMutationRule(BaseRule):
                         file_path=file_path,
                         line=line_num,
                         column=add_match.start(2) + 1,
-                        message=f"请确认 '{value}' 不为 nil"
+                        message=f"请确认 '{value}' 不为 nil",
+                        related_lines=related_lines
                     ))
 
-            # 4. 检测 insertObject:atIndex:
+            # 5. 检测 insertObject:atIndex:
             insert_match = self.INSERT_OBJECT_PATTERN.search(check_line)
             if insert_match:
                 value = insert_match.group(2).strip()
@@ -127,10 +146,11 @@ class CollectionMutationRule(BaseRule):
                         file_path=file_path,
                         line=line_num,
                         column=insert_match.start(2) + 1,
-                        message=f"请确认 '{value}' 不为 nil"
+                        message=f"请确认 '{value}' 不为 nil",
+                        related_lines=related_lines
                     ))
 
-            # 5. 检测 replaceObjectAtIndex:withObject:
+            # 6. 检测 replaceObjectAtIndex:withObject:
             replace_match = self.REPLACE_OBJECT_PATTERN.search(check_line)
             if replace_match:
                 value = replace_match.group(2).strip()
@@ -139,23 +159,11 @@ class CollectionMutationRule(BaseRule):
                         file_path=file_path,
                         line=line_num,
                         column=replace_match.start(2) + 1,
-                        message=f"请确认 '{value}' 不为 nil"
+                        message=f"请确认 '{value}' 不为 nil",
+                        related_lines=related_lines
                     ))
 
         return violations
-
-    def _create_violation_with_severity(self, file_path: str, line: int, column: int,
-                                        message: str, severity: Severity) -> Violation:
-        """创建带自定义 severity 的 violation"""
-        return Violation(
-            file_path=file_path,
-            line=line,
-            column=column,
-            severity=severity,
-            message=message,
-            rule_id=self.identifier,
-            source='biliobjclint'
-        )
 
     def _is_variable_declaration(self, line: str) -> bool:
         """检查是否是变量声明行"""
@@ -211,7 +219,8 @@ class CollectionMutationRule(BaseRule):
         if not value:
             return True
 
-        for pattern in self.SAFE_VALUE_PATTERNS:
+        # 使用 rule_utils 中的 SAFE_VALUE_PATTERNS
+        for pattern in SAFE_VALUE_PATTERNS:
             if pattern.match(value):
                 return True
 

@@ -48,11 +48,13 @@ class DictUsageRule(BaseRule):
             # 检测 setObject:forKey: 使用
             match = self.SET_OBJECT_PATTERN.search(check_line)
             if match:
+                related_lines = self.get_related_lines(file_path, line_num, lines)
                 violations.append(self.create_violation(
                     file_path=file_path,
                     line=line_num,
                     column=match.start() + 1,
-                    message="请确认 object 非空，建议使用 `setValue:forKey:` 替代"
+                    message="请确认 object 非空，或使用 nil-safe 封装",
+                    related_lines=related_lines
                 ))
 
         return violations

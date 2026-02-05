@@ -1,7 +1,6 @@
 """
 Line Length Rule - 行长度检查
 """
-import re
 from typing import List, Set
 
 from ..base_rule import BaseRule
@@ -20,6 +19,7 @@ class LineLengthRule(BaseRule):
         violations = []
 
         max_length = self.get_param("max_length", 120)
+        tab_width = self.get_param("tab_width", 4)  # 制表符宽度，默认 4 空格
 
         for line_num, line in enumerate(lines, 1):
             if not self.should_check_line(line_num, changed_lines):
@@ -31,13 +31,32 @@ class LineLengthRule(BaseRule):
             if line.strip().startswith('#import') or line.strip().startswith('@import'):
                 continue
 
-            line_length = len(line)
-            if line_length > max_length:
+            # 计算视觉长度（展开制表符）
+            visual_length = self._calculate_visual_length(line, tab_width)
+
+            if visual_length > max_length:
+                related_lines = self.get_related_lines(file_path, line_num, lines)
                 violations.append(self.create_violation(
                     file_path=file_path,
                     line=line_num,
                     column=max_length + 1,
-                    message=f"行长度 {line_length} 超过限制 {max_length}"
+                    message=f"行长度 {visual_length} 超过限制 {max_length}",
+                    related_lines=related_lines
                 ))
 
         return violations
+
+    def _calculate_visual_length(self, line: str, tab_width: int) -> int:
+        """
+        计算行的视觉长度（展开制表符）
+
+        制表符会对齐到下一个 tab_width 的倍数位置
+        """
+        visual_length = 0
+        for char in line:
+            if char == '\t':
+                # 制表符对齐到下一个 tab_width 倍数
+                visual_length += tab_width - (visual_length % tab_width)
+            else:
+                visual_length += 1
+        return visual_length

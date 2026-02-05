@@ -5,6 +5,7 @@ import re
 from typing import List, Set, Optional, Tuple
 
 from ..base_rule import BaseRule
+from ..rule_utils import find_matching_brace, is_safe_value, SAFE_VALUE_PATTERNS
 from core.lint.reporter import Violation
 
 
@@ -18,17 +19,6 @@ class WrapperEmptyPointerRule(BaseRule):
     name = "Wrapper Empty Pointer Check"
     description = "检查容器字面量中的元素是否可能为 nil"
     default_severity = "warning"
-
-    # 安全的值模式（一定非 nil）
-    SAFE_VALUE_PATTERNS = [
-        re.compile(r'^@".*"$'),           # 字符串字面量
-        re.compile(r'^@\d+\.?\d*$'),      # 数字字面量 @123, @3.14
-        re.compile(r'^@\(.+\)$'),         # 装箱表达式 @(expr)
-        re.compile(r'^@(YES|NO|TRUE|FALSE|true|false)$'),  # 布尔字面量
-        re.compile(r'^@\{.*\}$'),         # 嵌套字典
-        re.compile(r'^@\[.*\]$'),         # 嵌套数组
-        re.compile(r'^nil$'),             # nil 本身（虽然不安全，但这是显式的）
-    ]
 
     def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
         violations = []
@@ -48,6 +38,9 @@ class WrapperEmptyPointerRule(BaseRule):
             if stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*'):
                 continue
 
+            # 通过 get_related_lines 获取容器范围
+            related_lines = self.get_related_lines(file_path, line_num, lines)
+
             # 检查容器中的每个值
             for value_info in container['values']:
                 value = value_info['value']
@@ -61,7 +54,8 @@ class WrapperEmptyPointerRule(BaseRule):
                         file_path=file_path,
                         line=line_num,
                         column=col,
-                        message=f"'{warn_value}' 可能为 nil，请确认其值一定不为空"
+                        message=f"'{warn_value}' 可能为 nil，请确认其值一定不为空",
+                        related_lines=related_lines
                     ))
 
         return violations
@@ -396,8 +390,8 @@ class WrapperEmptyPointerRule(BaseRule):
         if not value:
             return True, None
 
-        # 检查是否匹配安全模式
-        for pattern in self.SAFE_VALUE_PATTERNS:
+        # 检查是否匹配安全模式（使用 rule_utils 中的 SAFE_VALUE_PATTERNS）
+        for pattern in SAFE_VALUE_PATTERNS:
             if pattern.match(value):
                 return True, None
 
@@ -497,7 +491,8 @@ class WrapperEmptyPointerRule(BaseRule):
         if not value:
             return True, None
 
-        for pattern in self.SAFE_VALUE_PATTERNS:
+        # 使用 rule_utils 中的 SAFE_VALUE_PATTERNS
+        for pattern in SAFE_VALUE_PATTERNS:
             if pattern.match(value):
                 return True, None
 
@@ -508,13 +503,11 @@ class WrapperEmptyPointerRule(BaseRule):
 
         return False, None
 
-    def get_hash_context(self, file_path: str, line: int, lines: List[str],
-                         violation: Violation) -> Tuple[int, int]:
+    def get_related_lines(self, file_path: str, line: int, lines: List[str]) -> Tuple[int, int]:
         """
-        获取容器字面量范围作为哈希上下文
+        获取容器字面量范围
 
-        容器范围从 @{ 或 @[ 开始到匹配的 } 或 ] 结束
-        支持多行容器
+        从 @{ 或 @[ 开始到匹配的 } 或 ] 结束
         """
         container_start = self._find_container_start_line(lines, line)
         container_end = self._find_container_end_line(lines, container_start)
@@ -548,24 +541,8 @@ class WrapperEmptyPointerRule(BaseRule):
         """从容器开始行向下查找容器结束行"""
         start_content = lines[start_line - 1] if start_line <= len(lines) else ''
 
-        # 判断是字典还是数组
-        is_dict = '@{' in start_content
-
-        count = 0
-        found_open = False
-        open_char = '{' if is_dict else '['
-        close_char = '}' if is_dict else ']'
-
-        for i in range(start_line - 1, min(len(lines), start_line + 50)):
-            line = lines[i]
-
-            for char in line:
-                if char == open_char:
-                    count += 1
-                    found_open = True
-                elif char == close_char:
-                    count -= 1
-                    if found_open and count == 0:
-                        return i + 1
-
-        return min(start_line + 20, len(lines))
+        # 判断是字典还是数组，使用 find_matching_brace 进行括号配对
+        if '@{' in start_content:
+            return find_matching_brace(lines, start_line, '{', '}')
+        else:
+            return find_matching_brace(lines, start_line, '[', ']')

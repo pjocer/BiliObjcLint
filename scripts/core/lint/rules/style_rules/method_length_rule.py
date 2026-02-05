@@ -5,6 +5,7 @@ import re
 from typing import List, Set, Tuple
 
 from ..base_rule import BaseRule
+from ..rule_utils import find_matching_brace
 from core.lint.reporter import Violation
 
 
@@ -16,60 +17,54 @@ class MethodLengthRule(BaseRule):
     description = "检查方法是否超过最大行数"
     default_severity = "warning"
 
+    # 方法声明模式
+    METHOD_START_PATTERN = re.compile(r'^[-+]\s*\([^)]+\)')
+    # 方法名提取模式
+    METHOD_NAME_PATTERN = re.compile(r'^[-+]\s*\([^)]+\)\s*([a-zA-Z_][a-zA-Z0-9_:]*)')
+
     def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
         violations = []
 
         max_lines = self.get_param("max_lines", 80)
+        line_num = 1
 
-        # 简单的方法检测：匹配方法开始和结束
-        method_start_pattern = r'^[-+]\s*\([^)]+\)'
-        brace_count = 0
-        in_method = False
-        method_start_line = 0
-        method_name = ""
+        while line_num <= len(lines):
+            line = lines[line_num - 1]
 
-        for line_num, line in enumerate(lines, 1):
             # 检测方法开始
-            if re.match(method_start_pattern, line.strip()):
-                in_method = True
+            if self.METHOD_START_PATTERN.match(line.strip()):
                 method_start_line = line_num
-                brace_count = 0
 
                 # 提取方法名
-                match = re.search(r'^[-+]\s*\([^)]+\)\s*([a-zA-Z_][a-zA-Z0-9_:]*)', line.strip())
-                if match:
-                    method_name = match.group(1)
+                match = self.METHOD_NAME_PATTERN.search(line.strip())
+                method_name = match.group(1) if match else "unknown"
 
-            if in_method:
-                brace_count += line.count('{') - line.count('}')
+                # 通过 get_related_lines 获取方法范围
+                related_lines = self.get_related_lines(file_path, method_start_line, lines)
+                method_end_line = related_lines[1]
+                method_length = method_end_line - method_start_line + 1
 
-                # 方法结束
-                if brace_count <= 0 and '{' in content[sum(len(l)+1 for l in lines[:method_start_line]):]:
-                    method_length = line_num - method_start_line + 1
-                    method_end_line = line_num
+                if method_length > max_lines:
+                    violations.append(self.create_violation(
+                        file_path=file_path,
+                        line=method_start_line,
+                        column=1,
+                        message=f"方法 '{method_name}' 共 {method_length} 行，超过限制 {max_lines} 行",
+                        related_lines=related_lines
+                    ))
 
-                    if method_length > max_lines:
-                        # 始终在方法定义行报告违规，设置 related_lines 为方法范围
-                        # 增量过滤时会检查 related_lines 与 changed_lines 是否有交集
-                        violations.append(self.create_violation(
-                            file_path=file_path,
-                            line=method_start_line,
-                            column=1,
-                            message=f"方法 '{method_name}' 共 {method_length} 行，超过限制 {max_lines} 行",
-                            related_lines=(method_start_line, method_end_line)
-                        ))
-
-                    in_method = False
+                # 跳到方法结束行之后继续扫描
+                line_num = method_end_line + 1
+            else:
+                line_num += 1
 
         return violations
 
-    def get_hash_context(self, file_path: str, line: int, lines: List[str],
-                         violation: Violation) -> Tuple[int, int]:
+    def get_related_lines(self, file_path: str, line: int, lines: List[str]) -> Tuple[int, int]:
         """
-        获取方法范围作为哈希上下文
+        获取方法范围
 
-        使用 violation 中已有的 related_lines 字段
+        从方法声明行到匹配的闭合大括号
         """
-        if violation.related_lines:
-            return violation.related_lines
-        return (line, line)
+        method_end = find_matching_brace(lines, line, '{', '}')
+        return (line, method_end)

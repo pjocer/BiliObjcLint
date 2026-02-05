@@ -44,11 +44,13 @@ class ClassPrefixRule(BaseRule):
 
                 # 检查是否使用了指定前缀
                 if not class_name.startswith(prefix):
+                    related_lines = self.get_related_lines(file_path, line_num, lines)
                     violations.append(self.create_violation(
                         file_path=file_path,
                         line=line_num,
                         column=match.start(1) + 1,
-                        message=f"类名 '{class_name}' 应使用前缀 '{prefix}'"
+                        message=f"类名 '{class_name}' 应使用前缀 '{prefix}'",
+                        related_lines=related_lines
                     ))
 
         return violations

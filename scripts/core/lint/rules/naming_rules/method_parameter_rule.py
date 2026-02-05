@@ -2,9 +2,10 @@
 Method Parameter Rule - 方法参数数量检查
 """
 import re
-from typing import List, Set
+from typing import List, Set, Tuple
 
 from ..base_rule import BaseRule
+from ..rule_utils import strip_line_comment
 from core.lint.reporter import Violation
 
 
@@ -16,36 +17,71 @@ class MethodParameterRule(BaseRule):
     description = "检查方法参数数量是否超过限制"
     default_severity = "warning"
 
+    # 方法声明模式
+    METHOD_START_PATTERN = re.compile(r'^[-+]\s*\([^)]+\)')
+
     def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
         violations = []
         max_params = self.get_param("max_params", 4)
 
-        # 检测方法声明行（以 - 或 + 开头）
-        method_start_pattern = r'^[-+]\s*\([^)]+\)'
-
-        for line_num, line in enumerate(lines, 1):
-            if not self.should_check_line(line_num, changed_lines):
-                continue
+        line_num = 1
+        while line_num <= len(lines):
+            line = lines[line_num - 1]
 
             # 去除注释
-            code_line = line.split('//')[0]
+            code_line = strip_line_comment(line)
 
             # 检查是否是方法定义行
-            if re.match(method_start_pattern, code_line.strip()):
-                # 计算参数数量：统计该行中冒号的数量
-                param_count = code_line.count(':')
+            if self.METHOD_START_PATTERN.match(code_line.strip()):
+                method_start = line_num
+                # 通过 get_related_lines 获取方法声明范围
+                related_lines = self.get_related_lines(file_path, method_start, lines)
+                method_end = related_lines[1]
+
+                # 合并多行方法声明
+                full_declaration = ' '.join(
+                    strip_line_comment(lines[i]) for i in range(method_start - 1, method_end)
+                )
+
+                # 计算参数数量：统计冒号数量
+                param_count = full_declaration.count(':')
 
                 if param_count > max_params:
-                    # 提取方法选择器名（去除参数类型和参数名）
-                    # 例如: "- (void)t:(BOOL)t f:(BOOL)f" -> "t:f:"
-                    selector_parts = re.findall(r'([a-zA-Z_][a-zA-Z0-9_]*):', code_line)
+                    # 提取方法选择器名
+                    selector_parts = re.findall(r'([a-zA-Z_][a-zA-Z0-9_]*):', full_declaration)
                     method_selector = ':'.join(selector_parts) + ':' if selector_parts else 'unknown'
 
                     violations.append(self.create_violation(
                         file_path=file_path,
-                        line=line_num,
+                        line=method_start,
                         column=1,
-                        message=f"方法 '{method_selector}' 有 {param_count} 个参数，超过限制 {max_params} 个"
+                        message=f"方法 '{method_selector}' 有 {param_count} 个参数，超过限制 {max_params} 个",
+                        related_lines=related_lines
                     ))
 
+                line_num = method_end + 1
+            else:
+                line_num += 1
+
         return violations
+
+    def _find_method_declaration_end(self, lines: List[str], start_line: int) -> int:
+        """
+        查找方法声明的结束行
+
+        方法声明以 ; 或 { 结束
+        """
+        for i in range(start_line - 1, min(len(lines), start_line + 20)):
+            code_line = strip_line_comment(lines[i])
+            if ';' in code_line or '{' in code_line:
+                return i + 1
+        return start_line
+
+    def get_related_lines(self, file_path: str, line: int, lines: List[str]) -> Tuple[int, int]:
+        """
+        获取方法声明范围
+
+        从方法定义行到 ; 或 {
+        """
+        method_end = self._find_method_declaration_end(lines, line)
+        return (line, method_end)
