@@ -143,6 +143,10 @@ class BiliObjCLint:
         self.logger.info(f"Elapsed time: {elapsed:.2f}s")
         self.logger.log_separator("BiliObjCLint Session End")
 
+        # 统一去重和排序（确保 JSON 输出、Xcode 输出、Metrics 上报数据一致）
+        self.reporter.deduplicate()
+        self.reporter.sort()
+
         # 如果指定了 --json-file，同时输出 JSON 到文件（用于 Claude fixer）
         if self.args.json_file:
             try:
@@ -256,7 +260,8 @@ class BiliObjCLint:
             local_pod_files = self._get_local_pod_files()
             files.extend(local_pod_files)
 
-        return files
+        # 去重（防止主工程和本地 Pod 文件重叠）
+        return list(dict.fromkeys(files))
 
     def _get_local_pod_files(self) -> List[str]:
         """获取本地 Pod 中的文件"""
