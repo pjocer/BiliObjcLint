@@ -2,109 +2,37 @@
 
 所有重要的版本更新都会记录在此文件中。
 
-## v1.4.11 (2026-02-05)
+## v1.5.0 (2026-02-05)
 
-### 改进
-- **Dashboard 规则显示优化**
-  - 规则显示 `display_name`（中文），hover 展示 `rule_id` + `description`
-  - 「今日新增 Violation Type」与「规则统计」使用完全相同的显示逻辑
-  - Client 上报规则的 `display_name` 和 `description`
-  - Server `rule_counts` 表新增 `description` 字段存储规则描述
-
-## v1.4.10 (2026-02-05)
-
-### 修复
-- **Dashboard 规则统计 enabled 状态显示不正确**
-  - 原因：`get_current_rule_stats()` 硬编码 `enabled=1`，未读取实际配置
-  - 修复：从 `rule_counts` 表获取最新 run 的规则 enabled 状态
-  - 一个 `project_key` 下多个 `project_name` 共享同一套配置
-
-### 改进
-- **规则统计按配置顺序排列**
-  - 新增 `order_index` 字段保存规则在配置中的顺序
-  - Dashboard 规则统计按配置顺序显示，而非按违规数排序
-  - 配置中不存在的规则排在最后
-
-## v1.4.9 (2026-02-05)
-
-### 修复
-- **代码上下文显示格式问题**
-  - 原因：`get_context()` 使用 `''.join()` 连接代码行，丢失了换行符
-  - 修复：使用 `'\n'.join()` 保留换行符和缩进，代码按行显示更易读
-  - 注：`code_hash` 计算不受影响（内部已归一化处理）
-
-## v1.4.8 (2026-02-05)
-
-### 修复
-- **Violation 详情页代码上下文不显示问题**
-  - 原因：metrics 上报时移除了 `context` 和 `related_lines` 字段
-  - 修复：保留这些字段以便 Server 详情页显示代码上下文
-
-### 改进
-- **Violations 列表页筛选功能增强**
-  - 新增规则下拉选择器：可直接切换查看不同规则的违规
-  - 新增子类型下拉选择器：可筛选特定子类型的违规
-  - 无需返回 Dashboard 即可更改筛选条件
-
-## v1.4.7 (2026-02-05)
-
-### 改进
-- **Dashboard UI 优化**
-  - 新增项目选择引导提示卡片：未选择具体项目时显示蓝色提示框，引导用户选择「项目组」和「项目名称」以查看违规详情
-  - 规则名称 tooltip 优化：hover 时显示 `rule_id` + `rule_name`
-
-- **Violation 详情页代码上下文显示优化**
-  - 代码按行显示，每行带行号
-  - 问题行（违规所在行）黄色背景高亮
-  - ObjC 语法高亮：关键字、@关键字、属性关键字、数字等
-  - 样式与 Claude html_report 保持一致
-
-## v1.4.6 (2026-02-05)
+### 重要
+- Violation 数据模型重构：不可变性 + ViolationType API
+- Server DB 重构：Per-project violations 表设计
+- Dashboard 规则显示优化：中文 display_name + description hover
 
 ### 重构
-- **P0.6 violation_id 统一设计**
+- **Violation 数据模型重构**
+  - Violation 不可变性：所有属性在 `create_violation()` 时一次性确定
   - 新增 `ViolationType` 命名元组：统一 `sub_type`、`message`、`severity`
-  - 所有规则迁移到 ViolationType API，`create_violation()` 使用 `violation_type` 参数
-  - Violation 新增 `rule_name` 字段：存储规则中文显示名称（如"循环引用"、"禁用 API"）
-  - 移除 `create_violation_with_severity()` 方法（ViolationType 已支持自定义 severity）
   - `violation_id` 计算公式：`hash(file_path + rule_id + sub_type + code_hash + line_offset + column)`
-  - 确保同一代码位置的同类违规产生稳定唯一 ID
+  - 统一序列化：`Violation.to_dict()` / `Violation.from_dict()`
 
-- **P1 Server DB 重构**
-  - Per-project violations 表设计：每个项目组合（project_key + project_name）独立表
-  - 表名格式：`violations_{8字符MD5哈希}`
-  - Dashboard 级联选择：project_key → project_name 联动下拉框
-  - 修复 upsert 逻辑正确区分 insert/update 计数
+- **Server DB 重构**
+  - Per-project violations 表设计：每个项目独立表（`violations_{hash}`）
+  - Dashboard 级联选择：project_key → project_name 联动
 
 ### 新增
+- **Dashboard 功能增强**
+  - 规则显示 `display_name`（中文），hover 展示 `rule_id` + `description`
+  - 规则统计按配置顺序排列，正确显示 enabled 状态
+  - Violation 详情页代码上下文：行号、语法高亮、问题行高亮
+  - Violations 列表页筛选：规则下拉、子类型下拉
+
 - 新增 `test_server_db.py` 测试模块（11 个测试用例）
-  - DB Schema 验证：基础表创建、Per-project 表创建、表结构完整性
-  - Violations Upsert：Violation 对象/字典格式、去重验证、数据完整性
-
-### 改进
-- `test_base_rule.py` 重写适配 ViolationType API
-- 所有 133 个测试通过
-
-## v1.4.5 (2026-02-05)
-
-### 重构
-- **P0.5 Violation 固有属性重构**
-  - Violation 不可变性：所有属性在 `create_violation()` 时一次性确定，创建后不可修改
-  - 统一序列化：所有序列化/反序列化通过 `Violation.to_dict()` / `Violation.from_dict()`
-  - BaseRule 重构：删除 `get_hash_context()`，新增 `get_context()` 和 `compute_code_hash()`
-  - `create_violation()` 签名变更：新增必填参数 `lines`，自动计算 `context` 和 `code_hash`
-  - IgnoreCache 接口重构：`add_ignore()` / `is_ignored()` / `remove_ignore()` 改为接收 Violation 对象
-  - Metrics 上报重构：使用 `Violation.to_dict()` 作为基础
-  - Server 模块扩展：violations 表新增 `source`、`pod_name`、`related_lines`、`context` 字段
-
-## v1.4.4 (2026-02-05)
 
 ### 修复
-- 修复 violation 去重时机问题，确保 JSON 输出、Xcode 输出、Metrics 上报数据一致性
-  - 将 `deduplicate()` 调用移到 JSON 文件输出之前，避免 Claude 对话显示未去重的数据
+- 修复 violation 去重时机问题，确保数据一致性
+- 修复代码上下文换行符丢失问题
 - 修复文件列表可能重复的问题
-  - 主工程和本地 Pod 文件重叠时，同一文件会被检查两次，导致重复 violation
-  - 添加文件列表去重逻辑
 
 ## v1.4.3 (2026-02-04)
 
