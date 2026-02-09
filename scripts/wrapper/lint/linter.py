@@ -23,6 +23,7 @@ from core.lint.git_diff import GitDiffAnalyzer, is_git_repo
 from core.lint.reporter import Reporter, Violation, Severity
 from core.lint.rule_engine import RuleEngine
 from lib.logger import get_logger, LogContext
+from lib.common import project_store
 from core.lint.local_pods import LocalPodsAnalyzer
 from core.lint.ignore_cache import IgnoreCache
 from core.lint import metrics as metrics_mod
@@ -156,8 +157,8 @@ class BiliObjCLint:
                         extra={
                             "created_at": self.started_at_iso,
                             "project": {
-                                "key": (self.config.metrics.project_key if self.config else "") or self.project_root.name,
-                                "name": (self.config.metrics.project_name if self.config else "") or self.project_root.name,
+                                "key": project_store.get_project_key(fallback_root=self.project_root),
+                                "name": project_store.get_project_name(fallback_root=self.project_root),
                             },
                         },
                     )

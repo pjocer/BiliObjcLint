@@ -69,12 +69,16 @@ class PerformanceConfig:
 
 @dataclass
 class MetricsConfig:
-    """统计上报配置"""
+    """统计上报配置
+
+    注意：project_key 和 project_name 不再从配置文件读取，
+    而是在运行时从 Xcode 环境变量自动获取：
+    - project_key: 优先使用 WORKSPACE_DIR 的末端路径名，否则使用 PROJECT_NAME
+    - project_name: 使用 TARGET_NAME 环境变量
+    """
     enabled: bool = False
     endpoint: str = "http://127.0.0.1:18080"
     token: str = ""
-    project_key: str = ""
-    project_name: str = ""
     mode: str = "push"
     spool_dir: str = "~/.biliobjclint/metrics_spool"
     timeout_ms: int = 2000
@@ -174,8 +178,6 @@ class ConfigLoader:
             "enabled": False,
             "endpoint": "http://127.0.0.1:18080",
             "token": "",
-            "project_key": "",
-            "project_name": "",
             "mode": "push",
             "spool_dir": "~/.biliobjclint/metrics_spool",
             "timeout_ms": 2000,
@@ -258,8 +260,6 @@ class ConfigLoader:
             enabled=metrics_cfg.get("enabled", False),
             endpoint=metrics_cfg.get("endpoint", "http://127.0.0.1:18080"),
             token=metrics_cfg.get("token", ""),
-            project_key=metrics_cfg.get("project_key", ""),
-            project_name=metrics_cfg.get("project_name", ""),
             mode=metrics_cfg.get("mode", "push"),
             spool_dir=metrics_cfg.get("spool_dir", "~/.biliobjclint/metrics_spool"),
             timeout_ms=metrics_cfg.get("timeout_ms", 2000),

@@ -17,9 +17,23 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 from lib.logger import get_logger
+from lib.common import project_store
 from claude.fixer import ClaudeFixer
 
 logger = get_logger("claude_fix")
+
+
+def _get_default_project_root() -> str:
+    """获取默认的项目根目录
+
+    优先级：
+    1. 从 project_store 获取（检查 $SRCROOT 环境变量和 projects.json）
+    2. 使用当前工作目录
+    """
+    root = project_store.get_project_root()
+    if root:
+        return str(root)
+    return os.getcwd()
 
 
 def load_config(config_path: str) -> dict:
@@ -77,7 +91,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--project-root',
         help='项目根目录',
-        default=os.getcwd()
+        default=None  # 延迟到 main() 中解析
     )
 
     parser.add_argument(
@@ -105,6 +119,10 @@ def main():
         f.write(f"sys.argv: {sys.argv}\n")
 
     args = parse_args()
+
+    # 如果没有指定 project_root，使用默认值
+    if args.project_root is None:
+        args.project_root = _get_default_project_root()
 
     # 调试：记录参数
     with open(debug_file, "a") as f:

@@ -128,6 +128,35 @@ fi
 
 log_info "Python binary: $PYTHON_BIN"
 
+# ==================== 项目配置验证 ====================
+
+# 验证 projects.json 中是否有当前项目的配置
+# 使用 PROJECT_FILE_PATH 和 TARGET_NAME 作为 key
+if [ -n "$PROJECT_FILE_PATH" ] && [ -n "$TARGET_NAME" ]; then
+    log_info "Verifying project config..."
+    CONFIG_CHECK=$("$PYTHON_BIN" -c "
+import sys
+sys.path.insert(0, '${SCRIPTS_PATH}')
+from lib.common.project_store import ProjectStore
+config = ProjectStore.get('${PROJECT_FILE_PATH}', '${TARGET_NAME}')
+if config:
+    print('OK')
+else:
+    print('NOT_FOUND')
+" 2>/dev/null || echo "ERROR")
+
+    if [ "$CONFIG_CHECK" = "NOT_FOUND" ]; then
+        warn "项目配置不存在，请重新执行 bootstrap:"
+        warn "  biliobjclint-xcode <project_path> --bootstrap"
+        log_warn "Project config not found, need bootstrap"
+        # 不退出，继续执行（兼容旧版本）
+    elif [ "$CONFIG_CHECK" = "ERROR" ]; then
+        log_warn "Failed to check project config"
+    else
+        log_info "Project config verified"
+    fi
+fi
+
 # ==================== 执行 Lint 检查 ====================
 
 # 根据模式设置脚本路径

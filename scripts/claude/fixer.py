@@ -19,6 +19,7 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 from lib.logger import get_logger, log_claude_fix_start, log_claude_fix_end
+from lib.common import project_store
 from core.lint.ignore_cache import IgnoreCache
 
 from claude.dialogs import show_dialog, show_progress_notification
@@ -116,8 +117,8 @@ class ClaudeFixer:
         self.run_id = run_id
         self.project = project or {}
         self.metrics_config = self._build_metrics_config(config)
-        self.project_key = self.project.get("key") or self.metrics_config.project_key or self.project_root.name
-        self.project_name = self.project.get("name") or self.metrics_config.project_name or self.project_root.name
+        self.project_key = self.project.get("key") or project_store.get_project_key(fallback_root=self.project_root)
+        self.project_name = self.project.get("name") or project_store.get_project_name(fallback_root=self.project_root)
         self.tool_version = self._read_version()
         self.autofix_tracker = AutofixTracker(
             enabled=self.trigger != "disable",
@@ -142,8 +143,6 @@ class ClaudeFixer:
             enabled=metrics_cfg.get("enabled", False),
             endpoint=metrics_cfg.get("endpoint", "http://127.0.0.1:18080"),
             token=metrics_cfg.get("token", ""),
-            project_key=metrics_cfg.get("project_key", ""),
-            project_name=metrics_cfg.get("project_name", ""),
             mode=metrics_cfg.get("mode", "push"),
             spool_dir=metrics_cfg.get("spool_dir", "~/.biliobjclint/metrics_spool"),
             timeout_ms=metrics_cfg.get("timeout_ms", 2000),

@@ -12,6 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from .config import LintConfig, MetricsConfig, RuleConfig
 from lib.logger import get_logger
+from lib.common import project_store
 from .reporter import Reporter, Severity, Violation
 
 
@@ -27,14 +28,6 @@ def _read_version(project_root: Path) -> str:
     if version_file.exists():
         return version_file.read_text().strip()
     return "unknown"
-
-
-def _safe_project_key(project_root: Path, metrics_cfg: MetricsConfig) -> str:
-    return metrics_cfg.project_key or project_root.name
-
-
-def _safe_project_name(project_root: Path, metrics_cfg: MetricsConfig) -> str:
-    return metrics_cfg.project_name or project_root.name
 
 
 def _sanitize_config_snapshot(raw: Dict[str, Any]) -> Dict[str, Any]:
@@ -163,8 +156,8 @@ def build_lint_payload(
     rule_display_info: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
     created_at = started_at_iso or _now_iso()
-    project_key = _safe_project_key(project_root, config.metrics)
-    project_name = _safe_project_name(project_root, config.metrics)
+    project_key = project_store.get_project_key(fallback_root=project_root)
+    project_name = project_store.get_project_name(fallback_root=project_root)
     tool_version = _read_version(project_root)
 
     summary = {

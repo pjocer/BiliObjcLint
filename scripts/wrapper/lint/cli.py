@@ -29,8 +29,22 @@ SCRIPTS_ROOT = SCRIPT_DIR.parent.parent
 sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from lib.logger import get_logger
+from lib.common import project_store
 
 from wrapper.lint.linter import BiliObjCLint
+
+
+def _get_default_project_root() -> str:
+    """获取默认的项目根目录
+
+    优先级：
+    1. 从 project_store 获取（检查 $SRCROOT 环境变量和 projects.json）
+    2. 使用当前工作目录
+    """
+    root = project_store.get_project_root()
+    if root:
+        return str(root)
+    return os.getcwd()
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--project-root", "-p",
         help="项目根目录",
-        default=os.getcwd()
+        default=None  # 延迟到 main() 中解析
     )
 
     parser.add_argument(
@@ -110,6 +124,10 @@ def main():
     """主入口"""
     args = parse_args()
     logger = get_logger("biliobjclint")
+
+    # 如果没有指定 project_root，使用默认值
+    if args.project_root is None:
+        args.project_root = _get_default_project_root()
 
     try:
         linter = BiliObjCLint(args)
