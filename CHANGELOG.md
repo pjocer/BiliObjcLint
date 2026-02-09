@@ -2,6 +2,23 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.5.1 (2026-02-09)
+
+### 重构
+- **日志系统重构**
+  - 创建独立的 `lib/logger/` 模块，零业务依赖
+  - 所有日志统一写入 `~/.biliobjclint/logs/`
+  - 删除 `core/lint/logger.py`、`lib/logging.sh`、`scripts_path_utils.py`
+
+- **配置文件路径迁移**
+  - 目录重命名: `{Project}/scripts/` → `{Project}/.biliobjclint/`
+  - 配置文件迁移: `.biliobjclint.yaml` → `.biliobjclint/config.yaml`
+  - debug 标记文件重命名: `.biliobjclint_debug` → `debug`
+  - 保持旧路径兼容性
+
+### 修复
+- 修复 `do_bootstrap()` 未调用 `copy_config()` 的问题
+
 ## v1.5.0 (2026-02-05)
 
 ### 重要
