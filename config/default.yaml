@@ -1,5 +1,5 @@
 # BiliObjCLint 默认配置
-# 复制此文件到项目根目录并重命名为 .biliobjclint.yaml
+# 此文件会被复制到项目的 .biliobjclint/config.yaml
 
 # ==================== 基础配置 ====================
 # 增量检查的基准分支

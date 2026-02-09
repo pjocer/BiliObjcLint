@@ -8,7 +8,7 @@
 #
 # Usage:
 #   在 Xcode Build Phase 中：
-#   "${SRCROOT}/../scripts/code_style_check.sh"
+#   "${SRCROOT}/../.biliobjclint/code_style_check.sh"
 #
 # 依赖的 Xcode 环境变量：
 #   - SRCROOT: 项目根目录
@@ -55,7 +55,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # 检查是否为调试模式
-DEBUG_FILE="$SCRIPT_DIR/.biliobjclint_debug"
+DEBUG_FILE="$SCRIPT_DIR/debug"
 DEBUG_MODE=false
 if [ -f "$DEBUG_FILE" ]; then
     DEBUG_PATH=$(cat "$DEBUG_FILE")
@@ -79,14 +79,20 @@ else
     PYTHON_BIN="${LINT_PATH}/libexec/.venv/bin/python3"
 fi
 
-# 配置文件路径
-CONFIG_PATH="${SRCROOT}/.biliobjclint.yaml"
+# 配置文件路径（优先新位置，兼容旧位置）
+if [ -f "${SRCROOT}/.biliobjclint/config.yaml" ]; then
+    CONFIG_PATH="${SRCROOT}/.biliobjclint/config.yaml"
+elif [ -f "${SRCROOT}/.biliobjclint.yaml" ]; then
+    CONFIG_PATH="${SRCROOT}/.biliobjclint.yaml"
+else
+    CONFIG_PATH="${SRCROOT}/.biliobjclint/config.yaml"
+fi
 
 # 加载日志库
 if [ "$DEBUG_MODE" = true ]; then
-    LOG_LIB_PATH="${LINT_PATH}/scripts/lib/logging.sh"
+    LOG_LIB_PATH="${LINT_PATH}/scripts/lib/logger/logging.sh"
 else
-    LOG_LIB_PATH="${LINT_PATH}/libexec/scripts/lib/logging.sh"
+    LOG_LIB_PATH="${LINT_PATH}/libexec/scripts/lib/logger/logging.sh"
 fi
 
 if [ -f "$LOG_LIB_PATH" ]; then

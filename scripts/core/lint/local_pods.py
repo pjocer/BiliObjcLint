@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Set, List, Optional
 
-from .logger import get_logger
+from lib.logger import get_logger
 
 
 class LocalPodsAnalyzer:

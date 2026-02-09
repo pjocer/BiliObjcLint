@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 from threading import RLock
 
-from .logger import get_logger
+from lib.logger import get_logger
 
 
 @dataclass

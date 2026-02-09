@@ -22,12 +22,16 @@ from typing import Optional
 
 import datetime
 
-# 日志文件路径（固定位置，不会被 brew upgrade 删除）
-LOG_FILE = Path.home() / '.biliobjclint' / 'background_upgrade.log'
+# 日志文件路径（统一到 ~/.biliobjclint/logs/ 目录）
+LOGS_DIR = Path.home() / '.biliobjclint' / 'logs'
+LOG_FILE = LOGS_DIR / 'background_upgrade.log'
 
 
 def log_to_file(level: str, msg: str):
     """直接写入日志文件（确保 nohup 能捕获）"""
+    # 确保日志目录存在
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_line = f"[{ts}] [{level}] {msg}"
     # 同时输出到 stdout（nohup 捕获）和日志文件
@@ -40,7 +44,11 @@ def log_to_file(level: str, msg: str):
 
 
 class FileLogger:
-    """直接写入文件的 logger，确保日志不会随旧版本被删除"""
+    """直接写入文件的 logger，确保日志不会随旧版本被删除
+
+    Note: 后台升级脚本使用独立的简单 logger，不依赖 lib.logger 模块，
+    确保在 brew upgrade 过程中仍能正常工作。
+    """
     def info(self, msg): log_to_file("INFO", msg)
     def error(self, msg): log_to_file("ERROR", msg)
     def debug(self, msg): log_to_file("DEBUG", msg)
@@ -406,7 +414,7 @@ def start_background_upgrade(
     SCRIPTS_ROOT = SCRIPT_DIR.parent.parent
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
-    from core.lint.logger import get_logger
+    from lib.logger import get_logger
     log = get_logger("check_update")
 
     log.info(f"Starting background upgrade: {local_ver} -> {remote_ver}")

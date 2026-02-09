@@ -27,7 +27,7 @@ SCRIPT_DIR = Path(__file__).parent
 SCRIPTS_ROOT = SCRIPT_DIR.parent.parent
 sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from core.lint.logger import get_logger
+from lib.logger import get_logger
 
 from wrapper.xcode.integrator import XcodeIntegrator
 

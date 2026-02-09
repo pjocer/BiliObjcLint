@@ -293,7 +293,7 @@ if [ $EXIT_CODE -eq 0 ] && [ "$ACTION" = "add" ] && [ -z "$DRY_RUN" ]; then
     echo ""
     echo "后续步骤:"
     echo "1. 打开 Xcode 项目，检查 Build Phases"
-    echo "2. 编辑配置文件: .biliobjclint.yaml"
+    echo "2. 编辑配置文件: .biliobjclint/config.yaml"
     echo "3. 编译项目，查看 Lint 结果"
     echo ""
 fi

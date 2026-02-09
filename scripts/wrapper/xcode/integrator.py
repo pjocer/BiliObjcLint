@@ -17,7 +17,7 @@ SCRIPT_DIR = Path(__file__).parent
 SCRIPTS_ROOT = SCRIPT_DIR.parent.parent
 sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from core.lint.logger import get_logger
+from lib.logger import get_logger
 
 from .templates import PHASE_NAME, BOOTSTRAP_PHASE_NAME, SCRIPT_VERSION
 from .project_loader import ProjectLoaderMixin
@@ -128,8 +128,8 @@ class XcodeIntegrator(ProjectLoaderMixin, PhaseManagerMixin, BootstrapMixin):
 
     def show_manual(self) -> None:
         """显示手动配置说明（使用自动计算的路径）"""
-        # 计算 scripts 目录相对于 SRCROOT 的路径
-        scripts_dir = self.project_path.parent / "scripts"
+        # 计算 .biliobjclint 目录相对于 SRCROOT 的路径
+        scripts_dir = self.project_path.parent / ".biliobjclint"
         srcroot = self.get_project_srcroot()
 
         if srcroot:
@@ -137,8 +137,8 @@ class XcodeIntegrator(ProjectLoaderMixin, PhaseManagerMixin, BootstrapMixin):
             scripts_path = "${SRCROOT}/" + relative_path
         else:
             # 默认值
-            scripts_path = "${SRCROOT}/../scripts"
-            relative_path = '../scripts'
+            scripts_path = "${SRCROOT}/../.biliobjclint"
+            relative_path = '../.biliobjclint'
 
         print("")
         print("==========================================")
@@ -147,14 +147,14 @@ class XcodeIntegrator(ProjectLoaderMixin, PhaseManagerMixin, BootstrapMixin):
         print("")
         print("推荐使用 --bootstrap 自动配置，或手动执行以下步骤：")
         print("")
-        print("1. 创建 scripts 目录（与 .xcworkspace/.xcodeproj 同级）")
+        print("1. 创建 .biliobjclint 目录（与 .xcworkspace/.xcodeproj 同级）")
         print(f"   mkdir -p {scripts_dir}")
         print("")
-        print("2. 复制脚本到 scripts 目录:")
+        print("2. 复制脚本到 .biliobjclint 目录:")
         print("   BREW_PREFIX=$(brew --prefix biliobjclint)")
-        print('   cp "$BREW_PREFIX/libexec/config/bootstrap.sh" scripts/')
-        print('   cp "$BREW_PREFIX/libexec/config/code_style_check.sh" scripts/')
-        print("   chmod +x scripts/*.sh")
+        print('   cp "$BREW_PREFIX/libexec/config/bootstrap.sh" .biliobjclint/')
+        print('   cp "$BREW_PREFIX/libexec/config/code_style_check.sh" .biliobjclint/')
+        print("   chmod +x .biliobjclint/*.sh")
         print("")
         print("3. 打开 Xcode 项目 → 选择 Target → Build Phases")
         print("")
@@ -178,9 +178,9 @@ class XcodeIntegrator(ProjectLoaderMixin, PhaseManagerMixin, BootstrapMixin):
         print(f'"{scripts_path}/code_style_check.sh"')
         print("----------------------------------------")
         print("")
-        print("6. 复制配置文件到项目根目录:")
+        print("6. 复制配置文件到 .biliobjclint 目录:")
         print("   BREW_PREFIX=$(brew --prefix biliobjclint)")
-        print(f'   cp "$BREW_PREFIX/libexec/config/default.yaml" {self.project_path.parent}/.biliobjclint.yaml')
+        print(f'   cp "$BREW_PREFIX/libexec/config/default.yaml" {scripts_dir}/config.yaml')
         print("")
         print(f"注意: 以上路径基于您的项目结构自动计算")
         print(f"      SRCROOT = {srcroot}")

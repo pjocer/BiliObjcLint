@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from .config import LintConfig, MetricsConfig, RuleConfig
-from .logger import get_logger
+from lib.logger import get_logger
 from .reporter import Reporter, Severity, Violation
 
 

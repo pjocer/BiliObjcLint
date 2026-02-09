@@ -9,7 +9,7 @@ from enum import Enum
 from typing import List, Optional, Set, Tuple, NamedTuple
 from pathlib import Path
 
-from .logger import get_logger
+from lib.logger import get_logger
 
 
 class Severity(Enum):

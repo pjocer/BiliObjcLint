@@ -146,7 +146,7 @@ def run_server(config_path: Path) -> int:
                 for iface, ip in local_ips:
                     print(f"    - http://{ip}:{port}/login ({iface})")
             print("")
-            print("  客户端配置 (.biliobjclint.yaml):")
+            print("  客户端配置 (.biliobjclint/config.yaml):")
             if local_ips:
                 primary_ip = local_ips[0][1]
                 print(f"    metrics:")

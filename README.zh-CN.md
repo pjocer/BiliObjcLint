@@ -149,7 +149,7 @@ cp $(brew --prefix biliobjclint)/libexec/config/bootstrap.sh /path/to/your/proje
 
 ## 配置
 
-在项目根目录创建 `.biliobjclint.yaml`：
+配置文件位于项目的 `.biliobjclint/config.yaml`（在 bootstrap 过程中自动创建）：
 
 ```yaml
 # 基本设置
@@ -281,7 +281,7 @@ biliobjclint-server status
 # 打开仪表盘（默认: http://127.0.0.1:18080/login）
 ```
 
-**客户端配置**（添加到 `.biliobjclint.yaml`）：
+**客户端配置**（添加到 `.biliobjclint/config.yaml`）：
 
 ```yaml
 metrics:
@@ -299,7 +299,7 @@ metrics:
 
 ### Q: 如何只检查特定类型的问题？
 
-在 `.biliobjclint.yaml` 中禁用不需要的规则：
+在 `.biliobjclint/config.yaml` 中禁用不需要的规则：
 
 ```yaml
 python_rules:
@@ -334,7 +334,7 @@ export API_TIMEOUT_MS=600000
 
 > **重要**：这些环境变量必须配置在 shell 配置文件（`.zshrc` 或 `.bashrc`）中，因为 Xcode Build Phase 作为后台进程运行，不会继承终端会话的环境变量。
 
-3. 在 `.biliobjclint.yaml` 中配置：
+3. 在 `.biliobjclint/config.yaml` 中配置：
 
 ```yaml
 claude_autofix:

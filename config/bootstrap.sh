@@ -40,11 +40,11 @@ info() { echo -e "${GREEN}[BiliObjCLint]${NC} $1"; }
 warn() { echo -e "${YELLOW}[BiliObjCLint]${NC} $1"; }
 error() { echo -e "${RED}[BiliObjCLint]${NC} $1"; exit 1; }
 
-# 获取脚本所在目录（项目的 scripts 目录）
+# 获取脚本所在目录（项目的 .biliobjclint 目录）
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # 检查是否为调试模式
-DEBUG_FILE="$SCRIPT_DIR/.biliobjclint_debug"
+DEBUG_FILE="$SCRIPT_DIR/debug"
 DEBUG_MODE=false
 if [ -f "$DEBUG_FILE" ]; then
     DEBUG_MODE=true

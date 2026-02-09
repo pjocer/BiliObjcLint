@@ -22,7 +22,7 @@ from core.lint.config import ConfigLoader, LintConfig
 from core.lint.git_diff import GitDiffAnalyzer, is_git_repo
 from core.lint.reporter import Reporter, Violation, Severity
 from core.lint.rule_engine import RuleEngine
-from core.lint.logger import get_logger, LogContext
+from lib.logger import get_logger, LogContext
 from core.lint.local_pods import LocalPodsAnalyzer
 from core.lint.ignore_cache import IgnoreCache
 from core.lint import metrics as metrics_mod
@@ -205,7 +205,8 @@ class BiliObjCLint:
         # 如果没有指定配置文件，尝试默认位置
         if not config_path or not os.path.exists(config_path):
             default_paths = [
-                self.project_root / ".biliobjclint.yaml",
+                self.project_root / ".biliobjclint" / "config.yaml",  # 新位置（优先）
+                self.project_root / ".biliobjclint.yaml",  # 旧位置（兼容）
                 self.project_root / ".biliobjclint.yml",
                 self.project_root / "biliobjclint.yaml",
             ]

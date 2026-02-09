@@ -15,7 +15,7 @@ from threading import Lock
 
 from .reporter import Violation
 from .config import RuleConfig
-from .logger import get_logger
+from lib.logger import get_logger
 from .file_cache import get_file_cache
 from .result_cache import ResultCache
 from .rules.base_rule import BaseRule

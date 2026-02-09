@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 
-from .logger import get_logger
+from lib.logger import get_logger
 from .reporter import Violation
 from .violation_hash import compute_hash_from_range
 

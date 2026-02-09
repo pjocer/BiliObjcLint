@@ -151,17 +151,19 @@ class BootstrapMixin:
         return self._copy_script("code_style_check.sh", target_scripts_dir, dry_run)
 
     def copy_config(self: "XcodeIntegrator", dry_run: bool = False) -> bool:
-        """复制配置文件到项目目录（传入路径的父目录）"""
+        """复制配置文件到 .biliobjclint 目录"""
         self.logger.info("Copying config file...")
         print("正在检查配置文件...")
 
         # 使用传入路径的父目录，而不是解析出的 xcodeproj 的父目录
         # 这样可以正确处理 .xcworkspace 和 .xcodeproj 的情况
         if self.project_path.suffix in ['.xcworkspace', '.xcodeproj']:
-            config_dir = self.project_path.parent
+            project_dir = self.project_path.parent
         else:
-            config_dir = self.project_path
-        config_dest = config_dir / '.biliobjclint.yaml'
+            project_dir = self.project_path
+        # 配置文件放在 .biliobjclint 目录内
+        scripts_dir = project_dir / '.biliobjclint'
+        config_dest = scripts_dir / 'config.yaml'
         config_src = self.lint_path / 'config' / 'default.yaml'
 
         self.logger.info(f"Config source: {config_src}")
@@ -179,6 +181,8 @@ class BootstrapMixin:
             return True
 
         try:
+            # 确保目录存在
+            scripts_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(config_src, config_dest)
             self.logger.info(f"Config file copied to: {config_dest}")
             print(f"✓ 配置文件已复制: {config_dest}")
@@ -202,12 +206,12 @@ class BootstrapMixin:
             self.logger.info(f"[DEBUG MODE] Debug path: {self.debug_path}")
             print(f"[DEBUG MODE] 启用调试模式，使用本地目录: {self.debug_path}")
 
-        # 1. 确定 scripts 目录位置（输入路径的同级目录）
-        scripts_dir = self.project_path.parent / "scripts"
+        # 1. 确定 .biliobjclint 目录位置（输入路径的同级目录）
+        scripts_dir = self.project_path.parent / ".biliobjclint"
         self.logger.debug(f"Target scripts directory: {scripts_dir}")
 
         # 2. 处理调试模式标记文件
-        debug_file = scripts_dir / ".biliobjclint_debug"
+        debug_file = scripts_dir / "debug"
         if self.debug_path:
             # 调试模式：创建标记文件
             if not dry_run:
@@ -232,7 +236,11 @@ class BootstrapMixin:
         if not self.copy_code_style_check_script(scripts_dir, dry_run):
             return False
 
-        # 5. 获取 target
+        # 5. 复制配置文件（如果不存在）
+        if not self.copy_config(dry_run):
+            return False
+
+        # 6. 获取 target
         target = self.get_target(target_name)
         if not target:
             if target_name:
@@ -247,7 +255,7 @@ class BootstrapMixin:
         self.logger.info(f"Selected target: {target.name}")
         print(f"Target: {target.name}")
 
-        # 6. 获取 SRCROOT 并计算相对路径
+        # 7. 获取 SRCROOT 并计算相对路径
         srcroot = self.get_project_srcroot()
         if not srcroot:
             self.logger.error("Cannot determine SRCROOT")
@@ -261,7 +269,7 @@ class BootstrapMixin:
         print(f"Scripts 相对路径: {relative_path}")
         print()
 
-        # 7. 保存完整项目配置到持久化存储
+        # 8. 保存完整项目配置到持久化存储
         # Key = normalize(xcodeproj_path)|target_name
         # 这样在 Xcode Build Phase 中可以通过 ${PROJECT_FILE_PATH} 和 ${TARGET_NAME} 构建 key
         if not dry_run:
@@ -277,9 +285,9 @@ class BootstrapMixin:
             key = project_config.save(config)
             self.logger.info(f"Saved project config (key: {key})")
 
-        # 8. 添加 Bootstrap Build Phase
+        # 9. 添加 Bootstrap Build Phase
         if not self.add_bootstrap_phase(target, relative_path, dry_run):
             return False
 
-        # 9. 保存项目
+        # 10. 保存项目
         return self.save(dry_run)

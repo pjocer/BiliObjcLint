@@ -149,7 +149,7 @@ cp $(brew --prefix biliobjclint)/libexec/config/bootstrap.sh /path/to/your/proje
 
 ## Configuration
 
-Create `.biliobjclint.yaml` in your project root:
+The configuration file is located at `.biliobjclint/config.yaml` in your project directory (created automatically during bootstrap):
 
 ```yaml
 # Basic settings
@@ -281,7 +281,7 @@ biliobjclint-server status
 # View dashboard (default: http://127.0.0.1:18080/login)
 ```
 
-**Client Configuration** (add to `.biliobjclint.yaml`):
+**Client Configuration** (add to `.biliobjclint/config.yaml`):
 
 ```yaml
 metrics:
@@ -299,7 +299,7 @@ metrics:
 
 ### Q: How to check only specific types of issues?
 
-Configure `.biliobjclint.yaml` to disable unwanted rules:
+Configure `.biliobjclint/config.yaml` to disable unwanted rules:
 
 ```yaml
 python_rules:
@@ -334,7 +334,7 @@ export API_TIMEOUT_MS=600000
 
 > **Important**: These environment variables must be configured in your shell config file (`.zshrc` or `.bashrc`), as Xcode Build Phase runs as a background process that doesn't inherit your terminal session environment.
 
-3. Configure in `.biliobjclint.yaml`:
+3. Configure in `.biliobjclint/config.yaml`:
 
 ```yaml
 claude_autofix:

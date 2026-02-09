@@ -18,7 +18,7 @@ _SCRIPT_DIR = Path(__file__).parent.parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from core.lint.logger import get_logger, log_claude_fix_start, log_claude_fix_end
+from lib.logger import get_logger, log_claude_fix_start, log_claude_fix_end
 from core.lint.ignore_cache import IgnoreCache
 
 from claude.dialogs import show_dialog, show_progress_notification

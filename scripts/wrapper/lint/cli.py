@@ -8,7 +8,7 @@ Usage:
     python3 cli.py [options]
 
 Options:
-    --config PATH          配置文件路径 (默认: .biliobjclint.yaml)
+    --config PATH          配置文件路径 (默认: .biliobjclint/config.yaml)
     --project-root PATH    项目根目录 (默认: 当前目录)
     --incremental          增量检查模式 (只检查 git 变更)
     --base-branch BRANCH   增量对比基准分支 (默认: origin/master)
@@ -28,7 +28,7 @@ SCRIPT_DIR = Path(__file__).parent
 SCRIPTS_ROOT = SCRIPT_DIR.parent.parent
 sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from core.lint.logger import get_logger
+from lib.logger import get_logger
 
 from wrapper.lint.linter import BiliObjCLint
 

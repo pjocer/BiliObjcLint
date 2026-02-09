@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 
-from .logger import get_logger
+from lib.logger import get_logger
 
 
 @dataclass

@@ -831,7 +831,7 @@ class Database:
     def _get_latest_rule_configs(self, project_key: str) -> Dict[str, Dict[str, Any]]:
         """获取指定 project_key 最近一次 run 的规则配置
 
-        一个 project_key 下所有 project_name 共享同一套 .biliobjclint.yaml 配置，
+        一个 project_key 下所有 project_name 共享同一套 .biliobjclint/config.yaml 配置，
         所以从该 project_key 最近一次 run 的 rule_counts 中获取规则的 enabled 状态、顺序、名称和描述。
 
         Args:

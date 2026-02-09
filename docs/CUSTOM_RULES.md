@@ -71,7 +71,7 @@ class MyCustomRule(BaseRule):
 
 ### 规则配置
 
-在 `.biliobjclint.yaml` 中配置自定义规则：
+在 `.biliobjclint/config.yaml` 中配置自定义规则：
 
 ```yaml
 python_rules:

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, List
 from threading import RLock
 
-from .logger import get_logger
+from lib.logger import get_logger
 
 
 @dataclass
