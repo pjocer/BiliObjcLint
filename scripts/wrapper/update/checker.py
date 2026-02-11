@@ -28,7 +28,7 @@ SCRIPTS_ROOT = SCRIPT_DIR.parent.parent
 sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from lib.logger import get_logger
-from core.lint import project_config
+from lib.common.project_store import ProjectStore, make_key
 
 # GitHub 仓库信息
 GITHUB_REPO = "pjocer/BiliObjcLint"
@@ -316,7 +316,8 @@ def do_check_and_inject(
         brew_prefix = get_brew_prefix()
         lint_path = str(brew_prefix / 'libexec') if brew_prefix else str(SCRIPTS_ROOT.parent)
 
-        integrator = XcodeIntegrator(project_path, lint_path, project_name)
+        # Build Phase 场景：project_path 已经是 .xcodeproj 路径，直接使用
+        integrator = XcodeIntegrator.from_xcodeproj(project_path, lint_path)
 
         if not integrator.load_project():
             logger.error("Failed to load project")
@@ -342,12 +343,12 @@ def do_check_and_inject(
                 return True
 
         # 从持久化存储获取项目配置
-        config = project_config.get(str(integrator.xcodeproj_path), target_name)
+        config = ProjectStore.get(str(integrator.xcodeproj_path), target_name)
         if config:
-            scripts_path_in_phase = project_config.get_scripts_srcroot_path(config)
+            scripts_path_in_phase = ProjectStore.get_scripts_srcroot_path(config)
             logger.info(f"Loaded config, scripts path: {config.scripts_dir_relative}")
         else:
-            key = project_config.make_key(str(integrator.xcodeproj_path), target_name)
+            key = make_key(str(integrator.xcodeproj_path), target_name)
             logger.error(f"No config found for key: {key}")
             print("[BiliObjCLint] Error: 未找到项目配置，请先执行 --bootstrap", file=sys.stderr)
             return False

@@ -50,6 +50,43 @@ class XcodeIntegrator(ProjectLoaderMixin, PhaseManagerMixin, BootstrapMixin):
         if self.debug_path:
             self.logger.info(f"[DEBUG MODE] Using local dev path: {self.debug_path}")
 
+    @classmethod
+    def from_xcodeproj(
+        cls,
+        xcodeproj_path: str,
+        lint_path: str,
+        debug_path: Optional[str] = None
+    ) -> "XcodeIntegrator":
+        """
+        从 .xcodeproj 路径直接创建（跳过 workspace 解析）
+
+        用于 Build Phase 场景，此时 Xcode 环境变量 PROJECT_FILE_PATH
+        已经提供了 .xcodeproj 的完整路径，无需解析 workspace。
+
+        Args:
+            xcodeproj_path: .xcodeproj 路径（对应 Xcode 的 PROJECT_FILE_PATH）
+            lint_path: BiliObjCLint 路径
+            debug_path: 本地开发目录（可选）
+
+        Returns:
+            XcodeIntegrator 实例（xcodeproj_path 已设置）
+        """
+        instance = cls.__new__(cls)
+        instance.project_path = Path(xcodeproj_path).resolve()
+        instance.lint_path = Path(lint_path).resolve()
+        instance.project_name = None
+        instance.debug_path = Path(debug_path).resolve() if debug_path else None
+        instance.xcodeproj_path = instance.project_path  # 直接设置，跳过解析
+        instance.project = None
+        instance.logger = get_logger("xcode")
+
+        instance.logger.info(f"XcodeIntegrator created from xcodeproj: {xcodeproj_path}")
+        instance.logger.debug(f"Lint path: {instance.lint_path}")
+        if instance.debug_path:
+            instance.logger.info(f"[DEBUG MODE] Using local dev path: {instance.debug_path}")
+
+        return instance
+
     def save(self, dry_run: bool = False) -> bool:
         """保存项目修改"""
         self.logger.info("Saving project changes...")

@@ -99,7 +99,7 @@ class PhaseManagerMixin:
             scripts_path: scripts 目录相对于 SRCROOT 的路径（用于 bootstrap 模式）
         """
         # 延迟导入避免循环
-        from core.lint import project_config
+        from lib.common.project_store import ProjectStore, make_key
 
         self.logger.info(f"Adding lint phase to target: {target.name}")
 
@@ -116,13 +116,13 @@ class PhaseManagerMixin:
         # 获取 scripts_path（如果未提供）
         if not scripts_path:
             # 从持久化存储读取配置
-            config = project_config.get(str(self.xcodeproj_path), target.name)
+            config = ProjectStore.get(str(self.xcodeproj_path), target.name)
             if config:
-                scripts_path = project_config.get_scripts_srcroot_path(config)
+                scripts_path = ProjectStore.get_scripts_srcroot_path(config)
                 self.logger.debug(f"Loaded scripts path from config: {config.scripts_dir_relative}")
             else:
                 # 没有保存的配置，需要先执行 --bootstrap
-                key = project_config.make_key(str(self.xcodeproj_path), target.name)
+                key = make_key(str(self.xcodeproj_path), target.name)
                 self.logger.error(f"No config found for key: {key}")
                 print("Error: 未找到项目配置，请先执行 --bootstrap", file=sys.stderr)
                 return False

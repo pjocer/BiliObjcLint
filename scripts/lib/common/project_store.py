@@ -2,7 +2,7 @@
 """
 项目配置统一存取模块
 
-提供项目配置的存储、读取和验证功能。
+提供项目配置的存储、读取和运行时上下文管理。
 
 存储位置：~/.biliobjclint/projects.json
 
@@ -10,22 +10,34 @@ Key 格式：{normalized_xcodeproj_path}|{target_name}
 - xcodeproj_path: 规范化的 .xcodeproj 绝对路径
 - target_name: Target 名称
 
-这个 Key 可以在 Xcode Build Phase 中通过 ${PROJECT_FILE_PATH} 和 ${TARGET_NAME} 构建。
+架构：
+- ProjectConfig: 项目配置数据结构
+- ProjectStore: 多工程配置的 CRUD 操作（持久化存储）
+- ProjectContext: 运行时的"当前上下文"单例（由 Xcode 环境变量决定）
 
 使用方式：
-    from lib.common import project_store
 
-    # 获取 project_key 和 project_name（自动从环境变量或 projects.json 读取）
-    project_key = project_store.get_project_key()
-    project_name = project_store.get_project_name()
+    from lib.common.project_store import ProjectContext, ProjectStore
 
-    # 验证配置是否存在（在脚本开始时调用）
-    config = project_store.ensure_config()
-    if not config:
+    # === Shell 入口脚本初始化（code_style_check.sh 调用的 Python 代码）===
+    if not ProjectContext.init():
+        print("Error: 项目配置不存在，请先执行 --bootstrap")
         sys.exit(1)
 
-    # 保存配置
-    project_store.ProjectStore.save(config)
+    # === 工具内部任何位置获取当前项目信息 ===
+    ctx = ProjectContext.current()
+    if ctx:
+        print(f"project_key: {ctx.project_key}")
+        print(f"project_root: {ctx.project_root}")
+
+    # 或使用 require 版本（配置不存在会抛异常）
+    ctx = ProjectContext.require()
+    metrics_payload["project_key"] = ctx.project_key
+
+    # === 管理多工程配置（bootstrap 时使用）===
+    ProjectStore.save(config)
+    ProjectStore.get(xcodeproj_path, target_name)
+    ProjectStore.list_all()
 """
 import json
 import os
@@ -111,8 +123,16 @@ def make_key(xcodeproj_path: str, target_name: str) -> str:
     return f"{normalized_path}|{target_name}"
 
 
+# ==================== ProjectStore: 多工程配置 CRUD ====================
+
+
 class ProjectStore:
-    """项目配置存储类"""
+    """
+    项目配置存储类
+
+    管理 ~/.biliobjclint/projects.json 中的多工程配置。
+    支持多个 workspace/xcodeproj 的多个 target。
+    """
 
     @staticmethod
     def save(config: ProjectConfig) -> str:
@@ -168,24 +188,6 @@ class ProjectStore:
             return None
         except Exception:
             return None
-
-    @staticmethod
-    def get_from_env() -> Optional[ProjectConfig]:
-        """
-        从环境变量获取项目配置
-
-        使用 ${PROJECT_FILE_PATH} 和 ${TARGET_NAME} 构建 key
-
-        Returns:
-            项目配置，如果不存在返回 None
-        """
-        xcodeproj_path = os.environ.get("PROJECT_FILE_PATH", "")
-        target_name = os.environ.get("TARGET_NAME", "")
-
-        if not xcodeproj_path or not target_name:
-            return None
-
-        return ProjectStore.get(xcodeproj_path, target_name)
 
     @staticmethod
     def delete(xcodeproj_path: str, target_name: str) -> bool:
@@ -250,210 +252,298 @@ class ProjectStore:
         return "${SRCROOT}/" + config.scripts_dir_relative
 
 
-def get_project_key(
-    xcodeproj_path: Optional[str] = None,
-    target_name: Optional[str] = None,
-    fallback_root: Optional[Path] = None
-) -> str:
-    """
-    获取 project_key
+# ==================== ProjectContext: 运行时上下文单例 ====================
 
-    优先级：
-    1. 从 projects.json 读取（如果提供了 xcodeproj_path 和 target_name）
-    2. 从环境变量 WORKSPACE_DIR 的末端路径名
-    3. 从环境变量 PROJECT_NAME
-    4. 使用 fallback_root 目录名
+
+class ProjectContext:
+    """
+    项目上下文单例
+
+    在 Shell 入口脚本（bootstrap.sh / code_style_check.sh）调用的 Python 代码中初始化，
+    之后在 Python 代码任何位置都可以通过 ProjectContext.current() 获取当前项目信息。
+
+    每次 Xcode Build Phase 执行时，环境变量 PROJECT_FILE_PATH 和 TARGET_NAME
+    指定了当前正在编译的是哪个工程的哪个 target。
+    """
+
+    _current: Optional['ProjectContext'] = None
+
+    def __init__(self, config: ProjectConfig):
+        self._config = config
+        # 缓存从环境变量读取的值
+        self._env_srcroot = os.environ.get("SRCROOT", "")
+        self._env_configuration = os.environ.get("CONFIGURATION", "")
+
+    # ==================== 初始化方法 ====================
+
+    @classmethod
+    def init(
+        cls,
+        xcodeproj_path: Optional[str] = None,
+        target_name: Optional[str] = None
+    ) -> bool:
+        """
+        初始化当前项目上下文
+
+        从环境变量或参数读取 xcodeproj_path 和 target_name，
+        然后从 projects.json 加载对应的配置。
+
+        Args:
+            xcodeproj_path: .xcodeproj 路径（可选，默认从 PROJECT_FILE_PATH 环境变量读取）
+            target_name: Target 名称（可选，默认从 TARGET_NAME 环境变量读取）
+
+        Returns:
+            是否成功初始化
+        """
+        xcode_path = xcodeproj_path or os.environ.get("PROJECT_FILE_PATH", "")
+        target = target_name or os.environ.get("TARGET_NAME", "")
+
+        if not xcode_path or not target:
+            return False
+
+        config = ProjectStore.get(xcode_path, target)
+        if not config:
+            return False
+
+        cls._current = cls(config)
+        return True
+
+    @classmethod
+    def init_with_config(cls, config: ProjectConfig) -> None:
+        """
+        使用已有配置初始化上下文（用于 bootstrap 等场景）
+
+        Args:
+            config: 项目配置
+        """
+        cls._current = cls(config)
+
+    @classmethod
+    def reset(cls) -> None:
+        """重置上下文（用于测试）"""
+        cls._current = None
+
+    # ==================== 获取上下文 ====================
+
+    @classmethod
+    def current(cls) -> Optional['ProjectContext']:
+        """
+        获取当前项目上下文
+
+        如果未初始化，会尝试从环境变量自动初始化。
+
+        Returns:
+            当前项目上下文，如果未初始化且无法自动初始化则返回 None
+        """
+        if cls._current is None:
+            cls.init()  # 尝试自动初始化
+        return cls._current
+
+    @classmethod
+    def require(cls) -> 'ProjectContext':
+        """
+        获取当前项目上下文（必须存在）
+
+        如果未初始化或配置不存在，抛出 RuntimeError。
+
+        Returns:
+            当前项目上下文
+
+        Raises:
+            RuntimeError: 上下文未初始化
+        """
+        ctx = cls.current()
+        if ctx is None:
+            raise RuntimeError(
+                "Project context not initialized. "
+                "Please run bootstrap first or check environment variables."
+            )
+        return ctx
+
+    @classmethod
+    def is_initialized(cls) -> bool:
+        """检查上下文是否已初始化"""
+        return cls._current is not None
+
+    # ==================== 配置访问属性 ====================
+
+    @property
+    def config(self) -> ProjectConfig:
+        """原始配置对象"""
+        return self._config
+
+    @property
+    def project_key(self) -> str:
+        """
+        项目聚合 Key（用于 metrics 聚合）
+
+        通常是 workspace 名称或项目目录名。
+        """
+        return self._config.project_key
+
+    @property
+    def project_name(self) -> str:
+        """项目名称（从 workspace 中选择的项目，或 xcodeproj 的名称）"""
+        return self._config.project_name
+
+    @property
+    def target_name(self) -> str:
+        """Target 名称"""
+        return self._config.target_name
+
+    @property
+    def is_workspace(self) -> bool:
+        """是否是 workspace"""
+        return self._config.is_workspace
+
+    @property
+    def xcode_path(self) -> Path:
+        """Xcode 项目路径（.xcworkspace 或 .xcodeproj）"""
+        return Path(self._config.xcode_path)
+
+    @property
+    def xcodeproj_path(self) -> Path:
+        """解析出的 .xcodeproj 路径"""
+        return Path(self._config.xcodeproj_path)
+
+    # ==================== 路径相关属性 ====================
+
+    @property
+    def project_root(self) -> Path:
+        """
+        项目根目录
+
+        优先从环境变量 SRCROOT 读取，否则从配置推断。
+        """
+        if self._env_srcroot:
+            return Path(self._env_srcroot).resolve()
+        return Path(self._config.xcodeproj_path).parent.resolve()
+
+    @property
+    def scripts_dir(self) -> Path:
+        """scripts 目录绝对路径"""
+        return Path(self._config.scripts_dir_absolute)
+
+    @property
+    def scripts_dir_relative(self) -> str:
+        """scripts 目录相对于 SRCROOT 的路径"""
+        return self._config.scripts_dir_relative
+
+    @property
+    def scripts_srcroot_path(self) -> str:
+        """${SRCROOT}/xxx 格式的 scripts 路径（用于 Build Phase 脚本）"""
+        return "${SRCROOT}/" + self._config.scripts_dir_relative
+
+    @property
+    def config_file(self) -> Path:
+        """配置文件路径"""
+        return self.scripts_dir / "config.yaml"
+
+    # ==================== 环境变量相关属性 ====================
+
+    @property
+    def configuration(self) -> str:
+        """构建配置（Debug/Release）"""
+        return self._env_configuration
+
+    @property
+    def is_release(self) -> bool:
+        """是否是 Release 构建"""
+        return self._env_configuration == "Release"
+
+    @property
+    def is_debug(self) -> bool:
+        """是否是 Debug 构建"""
+        return self._env_configuration == "Debug"
+
+    # ==================== 组合值方法 ====================
+
+    def get_store_key(self) -> str:
+        """获取在 projects.json 中的存储 key"""
+        return make_key(self._config.xcodeproj_path, self._config.target_name)
+
+    def get_log_prefix(self) -> str:
+        """获取日志前缀"""
+        return f"[{self.project_key}/{self.target_name}]"
+
+
+# ==================== 便捷函数（基于 ProjectContext）====================
+
+
+def get_project_key(fallback: str = "unknown") -> str:
+    """
+    获取当前项目的 project_key
+
+    优先从 ProjectContext 获取，否则尝试从环境变量推断。
 
     Args:
-        xcodeproj_path: .xcodeproj 路径（可选，默认从环境变量读取）
-        target_name: Target 名称（可选，默认从环境变量读取）
-        fallback_root: 兜底的项目根目录（可选）
+        fallback: 无法获取时的默认值
 
     Returns:
         project_key 字符串
     """
-    # 尝试从 projects.json 读取
-    xcode_path = xcodeproj_path or os.environ.get("PROJECT_FILE_PATH", "")
-    target = target_name or os.environ.get("TARGET_NAME", "")
+    ctx = ProjectContext.current()
+    if ctx:
+        return ctx.project_key
 
-    if xcode_path and target:
-        config = ProjectStore.get(xcode_path, target)
-        if config and config.project_key:
-            return config.project_key
-
-    # 从环境变量读取
+    # Fallback: 从环境变量推断
     workspace_dir = os.environ.get("WORKSPACE_DIR", "")
     if workspace_dir:
-        return Path(workspace_dir).stem  # 使用 .stem 获取不带扩展名的名称
+        return Path(workspace_dir).stem
 
     project_name_env = os.environ.get("PROJECT_NAME", "")
     if project_name_env:
         return project_name_env
 
-    # 兜底
-    if fallback_root:
-        return fallback_root.name
-
-    return "unknown"
+    return fallback
 
 
-def get_project_name(
-    xcodeproj_path: Optional[str] = None,
-    target_name: Optional[str] = None,
-    fallback_root: Optional[Path] = None
-) -> str:
+def get_project_name(fallback: str = "unknown") -> str:
     """
-    获取 project_name
+    获取当前项目的 project_name
 
-    优先级：
-    1. 从 projects.json 读取的 target_name
-    2. 从环境变量 TARGET_NAME
-    3. 使用 fallback_root 目录名
+    优先从 ProjectContext 获取，否则尝试从环境变量推断。
 
     Args:
-        xcodeproj_path: .xcodeproj 路径（可选）
-        target_name: Target 名称（可选）
-        fallback_root: 兜底的项目根目录（可选）
+        fallback: 无法获取时的默认值
 
     Returns:
         project_name 字符串
     """
-    # 尝试从 projects.json 读取
-    xcode_path = xcodeproj_path or os.environ.get("PROJECT_FILE_PATH", "")
-    target = target_name or os.environ.get("TARGET_NAME", "")
+    ctx = ProjectContext.current()
+    if ctx:
+        return ctx.project_name
 
-    if xcode_path and target:
-        config = ProjectStore.get(xcode_path, target)
-        if config:
-            return config.target_name
-
-    # 从环境变量读取
+    # Fallback: 从环境变量推断
     target_name_env = os.environ.get("TARGET_NAME", "")
     if target_name_env:
         return target_name_env
 
-    # 兜底
-    if fallback_root:
-        return fallback_root.name
-
-    return "unknown"
+    return fallback
 
 
-def get_project_root(
-    xcodeproj_path: Optional[str] = None,
-    target_name: Optional[str] = None,
-    fallback: Optional[str] = None
-) -> Optional[Path]:
+def get_project_root(fallback: Optional[str] = None) -> Optional[Path]:
     """
-    获取项目根目录（project_root）
+    获取当前项目的根目录
 
-    优先级：
-    1. 从环境变量 SRCROOT 读取（Xcode Build Phase 环境）
-    2. 从 projects.json 的 xcodeproj_path 推断（取其父目录）
-    3. 使用 fallback 参数
+    优先从 ProjectContext 获取，否则尝试从环境变量推断。
 
     Args:
-        xcodeproj_path: .xcodeproj 路径（可选，默认从环境变量读取）
-        target_name: Target 名称（可选，默认从环境变量读取）
-        fallback: 兜底路径（可选）
+        fallback: 无法获取时的默认路径
 
     Returns:
         项目根目录的 Path 对象，如果无法确定返回 None
     """
-    # 1. 优先从环境变量 SRCROOT 读取
+    ctx = ProjectContext.current()
+    if ctx:
+        return ctx.project_root
+
+    # Fallback: 从环境变量推断
     srcroot = os.environ.get("SRCROOT", "")
     if srcroot:
         return Path(srcroot).resolve()
 
-    # 2. 从 projects.json 推断
-    xcode_path = xcodeproj_path or os.environ.get("PROJECT_FILE_PATH", "")
-    target = target_name or os.environ.get("TARGET_NAME", "")
-
-    if xcode_path and target:
-        config = ProjectStore.get(xcode_path, target)
-        if config:
-            # xcodeproj_path 的父目录即为 project_root
-            return Path(config.xcodeproj_path).parent.resolve()
-
-    # 3. 使用 fallback
     if fallback:
         return Path(fallback).resolve()
 
     return None
-
-
-def ensure_config(
-    xcodeproj_path: Optional[str] = None,
-    target_name: Optional[str] = None,
-    auto_create: bool = False,
-    **create_kwargs
-) -> Optional[ProjectConfig]:
-    """
-    确保项目配置存在
-
-    在脚本开始时调用，验证 projects.json 中是否有对应的配置。
-
-    Args:
-        xcodeproj_path: .xcodeproj 路径（可选，默认从环境变量读取）
-        target_name: Target 名称（可选，默认从环境变量读取）
-        auto_create: 如果配置不存在是否自动创建
-        **create_kwargs: 创建配置时的额外参数
-
-    Returns:
-        ProjectConfig 如果存在或成功创建，否则返回 None
-    """
-    xcode_path = xcodeproj_path or os.environ.get("PROJECT_FILE_PATH", "")
-    target = target_name or os.environ.get("TARGET_NAME", "")
-
-    if not xcode_path or not target:
-        return None
-
-    # 尝试获取现有配置
-    config = ProjectStore.get(xcode_path, target)
-    if config:
-        return config
-
-    # 如果不存在且允许自动创建
-    if auto_create and create_kwargs:
-        config = ProjectConfig(
-            xcode_path=create_kwargs.get("xcode_path", xcode_path),
-            is_workspace=create_kwargs.get("is_workspace", False),
-            xcodeproj_path=create_kwargs.get("xcodeproj_path", xcode_path),
-            project_name=create_kwargs.get("project_name", Path(xcode_path).stem),
-            target_name=target,
-            scripts_dir_absolute=create_kwargs.get("scripts_dir_absolute", ""),
-            scripts_dir_relative=create_kwargs.get("scripts_dir_relative", ""),
-            project_key=create_kwargs.get("project_key", ""),
-        )
-        ProjectStore.save(config)
-        return config
-
-    return None
-
-
-# ==================== 兼容性别名 ====================
-# 为了兼容旧的 project_config 模块的调用方式
-
-def save(config: ProjectConfig) -> str:
-    """兼容性别名：保存配置"""
-    return ProjectStore.save(config)
-
-
-def get(xcodeproj_path: str, target_name: str) -> Optional[ProjectConfig]:
-    """兼容性别名：获取配置"""
-    return ProjectStore.get(xcodeproj_path, target_name)
-
-
-def get_scripts_srcroot_path(config: ProjectConfig) -> str:
-    """兼容性别名：获取 scripts 路径"""
-    return ProjectStore.get_scripts_srcroot_path(config)
-
-
-def delete(xcodeproj_path: str, target_name: str) -> bool:
-    """兼容性别名：删除配置"""
-    return ProjectStore.delete(xcodeproj_path, target_name)
-
-
-def list_all() -> Dict[str, ProjectConfig]:
-    """兼容性别名：列出所有配置"""
-    return ProjectStore.list_all()

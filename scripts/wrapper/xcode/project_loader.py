@@ -21,30 +21,32 @@ class ProjectLoaderMixin:
         """加载 Xcode 项目"""
         self.logger.info(f"Loading project: {self.project_path}")
 
-        # 处理 .xcworkspace
-        if self.project_path.suffix == '.xcworkspace':
-            self.logger.debug("Detected .xcworkspace, searching for project...")
-            self.xcodeproj_path = self._find_project_in_workspace(self.project_name)
-            if not self.xcodeproj_path:
-                self.logger.error("Cannot find project in workspace")
-                if self.project_name:
-                    print(f"Error: 在 workspace 中找不到项目 '{self.project_name}'", file=sys.stderr)
-                    print("使用 --list-projects 查看可用的项目")
-                else:
-                    print(f"Error: 无法在 workspace 中找到项目", file=sys.stderr)
-                return False
-        elif self.project_path.suffix == '.xcodeproj':
-            self.xcodeproj_path = self.project_path
-        else:
-            # 尝试在目录中查找
-            self.logger.debug("Searching for project in directory...")
-            self.xcodeproj_path = self._find_project_in_directory()
-            if not self.xcodeproj_path:
-                self.logger.error(f"Cannot find Xcode project: {self.project_path}")
-                print(f"Error: 无法找到 Xcode 项目: {self.project_path}", file=sys.stderr)
-                return False
+        # 如果 xcodeproj_path 已设置（from_xcodeproj 场景），跳过路径解析
+        if self.xcodeproj_path is None:
+            # 处理 .xcworkspace
+            if self.project_path.suffix == '.xcworkspace':
+                self.logger.debug("Detected .xcworkspace, searching for project...")
+                self.xcodeproj_path = self._find_project_in_workspace(self.project_name)
+                if not self.xcodeproj_path:
+                    self.logger.error("Cannot find project in workspace")
+                    if self.project_name:
+                        print(f"Error: 在 workspace 中找不到项目 '{self.project_name}'", file=sys.stderr)
+                        print("使用 --list-projects 查看可用的项目")
+                    else:
+                        print(f"Error: 无法在 workspace 中找到项目", file=sys.stderr)
+                    return False
+            elif self.project_path.suffix == '.xcodeproj':
+                self.xcodeproj_path = self.project_path
+            else:
+                # 尝试在目录中查找
+                self.logger.debug("Searching for project in directory...")
+                self.xcodeproj_path = self._find_project_in_directory()
+                if not self.xcodeproj_path:
+                    self.logger.error(f"Cannot find Xcode project: {self.project_path}")
+                    print(f"Error: 无法找到 Xcode 项目: {self.project_path}", file=sys.stderr)
+                    return False
 
-        self.logger.debug(f"Found xcodeproj: {self.xcodeproj_path}")
+        self.logger.debug(f"Using xcodeproj: {self.xcodeproj_path}")
 
         # 加载项目
         pbxproj_path = self.xcodeproj_path / 'project.pbxproj'

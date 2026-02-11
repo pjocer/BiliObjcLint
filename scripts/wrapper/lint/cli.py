@@ -29,7 +29,6 @@ SCRIPTS_ROOT = SCRIPT_DIR.parent.parent
 sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from lib.logger import get_logger
-from lib.common import project_store
 
 from wrapper.lint.linter import BiliObjCLint
 
@@ -38,10 +37,11 @@ def _get_default_project_root() -> str:
     """获取默认的项目根目录
 
     优先级：
-    1. 从 project_store 获取（检查 $SRCROOT 环境变量和 projects.json）
+    1. 从 ProjectContext 获取（检查 $SRCROOT 环境变量和 projects.json）
     2. 使用当前工作目录
     """
-    root = project_store.get_project_root()
+    from lib.common.project_store import get_project_root
+    root = get_project_root()
     if root:
         return str(root)
     return os.getcwd()

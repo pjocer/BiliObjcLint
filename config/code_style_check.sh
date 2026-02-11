@@ -128,6 +128,15 @@ fi
 
 log_info "Python binary: $PYTHON_BIN"
 
+# ==================== 脚本路径配置 ====================
+
+# 根据模式设置脚本路径（需要在项目配置验证之前定义）
+if [ "$DEBUG_MODE" = true ]; then
+    SCRIPTS_PATH="${LINT_PATH}/scripts"
+else
+    SCRIPTS_PATH="${LINT_PATH}/libexec/scripts"
+fi
+
 # ==================== 项目配置验证 ====================
 
 # 验证 projects.json 中是否有当前项目的配置
@@ -158,13 +167,6 @@ else:
 fi
 
 # ==================== 执行 Lint 检查 ====================
-
-# 根据模式设置脚本路径
-if [ "$DEBUG_MODE" = true ]; then
-    SCRIPTS_PATH="${LINT_PATH}/scripts"
-else
-    SCRIPTS_PATH="${LINT_PATH}/libexec/scripts"
-fi
 
 # 创建临时文件存储 JSON 输出（用于 Claude fixer）
 VIOLATIONS_FILE=$(mktemp)

@@ -38,7 +38,7 @@ def update_build_phase(
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
     from wrapper.xcode import XcodeIntegrator, SCRIPT_VERSION
-    from core.lint import project_config
+    from lib.common.project_store import ProjectStore
 
     try:
         # 获取 brew prefix 作为 lint_path
@@ -55,7 +55,8 @@ def update_build_phase(
 
         print(f"lint_path: {lint_path}")
 
-        integrator = XcodeIntegrator(project_path, lint_path, project_name)
+        # Build Phase 场景：project_path 已经是 .xcodeproj 路径，直接使用
+        integrator = XcodeIntegrator.from_xcodeproj(project_path, lint_path)
 
         if not integrator.load_project():
             print("ERROR: Failed to load project")
@@ -75,9 +76,9 @@ def update_build_phase(
                 return True
 
         # 从持久化存储获取项目配置
-        config = project_config.get(str(integrator.xcodeproj_path), target.name)
+        config = ProjectStore.get(str(integrator.xcodeproj_path), target.name)
         if config:
-            scripts_path = project_config.get_scripts_srcroot_path(config)
+            scripts_path = ProjectStore.get_scripts_srcroot_path(config)
             print(f"Scripts path: {config.scripts_dir_relative}")
         else:
             print("ERROR: No config found")

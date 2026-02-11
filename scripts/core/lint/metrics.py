@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from .config import LintConfig, MetricsConfig, RuleConfig
 from lib.logger import get_logger
-from lib.common import project_store
+from lib.common.project_store import get_project_key, get_project_name
 from .reporter import Reporter, Severity, Violation
 
 
@@ -156,8 +156,8 @@ def build_lint_payload(
     rule_display_info: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
     created_at = started_at_iso or _now_iso()
-    project_key = project_store.get_project_key(fallback_root=project_root)
-    project_name = project_store.get_project_name(fallback_root=project_root)
+    project_key_val = get_project_key(fallback=project_root.name)
+    project_name_val = get_project_name(fallback=project_root.name)
     tool_version = _read_version(project_root)
 
     summary = {
@@ -171,8 +171,8 @@ def build_lint_payload(
         "run_id": run_id,
         "created_at": created_at,
         "project": {
-            "key": project_key,
-            "name": project_name,
+            "key": project_key_val,
+            "name": project_name_val,
         },
         "tool": {
             "name": "biliobjclint",
@@ -201,8 +201,8 @@ def build_autofix_payload(
         "run_id": run_id,
         "created_at": _now_iso(),
         "project": {
-            "key": project_key,
-            "name": project_name,
+            "key": project_key_val,
+            "name": project_name_val,
         },
         "tool": {
             "name": "biliobjclint",
