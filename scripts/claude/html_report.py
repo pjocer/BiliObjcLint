@@ -833,7 +833,7 @@ class HtmlReportGenerator:
         # 按文件分组
         by_file = {}
         for v in violations:
-            file_path = v.get('file', '')
+            file_path = v.get('file_path') or v.get('file', '')
             if file_path not in by_file:
                 by_file[file_path] = []
             by_file[file_path].append(v)
@@ -900,7 +900,7 @@ class HtmlReportGenerator:
                 severity = v.get('severity', 'warning')
                 line = v.get('line', 0)
                 message = v.get('message', '')
-                rule = v.get('rule', '')
+                rule = v.get('rule_id') or v.get('rule', '')
                 related_lines = v.get('related_lines')  # (start, end) 或 None
                 # 格式化为 "start,end" 字符串，供前端传递
                 related_lines_str = f"{related_lines[0]},{related_lines[1]}" if related_lines else f"{line},{line}"
