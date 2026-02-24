@@ -2,6 +2,14 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.5.1 (2026-02-24)
+
+### 修复
+- **HTML 报告代码块为空**：修复 `html_report.py` 字段名不匹配（`file`→`file_path`、`rule`→`rule_id`），解决点击违规项后代码预览为空的问题
+
+### 改进
+- **Server 响应头安全加固**：所有 HTML/JSON 响应添加 `X-Content-Type-Options: nosniff`，防止浏览器插件 MIME 嗅探干扰页面渲染
+
 ## v1.5.0 (2026-02-05)
 
 ### 重要
