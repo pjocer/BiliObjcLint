@@ -157,7 +157,7 @@ class BiliObjCLint:
                             "created_at": self.started_at_iso,
                             "project": {
                                 "key": (self.config.metrics.project_key if self.config else "") or self.project_root.name,
-                                "name": (self.config.metrics.project_name if self.config else "") or self.project_root.name,
+                                "name": (self.config.metrics.project_name if self.config else "") or os.environ.get("TARGET_NAME", "") or self.project_root.name,
                             },
                         },
                     )

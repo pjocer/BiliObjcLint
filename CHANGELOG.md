@@ -2,6 +2,15 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.5.2 (2026-02-24)
+
+### 修复
+- **Server stop 无法杀掉后台进程**：修复 SIGTERM handler 在 CLOSE_WAIT 连接存在时阻塞的问题，改用后台线程执行 `shutdown()`；添加 `httpd.timeout` 防止 `accept()` 阻塞；stop 命令新增端口兜底查找逻辑（SIGTERM → SIGKILL → 端口发现）
+- **Login 页面未自动跳转**：已登录用户访问 `/login` 时直接重定向到 Dashboard
+
+### 改进
+- **project_name 自动推断**：未配置 `metrics.project_name` 时，依次尝试 Xcode `TARGET_NAME` 环境变量、项目目录名作为 fallback
+
 ## v1.5.1 (2026-02-24)
 
 ### 修复

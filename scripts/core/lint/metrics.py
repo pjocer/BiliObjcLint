@@ -4,6 +4,7 @@ Metrics Module - 统计汇总与上报
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.request
 from datetime import datetime
@@ -34,7 +35,7 @@ def _safe_project_key(project_root: Path, metrics_cfg: MetricsConfig) -> str:
 
 
 def _safe_project_name(project_root: Path, metrics_cfg: MetricsConfig) -> str:
-    return metrics_cfg.project_name or project_root.name
+    return metrics_cfg.project_name or os.environ.get("TARGET_NAME", "") or project_root.name
 
 
 def _sanitize_config_snapshot(raw: Dict[str, Any]) -> Dict[str, Any]:

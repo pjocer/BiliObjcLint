@@ -167,6 +167,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/login":
+            # 已登录则直接跳转 dashboard
+            if self._get_session():
+                self._redirect("/dashboard")
+                return
             # 检查是否刚注册成功
             registered = query.get("registered", [""])[0]
             success_msg = "注册成功！请登录。" if registered == "1" else ""

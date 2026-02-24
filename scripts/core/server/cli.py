@@ -188,17 +188,26 @@ def run_server(config_path: Path) -> int:
 
     sessions = SessionStore()
     httpd = HTTPServer((host, port), RequestHandler)
+    httpd.timeout = 5  # accept() 超时，防止 CLOSE_WAIT 连接阻塞 shutdown
     httpd.state = ServerState(config=config, db=db, sessions=sessions, logger=logger)  # type: ignore[attr-defined]
 
+    _shutdown_flag = False
+
     def handle_term(signum, frame):
+        nonlocal _shutdown_flag
+        if _shutdown_flag:
+            return
+        _shutdown_flag = True
         logger.info("Received signal, shutting down...")
-        httpd.shutdown()
+        # 在后台线程中调用 shutdown，避免信号处理阻塞主线程
+        import threading
+        threading.Thread(target=httpd.shutdown, daemon=True).start()
 
     signal.signal(signal.SIGTERM, handle_term)
 
     logger.info("Server starting on %s:%s", host, port)
     try:
-        httpd.serve_forever()
+        httpd.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
         logger.info("Server interrupted")
     finally:
@@ -236,49 +245,81 @@ def start_server(config_path: Path, pid_path: Path) -> int:
     return 0
 
 
-def stop_server(pid_path: Path) -> int:
+def _kill_pid(pid: int) -> bool:
+    """通过 PID 停止进程: SIGTERM → 等待 → SIGKILL"""
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return True  # 进程已不存在或无权限
+
+    for _ in range(20):  # 等待 2 秒
+        if not is_running(pid):
+            return True
+        time.sleep(0.1)
+
+    if is_running(pid):
+        print(f"  SIGTERM failed, sending SIGKILL (pid={pid})")
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            return True
+        for _ in range(10):  # 等待 1 秒
+            if not is_running(pid):
+                return True
+            time.sleep(0.1)
+
+    return not is_running(pid)
+
+
+def stop_server(pid_path: Path, config_path: Path = None) -> int:
     """停止服务器"""
     pid = read_pid(pid_path)
     if pid <= 0 or not is_running(pid):
+        # PID 文件无效，尝试通过端口查找
+        port = _get_configured_port(config_path)
+        port_pid, _ = find_process_using_port(port)
+        if port_pid > 0 and is_running(port_pid):
+            print(f"PID file stale, found server on port {port} (pid={port_pid})")
+            if _kill_pid(port_pid):
+                pid_path.unlink(missing_ok=True)
+                print("Server stopped")
+                return 0
+            print(f"Failed to stop server (pid={port_pid})")
+            return 1
         print("Server not running")
-        if pid_path.exists():
-            pid_path.unlink()
+        pid_path.unlink(missing_ok=True)
         return 0
 
-    # 先尝试 SIGTERM 优雅退出
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except Exception as e:
-        print(f"Failed to stop server: {e}")
-        return 1
+    print(f"Stopping server (pid={pid})...")
+    if _kill_pid(pid):
+        pid_path.unlink(missing_ok=True)
+        print("Server stopped")
+        return 0
 
-    # 等待 2 秒
-    for _ in range(20):
-        if not is_running(pid):
-            break
-        time.sleep(0.1)
+    # PID 方式失败，尝试端口兜底
+    port = _get_configured_port(config_path)
+    port_pid, _ = find_process_using_port(port)
+    if port_pid > 0 and port_pid != pid and is_running(port_pid):
+        print(f"PID mismatch, killing port {port} process (pid={port_pid})")
+        if _kill_pid(port_pid):
+            pid_path.unlink(missing_ok=True)
+            print("Server stopped")
+            return 0
 
-    # 如果还在运行，强制 SIGKILL
-    if is_running(pid):
-        print(f"Server not responding to SIGTERM, sending SIGKILL (pid={pid})")
+    print(f"Failed to stop server (pid={pid})")
+    return 1
+
+
+def _get_configured_port(config_path: Path = None) -> int:
+    """从配置文件读取端口号"""
+    if config_path and config_path.exists():
         try:
-            os.kill(pid, signal.SIGKILL)
-        except Exception as e:
-            print(f"Failed to kill server: {e}")
-            return 1
-        # 再等待 1 秒
-        for _ in range(10):
-            if not is_running(pid):
-                break
-            time.sleep(0.1)
-
-    if is_running(pid):
-        print(f"Failed to stop server (pid={pid})")
-        return 1
-
-    pid_path.unlink(missing_ok=True)
-    print("Server stopped")
-    return 0
+            import json
+            cfg = json.loads(config_path.read_text())
+            return int(cfg.get("server", {}).get("port", 18080))
+        except Exception:
+            pass
+    return 18080
 
 
 def status_server(pid_path: Path) -> int:
@@ -417,14 +458,14 @@ def main() -> int:
         return run_server(config_path)
 
     if args.restart:
-        stop_server(pid_path)
+        stop_server(pid_path, config_path)
         return start_server(config_path, pid_path)
 
     if args.start:
         return start_server(config_path, pid_path)
 
     if args.stop:
-        return stop_server(pid_path)
+        return stop_server(pid_path, config_path)
 
     if args.status:
         return status_server(pid_path)
