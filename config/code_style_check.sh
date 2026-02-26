@@ -95,10 +95,8 @@ fi
 
 if [ -z "$CONFIG_PATH" ]; then
     warn "未找到配置文件 .biliobjclint.yaml"
-    log_warn "Config file not found in PROJECT_ROOT($PROJECT_ROOT) or SRCROOT($SRCROOT)"
     exit 0
 fi
-log_info "Config file: $CONFIG_PATH"
 
 # 加载日志库
 if [ "$DEBUG_MODE" = true ]; then
@@ -114,6 +112,7 @@ if [ -f "$LOG_LIB_PATH" ]; then
     log_info "Project: ${SRCROOT}"
     log_info "Configuration: ${CONFIGURATION}"
     [ "$DEBUG_MODE" = true ] && log_info "Debug mode: enabled"
+    log_info "Config file: $CONFIG_PATH"
 else
     # 如果日志库不存在，定义空函数
     log_info() { :; }
