@@ -105,8 +105,8 @@ biliobjclint-xcode /path/to/App.xcworkspace -p MyProject -t MyTarget --bootstrap
 ```
 
 This will:
-1. Copy `bootstrap.sh` to `./scripts/` directory (same level as workspace/xcodeproj)
-2. Calculate correct relative path from SRCROOT to scripts directory
+1. Copy `bootstrap.sh` to `./.biliobjclint/` directory (same level as workspace/xcodeproj)
+2. Calculate correct relative path from SRCROOT to `.biliobjclint` directory
 3. Add `[BiliObjcLint] Package Manager` Build Phase with auto-calculated paths
 
 This is especially useful for workspaces where SRCROOT differs from the workspace root directory.
@@ -117,8 +117,8 @@ Use the bootstrap script to automatically install and configure BiliObjCLint:
 
 **Step 1: Copy bootstrap.sh to your project**
 ```bash
-mkdir -p /path/to/your/project/scripts
-cp $(brew --prefix biliobjclint)/libexec/config/bootstrap.sh /path/to/your/project/scripts/
+mkdir -p /path/to/your/project/.biliobjclint
+cp $(brew --prefix biliobjclint)/libexec/config/bootstrap.sh /path/to/your/project/.biliobjclint/
 ```
 
 **Step 2: Add Build Phase in Xcode**
@@ -130,7 +130,7 @@ cp $(brew --prefix biliobjclint)/libexec/config/bootstrap.sh /path/to/your/proje
 6. Drag the new phase to the **top** (before all other phases)
 7. Paste the following script:
 ```bash
-"${SRCROOT}/scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "${PROJECT_FILE_PATH}" -t "${TARGET_NAME}"
+"${SRCROOT}/.biliobjclint/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "${PROJECT_FILE_PATH}" -t "${TARGET_NAME}"
 ```
 > Note: `${WORKSPACE_PATH}` is the workspace full path, `${PROJECT_FILE_PATH}` is the .xcodeproj full path
 

@@ -8,13 +8,13 @@
 #   log_info "message"
 #   log_error "message"
 #
-# 日志文件存储在 BiliObjCLint/logs/ 目录下
+# 日志文件统一存储在 ~/.biliobjclint/logs/ 目录下
 #
 
 # 获取脚本所在目录（调用时确定）
 _LOGGING_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _BILIOBJCLINT_ROOT="$(dirname "$(dirname "$_LOGGING_LIB_DIR")")"
-_LOGS_DIR="$_BILIOBJCLINT_ROOT/logs"
+_LOGS_DIR="$HOME/.biliobjclint/logs"
 
 # 日志级别
 LOG_LEVEL_DEBUG=0

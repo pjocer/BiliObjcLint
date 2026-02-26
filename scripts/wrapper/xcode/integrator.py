@@ -128,8 +128,8 @@ class XcodeIntegrator(ProjectLoaderMixin, PhaseManagerMixin, BootstrapMixin):
 
     def show_manual(self) -> None:
         """显示手动配置说明（使用自动计算的路径）"""
-        # 计算 scripts 目录相对于 SRCROOT 的路径
-        scripts_dir = self.project_path.parent / "scripts"
+        # 计算 .biliobjclint 目录相对于 SRCROOT 的路径
+        scripts_dir = self.project_path.parent / ".biliobjclint"
         srcroot = self.get_project_srcroot()
 
         if srcroot:
@@ -137,8 +137,8 @@ class XcodeIntegrator(ProjectLoaderMixin, PhaseManagerMixin, BootstrapMixin):
             scripts_path = "${SRCROOT}/" + relative_path
         else:
             # 默认值
-            scripts_path = "${SRCROOT}/../scripts"
-            relative_path = '../scripts'
+            scripts_path = "${SRCROOT}/../.biliobjclint"
+            relative_path = '../.biliobjclint'
 
         print("")
         print("==========================================")
@@ -147,14 +147,14 @@ class XcodeIntegrator(ProjectLoaderMixin, PhaseManagerMixin, BootstrapMixin):
         print("")
         print("推荐使用 --bootstrap 自动配置，或手动执行以下步骤：")
         print("")
-        print("1. 创建 scripts 目录（与 .xcworkspace/.xcodeproj 同级）")
+        print("1. 创建 .biliobjclint 目录（与 .xcworkspace/.xcodeproj 同级）")
         print(f"   mkdir -p {scripts_dir}")
         print("")
-        print("2. 复制脚本到 scripts 目录:")
+        print("2. 复制脚本到 .biliobjclint 目录:")
         print("   BREW_PREFIX=$(brew --prefix biliobjclint)")
-        print('   cp "$BREW_PREFIX/libexec/config/bootstrap.sh" scripts/')
-        print('   cp "$BREW_PREFIX/libexec/config/code_style_check.sh" scripts/')
-        print("   chmod +x scripts/*.sh")
+        print(f'   cp "$BREW_PREFIX/libexec/config/bootstrap.sh" {scripts_dir}/')
+        print(f'   cp "$BREW_PREFIX/libexec/config/code_style_check.sh" {scripts_dir}/')
+        print(f"   chmod +x {scripts_dir}/*.sh")
         print("")
         print("3. 打开 Xcode 项目 → 选择 Target → Build Phases")
         print("")
@@ -184,5 +184,5 @@ class XcodeIntegrator(ProjectLoaderMixin, PhaseManagerMixin, BootstrapMixin):
         print("")
         print(f"注意: 以上路径基于您的项目结构自动计算")
         print(f"      SRCROOT = {srcroot}")
-        print(f"      Scripts 相对路径 = {relative_path}")
+        print(f"      .biliobjclint 相对路径 = {relative_path}")
         print("")

@@ -29,13 +29,13 @@ import traceback
 
 # 日志目录
 def get_logs_dir() -> Path:
-    """获取日志目录路径"""
-    # 从当前文件推断项目根目录
-    current_file = Path(__file__).resolve()
-    # scripts/core/lint/logger.py -> 上两级是 scripts, 再上一级是项目根目录
-    project_root = current_file.parent.parent.parent.parent
-    logs_dir = project_root / "logs"
-    logs_dir.mkdir(exist_ok=True)
+    """获取日志目录路径
+
+    统一使用 ~/.biliobjclint/logs/，避免依赖脚本自身位置推算。
+    解决 brew Cellar 目录在升级时被删除导致日志丢失的问题。
+    """
+    logs_dir = Path.home() / ".biliobjclint" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
     return logs_dir
 
 

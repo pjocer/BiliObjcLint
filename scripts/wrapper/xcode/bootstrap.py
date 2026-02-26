@@ -202,12 +202,12 @@ class BootstrapMixin:
             self.logger.info(f"[DEBUG MODE] Debug path: {self.debug_path}")
             print(f"[DEBUG MODE] 启用调试模式，使用本地目录: {self.debug_path}")
 
-        # 1. 确定 scripts 目录位置（输入路径的同级目录）
-        scripts_dir = self.project_path.parent / "scripts"
+        # 1. 确定工具目录位置（输入路径的同级目录）
+        scripts_dir = self.project_path.parent / ".biliobjclint"
         self.logger.debug(f"Target scripts directory: {scripts_dir}")
 
         # 2. 处理调试模式标记文件
-        debug_file = scripts_dir / ".biliobjclint_debug"
+        debug_file = scripts_dir / ".debug"
         if self.debug_path:
             # 调试模式：创建标记文件
             if not dry_run:
@@ -277,9 +277,12 @@ class BootstrapMixin:
             key = project_config.save(config)
             self.logger.info(f"Saved project config (key: {key})")
 
-        # 8. 添加 Bootstrap Build Phase
+        # 8. 复制配置文件
+        self.copy_config(dry_run)
+
+        # 9. 添加 Bootstrap Build Phase
         if not self.add_bootstrap_phase(target, relative_path, dry_run):
             return False
 
-        # 9. 保存项目
+        # 10. 保存项目
         return self.save(dry_run)

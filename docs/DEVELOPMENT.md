@@ -162,24 +162,17 @@ brew services restart biliobjclint-server
 
 ### 日志文件位置
 
-**开发模式**（本地运行）：
-- 日志位于项目根目录的 `logs/` 目录
-
-**Homebrew 安装后**：
-- 日志位于 brew 安装目录：`$(brew --prefix biliobjclint)/libexec/logs/`
+日志统一存储在 `~/.biliobjclint/logs/` 目录下，不再依赖脚本安装位置（避免 brew 升级时日志丢失）。
 
 ```bash
-# 获取 Homebrew 安装后的日志目录
-brew_logs="$(brew --prefix biliobjclint)/libexec/logs"
-
 # 查看最新日志
-ls -lt "$brew_logs" | head -10
+ls -lt ~/.biliobjclint/logs/ | head -10
 
-# 实时查看 background_upgrade 日志
-tail -f "$brew_logs"/background_upgrade_*.log
+# 实时查看日志
+tail -f ~/.biliobjclint/logs/biliobjclint_*.log
 
-# 实时查看 check_update 日志
-tail -f "$brew_logs"/check_update_*.log
+# 实时查看 xcode 集成日志
+tail -f ~/.biliobjclint/logs/xcode_*.log
 ```
 
 **后台升级调试日志**：
@@ -191,15 +184,15 @@ tail -f "$brew_logs"/check_update_*.log
 cat ~/.biliobjclint/background_upgrade.log
 ```
 
-**scripts 路径持久化存储**：
-- 位于用户目录：`~/.biliobjclint/scripts_paths.json`
-- 存储 `--bootstrap` 执行时计算的 scripts 相对路径
-- Key 格式：`{project_path}|{project_name}|{target_name}`
-- Value：scripts 目录相对于 SRCROOT 的路径
+**工具目录路径持久化存储**：
+- 位于用户目录：`~/.biliobjclint/projects.json`
+- 存储 `--bootstrap` 执行时计算的 `.biliobjclint` 目录相对路径
+- Key 格式：`{xcodeproj_path}|{target_name}`
+- Value：`.biliobjclint` 目录相对于 SRCROOT 的路径
 
 ```bash
-# 查看 scripts 路径配置
-cat ~/.biliobjclint/scripts_paths.json
+# 查看项目配置
+cat ~/.biliobjclint/projects.json
 ```
 
 ### 日志文件类型
@@ -265,13 +258,13 @@ biliobjclint-xcode /path/to/App.xcodeproj --bootstrap \
 | 版本检查 | 自动检查 GitHub 更新 | 跳过（避免覆盖本地代码） |
 | 脚本复制 | 从 brew prefix 复制 | 从本地目录复制 |
 | 配置文件 | 目标项目的 `.biliobjclint.yaml` | 同左 |
-| 标记文件 | 无 | `scripts/.biliobjclint_debug` |
+| 标记文件 | 无 | `.biliobjclint/.debug` |
 
 ### 退出调试模式
 
 ```bash
 # 方式 1: 删除标记文件
-rm /path/to/App/scripts/.biliobjclint_debug
+rm /path/to/App/.biliobjclint/.debug
 
 # 方式 2: 重新执行 bootstrap（不带 --debug）
 biliobjclint-xcode /path/to/App.xcodeproj --bootstrap
@@ -290,15 +283,15 @@ biliobjclint-xcode /path/to/App.xcodeproj --bootstrap
 ./scripts/others/release.sh -y
 
 # 4. 退出调试模式，验证 Homebrew 安装版本
-rm /path/to/App/scripts/.biliobjclint_debug
+rm /path/to/App/.biliobjclint/.debug
 ```
 
 ### 注意事项
 
 1. **venv 必须先初始化**: 调试模式使用本地 `.venv`，必须先执行 `./setup_env.sh`
 2. **跳过版本检查**: 调试模式会跳过版本更新检查，避免后台升级覆盖本地代码
-3. **gitignore**: `.biliobjclint_debug` 文件应加入目标项目的 `.gitignore`
-4. **日志位置**: 调试模式下日志写入本地 `logs/` 目录
+3. **gitignore**: `.biliobjclint/` 目录应加入目标项目的 `.gitignore`
+4. **日志位置**: 日志统一写入 `~/.biliobjclint/logs/` 目录
 
 ## 添加新的内置规则
 

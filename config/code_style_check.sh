@@ -8,7 +8,7 @@
 #
 # Usage:
 #   在 Xcode Build Phase 中：
-#   "${SRCROOT}/../scripts/code_style_check.sh"
+#   "${SRCROOT}/../.biliobjclint/code_style_check.sh"
 #
 # 依赖的 Xcode 环境变量：
 #   - SRCROOT: 项目根目录
@@ -55,7 +55,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # 检查是否为调试模式
-DEBUG_FILE="$SCRIPT_DIR/.biliobjclint_debug"
+DEBUG_FILE="$SCRIPT_DIR/.debug"
 DEBUG_MODE=false
 if [ -f "$DEBUG_FILE" ]; then
     DEBUG_PATH=$(cat "$DEBUG_FILE")

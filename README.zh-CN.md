@@ -105,8 +105,8 @@ biliobjclint-xcode /path/to/App.xcworkspace -p MyProject -t MyTarget --bootstrap
 ```
 
 这将会：
-1. 复制 `bootstrap.sh` 到 `./scripts/` 目录（与 workspace/xcodeproj 同级）
-2. 自动计算从 SRCROOT 到 scripts 目录的相对路径
+1. 复制 `bootstrap.sh` 到 `./.biliobjclint/` 目录（与 workspace/xcodeproj 同级）
+2. 自动计算从 SRCROOT 到 `.biliobjclint` 目录的相对路径
 3. 添加 `[BiliObjcLint] Package Manager` Build Phase，使用自动计算的路径
 
 这对于 SRCROOT 与 workspace 根目录不同的工作空间特别有用。
@@ -117,8 +117,8 @@ biliobjclint-xcode /path/to/App.xcworkspace -p MyProject -t MyTarget --bootstrap
 
 **第一步：复制 bootstrap.sh 到你的项目**
 ```bash
-mkdir -p /path/to/your/project/scripts
-cp $(brew --prefix biliobjclint)/libexec/config/bootstrap.sh /path/to/your/project/scripts/
+mkdir -p /path/to/your/project/.biliobjclint
+cp $(brew --prefix biliobjclint)/libexec/config/bootstrap.sh /path/to/your/project/.biliobjclint/
 ```
 
 **第二步：在 Xcode 中添加 Build Phase**
@@ -130,7 +130,7 @@ cp $(brew --prefix biliobjclint)/libexec/config/bootstrap.sh /path/to/your/proje
 6. 将新建的 Phase 拖动到**最顶部**（所有其他 Phase 之前）
 7. 粘贴以下脚本：
 ```bash
-"${SRCROOT}/scripts/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "${PROJECT_FILE_PATH}" -t "${TARGET_NAME}"
+"${SRCROOT}/.biliobjclint/bootstrap.sh" -w "${WORKSPACE_PATH}" -p "${PROJECT_FILE_PATH}" -t "${TARGET_NAME}"
 ```
 > 注意: `${WORKSPACE_PATH}` 是 workspace 完整路径，`${PROJECT_FILE_PATH}` 是 .xcodeproj 完整路径
 
