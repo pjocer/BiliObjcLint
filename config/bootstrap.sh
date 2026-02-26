@@ -81,12 +81,16 @@ main() {
     info "Project: $XCODEPROJ_PATH"
     info "Target: $TARGET_NAME"
 
+    # 项目根目录 = SCRIPT_DIR 的父目录（.biliobjclint/ 的上一级）
+    PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
     # 调用 biliobjclint-xcode 检查版本更新并注入 Build Phase
     # 使用 PROJECT_FILE_PATH 和 TARGET_NAME 作为配置查找的 key
     biliobjclint-xcode --check-and-inject \
         --xcodeproj "$XCODEPROJ_PATH" \
         --target "$TARGET_NAME" \
-        --scripts-dir "$SCRIPT_DIR"
+        --scripts-dir "$SCRIPT_DIR" \
+        --project-root "$PROJECT_ROOT"
 
     info "Bootstrap 完成"
 }

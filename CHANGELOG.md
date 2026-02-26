@@ -2,6 +2,13 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.6.1 (2026-02-26)
+
+### 修复
+- **workspace 项目配置文件加载错误**：`code_style_check.sh` 不再硬编码 `CONFIG_PATH=${SRCROOT}/.biliobjclint.yaml`，改为从 `SCRIPT_DIR`（即 `.biliobjclint/`）父目录推导项目根目录，优先加载项目根目录的配置文件，解决 workspace 中子项目 SRCROOT 下的不完整配置被错误加载的问题
+- **linter.py 配置向上搜索**：`_load_config()` 新增 `_find_config_upward()` 方法，从 `project_root` 向上逐级搜索 `.biliobjclint.yaml` 直到 git 仓库根目录，CLI 直接调用时也能正确找到配置
+- **bootstrap.sh 传递项目根目录**：新增 `--project-root` 参数传递给 `biliobjclint-xcode`
+
 ## v1.6.0 (2026-02-26)
 
 ### 重构

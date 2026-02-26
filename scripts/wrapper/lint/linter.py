@@ -196,24 +196,35 @@ class BiliObjCLint:
 
             return exit_code if self.config.fail_on_error else 0
 
+    def _find_config_upward(self) -> Optional[str]:
+        """从 project_root 向上逐级搜索 .biliobjclint.yaml"""
+        names = [".biliobjclint.yaml", ".biliobjclint.yml"]
+        current = self.project_root
+
+        while True:
+            for name in names:
+                candidate = current / name
+                if candidate.exists():
+                    self.logger.debug(f"Found config via upward search: {candidate}")
+                    return str(candidate)
+
+            # 到达 git 根目录或文件系统根目录时停止
+            if (current / ".git").exists() or current == current.parent:
+                break
+            current = current.parent
+
+        return None
+
     def _load_config(self):
         """加载配置文件"""
         config_path = self.args.config
         if config_path and not os.path.isabs(config_path):
             config_path = str(self.project_root / config_path)
 
-        # 如果没有指定配置文件，尝试默认位置
+        # 如果显式指定了 config 且文件存在，直接使用
+        # 否则从 project_root 向上逐级搜索
         if not config_path or not os.path.exists(config_path):
-            default_paths = [
-                self.project_root / ".biliobjclint.yaml",
-                self.project_root / ".biliobjclint.yml",
-                self.project_root / "biliobjclint.yaml",
-            ]
-            for p in default_paths:
-                if p.exists():
-                    config_path = str(p)
-                    self.logger.debug(f"Found config file: {config_path}")
-                    break
+            config_path = self._find_config_upward()
 
         if config_path:
             self.logger.info(f"Loading config from: {config_path}")
