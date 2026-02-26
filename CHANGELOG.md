@@ -2,6 +2,11 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.6.2 (2026-02-26)
+
+### 修复
+- **code_style_check.sh 执行崩溃**：修复 `log_info`/`log_warn` 在日志库 `logging.sh` 加载前被调用导致 `command not found` 的问题
+
 ## v1.6.1 (2026-02-26)
 
 ### 修复
