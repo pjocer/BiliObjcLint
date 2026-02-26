@@ -104,6 +104,7 @@ TARGET_NAME=""
 LINT_PATH=""
 SCRIPTS_DIR=""
 DEBUG_PATH=""
+CI_PROJECT_ROOT=""
 ACTION="add"
 DRY_RUN=""
 OVERRIDE=""
@@ -159,6 +160,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --debug)
             DEBUG_PATH="$2"
+            shift 2
+            ;;
+        --project-root)
+            CI_PROJECT_ROOT="$2"
             shift 2
             ;;
         --list-projects)
