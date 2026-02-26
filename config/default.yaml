@@ -51,6 +51,18 @@ python_rules:
     enabled: true
     severity: warning
 
+  enum_naming:
+    enabled: false  # 默认关闭，需要配置前缀后启用
+    severity: warning
+    params:
+      prefixes: []  # 设置枚举名前缀，如 ["BL", "GM"]
+
+  protocol_naming:
+    enabled: false  # 默认关闭，需要配置前缀后启用
+    severity: warning
+    params:
+      prefixes: []  # 设置协议名前缀，如 ["BL", "GM"]
+
   method_parameter:
     enabled: true
     severity: warning
