@@ -2,6 +2,19 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.6.0 (2026-02-26)
+
+### 重构
+- **目录结构治理**：目标 Xcode 工程内的工具文件目录从 `scripts/` 统一迁移到 `.biliobjclint/`，配置文件 `.biliobjclint.yaml` 位置不变
+- **日志目录统一**：Python (`logger.py`) 和 Shell (`logging.sh`) 日志统一写入 `~/.biliobjclint/logs/`，解决 brew 升级时 Cellar 目录被删除导致日志丢失的问题
+- **debug 标记重命名**：调试模式标记文件从 `.biliobjclint_debug` 改为 `.debug`（位于 `.biliobjclint/` 目录内）
+
+### 修复
+- **bootstrap 未拷贝配置文件**：`--bootstrap` 执行时补充调用 `copy_config()`，自动复制 `default.yaml` 到项目根目录
+
+### 重要
+- 存量工程需重新执行 `biliobjclint-xcode --bootstrap` 以迁移到新目录结构
+
 ## v1.5.2 (2026-02-24)
 
 ### 修复
