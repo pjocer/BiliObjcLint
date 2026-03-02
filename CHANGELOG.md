@@ -2,6 +2,14 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.6.3 (2026-03-02)
+
+### 新增
+- **HTML 报告"忽略全部"按钮**：新增 `/ignore-all` 端点及前端按钮，支持一键忽略所有违规项
+
+### 修复
+- **block_retain_cycle 规则**：修复 10 项误报/漏报问题（字符串字面量 self、@strongify 宏行、嵌套调用、dispatch_group_notify、shadow self 嵌套 block、^ReturnType 模式、多 block 参数类方法、__block self、NSTimer 升级为 error、@weakify/@strongify 跳过）
+
 ## v1.6.2 (2026-02-26)
 
 ### 修复
