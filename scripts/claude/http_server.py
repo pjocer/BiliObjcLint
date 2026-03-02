@@ -175,6 +175,8 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
         ignored = 0
         failed = 0
 
+        logger.info(f"Ignore-all requested for {total} violations")
+
         for v in _all_violations:
             try:
                 # 支持 Violation 对象和 dict 两种格式
@@ -186,14 +188,20 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
                     message = v.message
                     related_lines = v.related_lines
                 else:
-                    # dict 格式
-                    file_path = v.get('file', '')
+                    # dict 格式（来自 Violation.to_dict() 序列化）
+                    file_path = v.get('file_path', '')
                     line = v.get('line', 0)
-                    rule = v.get('rule', '')
+                    rule = v.get('rule_id', '')
                     message = v.get('message', '')
                     related_lines = v.get('related_lines', None)
+                    # JSON 反序列化后 related_lines 为 list，需转为 tuple
+                    if isinstance(related_lines, list) and len(related_lines) == 2:
+                        related_lines = tuple(related_lines)
 
                 if not file_path or not line or not rule or not related_lines:
+                    logger.debug(f"Ignore-all: skipping violation with missing fields: "
+                                 f"file_path={bool(file_path)}, line={line}, "
+                                 f"rule={bool(rule)}, related_lines={related_lines}")
                     failed += 1
                     continue
 
@@ -203,10 +211,14 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
                 if success:
                     ignored += 1
                 else:
+                    logger.debug(f"Ignore-all: add_ignore_from_request returned False for "
+                                 f"{file_path}:{line} [{rule}]")
                     failed += 1
             except Exception as e:
                 logger.warning(f"Failed to ignore violation: {e}")
                 failed += 1
+
+        logger.info(f"Ignore-all completed: {ignored}/{total} ignored, {failed} failed")
 
         _timeout_reset_time = time.time()
 
