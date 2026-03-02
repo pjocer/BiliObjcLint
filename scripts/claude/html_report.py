@@ -378,7 +378,7 @@ HTML_STYLES = '''
         text-align: center;
         margin-top: 30px;
     }
-    .btn-done, .btn-download, .btn-fix-all {
+    .btn-done, .btn-download, .btn-fix-all, .btn-ignore-all {
         padding: 14px 40px;
         font-size: 16px;
         font-weight: 600;
@@ -423,7 +423,25 @@ HTML_STYLES = '''
     .btn-fix-all[data-state="failed"] {
         background: #EF5350;
     }
-    .btn-done:disabled, .btn-download:disabled, .btn-fix-all:disabled {
+    .btn-ignore-all {
+        background: #78909C;
+    }
+    .btn-ignore-all:hover {
+        background: #607D8B;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .btn-ignore-all[data-state="ignoring"] {
+        background: #90A4AE;
+        cursor: wait;
+    }
+    .btn-ignore-all[data-state="completed"] {
+        background: #66BB6A;
+    }
+    .btn-ignore-all[data-state="failed"] {
+        background: #EF5350;
+    }
+    .btn-done:disabled, .btn-download:disabled, .btn-fix-all:disabled, .btn-ignore-all:disabled {
         opacity: 0.6;
         cursor: not-allowed;
         transform: none;
@@ -690,6 +708,46 @@ def _generate_javascript(port: int) -> str:
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+        }}
+
+        // 忽略所有违规
+        async function ignoreAllViolations() {{
+            const btn = document.getElementById('btn-ignore-all');
+            if (!confirm('确定要忽略所有违规吗？忽略后这些问题将不再显示。')) return;
+
+            btn.disabled = true;
+            btn.textContent = '忽略中...';
+            btn.dataset.state = 'ignoring';
+
+            try {{
+                const response = await fetch(`http://localhost:${{SERVER_PORT}}/ignore-all`);
+                const result = await response.json();
+                if (result.success) {{
+                    btn.textContent = `已忽略 ${{result.ignored}}/${{result.total}}`;
+                    btn.dataset.state = 'completed';
+                    // 标记所有违规项为已忽略
+                    document.querySelectorAll('.violation').forEach(el => {{
+                        el.classList.add('ignored');
+                    }});
+                    document.querySelectorAll('.btn-ignore').forEach(el => {{
+                        el.textContent = '已忽略';
+                        el.disabled = true;
+                    }});
+                    if (result.failed > 0) {{
+                        alert(`${{result.ignored}} 个问题已忽略，${{result.failed}} 个忽略失败`);
+                    }}
+                }} else {{
+                    btn.textContent = '忽略全部';
+                    btn.dataset.state = 'failed';
+                    btn.disabled = false;
+                    alert('忽略失败: ' + (result.message || '未知错误'));
+                }}
+            }} catch (e) {{
+                btn.textContent = '忽略全部';
+                btn.dataset.state = 'failed';
+                btn.disabled = false;
+                alert('操作失败');
+            }}
         }}
 
         // 修复所有违规
@@ -975,6 +1033,7 @@ class HtmlReportGenerator:
             html_parts.append(f'''
     <div class="footer-actions">
         <button class="btn-download" onclick="downloadReport()" id="btn-download">📥 下载报告</button>
+        <button class="btn-ignore-all" onclick="ignoreAllViolations()" id="btn-ignore-all" data-state="normal">🚫 忽略全部</button>
         <button class="btn-fix-all" onclick="fixAllViolations()" id="btn-fix-all" data-state="normal">🔧 修复全部</button>
         <button class="btn-done" onclick="finishAndContinue()" id="btn-done">✓ 完成并继续编译</button>
     </div>

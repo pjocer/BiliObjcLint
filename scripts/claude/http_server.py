@@ -104,6 +104,9 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
         elif path == '/ignore':
             # 忽略单个违规
             self._handle_ignore(params)
+        elif path == '/ignore-all':
+            # 忽略所有违规
+            self._handle_ignore_all()
         elif path == '/fix-single':
             # 修复单个违规
             self._handle_fix_single(params)
@@ -155,6 +158,74 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
                 self._send_json_response({'success': False, 'message': '忽略缓存未初始化'})
         except Exception as e:
             self._send_json_response({'success': False, 'message': str(e)})
+
+    def _handle_ignore_all(self):
+        """处理忽略所有违规的请求"""
+        global _ignore_cache, _timeout_reset_time, _all_violations
+
+        if not _all_violations:
+            self._send_json_response({'success': False, 'message': '没有可忽略的问题'})
+            return
+
+        if not _ignore_cache:
+            self._send_json_response({'success': False, 'message': '忽略缓存未初始化'})
+            return
+
+        total = len(_all_violations)
+        ignored = 0
+        failed = 0
+
+        for v in _all_violations:
+            try:
+                # 支持 Violation 对象和 dict 两种格式
+                if hasattr(v, 'file_path'):
+                    # Violation dataclass 对象
+                    file_path = v.file_path
+                    line = v.line
+                    rule = v.rule_id
+                    message = v.message
+                    related_lines = v.related_lines
+                else:
+                    # dict 格式
+                    file_path = v.get('file', '')
+                    line = v.get('line', 0)
+                    rule = v.get('rule', '')
+                    message = v.get('message', '')
+                    related_lines = v.get('related_lines', None)
+
+                if not file_path or not line or not rule or not related_lines:
+                    failed += 1
+                    continue
+
+                success = _ignore_cache.add_ignore_from_request(
+                    file_path, line, rule, message, related_lines
+                )
+                if success:
+                    ignored += 1
+                else:
+                    failed += 1
+            except Exception as e:
+                logger.warning(f"Failed to ignore violation: {e}")
+                failed += 1
+
+        _timeout_reset_time = time.time()
+
+        if ignored == 0:
+            self._send_json_response({
+                'success': False,
+                'message': f'所有 {total} 个问题忽略失败',
+                'total': total,
+                'ignored': 0,
+                'failed': failed,
+            })
+        else:
+            self._send_json_response({
+                'success': True,
+                'message': f'已忽略 {ignored}/{total} 个问题',
+                'total': total,
+                'ignored': ignored,
+                'failed': failed,
+            })
 
     def _handle_fix_single(self, params: dict):
         """处理修复单个违规的请求"""
