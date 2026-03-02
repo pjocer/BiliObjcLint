@@ -919,11 +919,27 @@ class HtmlReportGenerator:
                         code_html += f'<div class="code-line {highlighted}"><span class="code-line-num">{ln}</span><span class="code-line-content">{highlighted_content}</span></div>'
                     code_html += '</div>'
 
-                # 转义文件路径用于 JavaScript
-                escaped_file_path = file_path.replace('\\', '\\\\').replace("'", "\\'")
+                # 转义文件路径和消息用于 onclick 属性中的 JS 字符串
+                # 需要两层转义：
+                #   1. JS 转义：处理 \ 和 '（参数在 JS 单引号字符串中）
+                #   2. HTML 属性转义：处理 " & < >（onclick 在双引号 HTML 属性中）
+                # HTML 解析器先将 &quot; 还原为 "，再交给 JS 引擎，
+                # 此时 " 在单引号 JS 字符串内是合法的
+                def _escape_for_onclick(s: str) -> str:
+                    # Step 1: JS 转义（单引号字符串上下文）
+                    s = s.replace('\\', '\\\\')
+                    s = s.replace("'", "\\'")
+                    s = s.replace('\n', ' ')
+                    s = s.replace('\r', ' ')
+                    # Step 2: HTML 属性转义（双引号属性上下文）
+                    s = s.replace('&', '&amp;')
+                    s = s.replace('"', '&quot;')
+                    s = s.replace('<', '&lt;')
+                    s = s.replace('>', '&gt;')
+                    return s
 
-                # 转义消息用于 JavaScript
-                escaped_message = message.replace('\\', '\\\\').replace("'", "\\'").replace('"', '\\"').replace('\n', ' ')
+                escaped_file_path = _escape_for_onclick(file_path)
+                escaped_message = _escape_for_onclick(message)
 
                 html_parts.append(f'''
             <div class="violation {severity}" id="{violation_id}" onclick="toggleViolation('{violation_id}')">

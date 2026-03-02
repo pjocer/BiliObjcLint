@@ -59,6 +59,15 @@ class SubType:
         "class_method_self",
         "类方法中使用 self 可能安全，但建议使用 weakSelf 以确保无循环引用"
     )
+    BLOCK_SELF = ViolationType(
+        "block_self",
+        "__block 修饰的 self 引用在 ARC 下仍为强引用，可能导致循环引用"
+    )
+    TIMER_BLOCK_SELF = ViolationType(
+        "timer_block_self",
+        "NSTimer 会持有 block，block 内使用 self 可能导致循环引用",
+        Severity.ERROR
+    )
 
 
 @dataclass
@@ -101,8 +110,8 @@ class BlockRetainCycleRule(BaseRule):
     # @strongify(self)
     STRONG_MACRO_PATTERN = re.compile(r'@strongify\s*\([^)]*\bself\b[^)]*\)')
 
-    # Block 开始检测
-    BLOCK_START_PATTERN = re.compile(r'\^\s*[\(\{]')
+    # Block 开始检测：支持 ^{, ^(, ^ReturnType(, ^ReturnType { 等形式
+    BLOCK_START_PATTERN = re.compile(r'\^\s*(?:[A-Za-z_]\w*\s*)?[\(\{]')
 
     # 方法定义开始
     METHOD_START_PATTERN = re.compile(r'^[-+]\s*\([^)]+\)')
@@ -110,11 +119,21 @@ class BlockRetainCycleRule(BaseRule):
     # self 使用检测 (排除注释和字符串)
     SELF_USAGE_PATTERN = re.compile(r'(?<!\w)self(?:\.|\s*->|\s*\]|\s+\w)')
 
-    # C 函数检测 (dispatch_async, dispatch_after, dispatch_once 等)
-    C_FUNCTION_PATTERN = re.compile(r'\bdispatch_(?:async|after|once|sync|barrier_async|barrier_sync|apply)\s*\(')
+    # C 函数检测 (dispatch_async, dispatch_after, dispatch_once, dispatch_group_notify 等)
+    C_FUNCTION_PATTERN = re.compile(r'\bdispatch_(?:async|after|once|sync|barrier_async|barrier_sync|apply|group_notify|group_async)\s*\(')
 
     # 类方法调用检测 (receiver 以大写字母开头)
     CLASS_METHOD_PATTERN = re.compile(r'\[\s*([A-Z][A-Za-z0-9]*)\s+\w+')
+
+    # __block self 引用检测
+    BLOCK_SELF_PATTERN = re.compile(
+        r'__block\s+(?:typeof|__typeof|__typeof__)\s*\(\s*self\s*\)\s*(\w+)\s*=\s*self'
+    )
+
+    # 特殊类方法列表：这些类方法会持有 block，使用 self 应报 error 而非 warning
+    RETAIN_BLOCK_CLASS_METHODS = re.compile(
+        r'\[\s*NSTimer\s+scheduledTimerWithTimeInterval:'
+    )
 
     def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
         violations = []
@@ -127,6 +146,20 @@ class BlockRetainCycleRule(BaseRule):
             # 跳过注释行
             stripped = line.strip()
             if stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*'):
+                continue
+
+            # 检测 __block self 声明（不需要在 block 内，声明本身就是问题）
+            block_self_match = self.BLOCK_SELF_PATTERN.search(line)
+            if block_self_match:
+                related = self.get_related_lines(file_path, line_num, lines)
+                violations.append(self.create_violation(
+                    file_path=file_path,
+                    line=line_num,
+                    column=line.find('__block') + 1,
+                    lines=lines,
+                    violation_type=SubType.BLOCK_SELF,
+                    related_lines=related
+                ))
                 continue
 
             # 检测 self 使用
@@ -317,9 +350,13 @@ class BlockRetainCycleRule(BaseRule):
     def _get_block_context(self, lines: List[str], line_num: int) -> str:
         """
         获取 block 的调用上下文
-        返回: 'c_function' | 'class_method' | 'instance_method'
+        返回: 'c_function' | 'class_method' | 'retain_class_method' | 'instance_method'
 
-        策略：找到包含 block 开始 (^{) 的那一行，只分析该行的调用上下文
+        策略：找到包含 block 开始 (^{) 的那一行，分析该行的调用上下文。
+        如果当前 block 是多 block 参数调用的后续 block（如 completion:^{...}），
+        则继续向上搜索整个方法调用的上下文。
+
+        retain_class_method: 类方法会持有 block（如 NSTimer），应升级为 error
         """
         method_start = self._find_method_start(lines, line_num)
 
@@ -352,14 +389,55 @@ class BlockRetainCycleRule(BaseRule):
 
         # 检测类方法调用：[ClassName methodName:^{...}]
         # 类方法调用必须在 block 开始之前
+        # 排除嵌套调用模式：[[ClassName xxx] instanceMethod:^{...}]
         block_match = self.BLOCK_START_PATTERN.search(block_start_line)
         if block_match:
             line_before_block = block_start_line[:block_match.start()]
             class_match = self.CLASS_METHOD_PATTERN.search(line_before_block)
             if class_match:
+                # 检查是否为嵌套调用：[[ClassName xxx] instanceMethod:]
+                # CLASS_METHOD_PATTERN 匹配的 [ 是内层的，如果它前面紧邻另一个 [
+                # 则说明是 [[ClassName method] instanceMethod:] 模式
+                prefix = line_before_block[:class_match.start()].rstrip()
+                if prefix.endswith('['):
+                    return 'instance_method'
+                # 检查是否为会持有 block 的类方法（如 NSTimer）
+                if self.RETAIN_BLOCK_CLASS_METHODS.search(block_start_line):
+                    return 'retain_class_method'
                 return 'class_method'
 
+            # 如果当前 block 开始行是 "} xxx:^..." 模式（多 block 参数的后续 block），
+            # 则继续向上搜索整个方法调用的首个 block 来判断上下文
+            stripped_before = line_before_block.strip()
+            if stripped_before.startswith('}'):
+                # 向上继续查找前一个 block 或方法调用起始行
+                for j in range(block_start_idx - 1, method_start - 2, -1):
+                    if j < 0:
+                        break
+                    prev_line = lines[j]
+                    if self.METHOD_START_PATTERN.match(prev_line.strip()):
+                        break
+                    if self.C_FUNCTION_PATTERN.search(prev_line):
+                        return 'c_function'
+                    prev_class_match = self.CLASS_METHOD_PATTERN.search(prev_line)
+                    if prev_class_match:
+                        prev_prefix = prev_line[:prev_class_match.start()].rstrip()
+                        if prev_prefix.endswith('[[') or prev_prefix.endswith('[ ['):
+                            return 'instance_method'
+                        if self.RETAIN_BLOCK_CLASS_METHODS.search(prev_line):
+                            return 'retain_class_method'
+                        return 'class_method'
+
         return 'instance_method'
+
+    # 字符串字面量匹配（@"..." 或 "..."，支持转义引号）
+    STRING_LITERAL_PATTERN = re.compile(r'@?"(?:[^"\\]|\\.)*"')
+
+    def _strip_string_literals(self, line: str) -> str:
+        """移除字符串字面量内容，保留位置占位（避免列号偏移影响后续匹配）"""
+        def _replace_with_spaces(m):
+            return ' ' * len(m.group(0))
+        return self.STRING_LITERAL_PATTERN.sub(_replace_with_spaces, line)
 
     def _find_self_usages(self, line: str) -> List[Tuple[int, str]]:
         """
@@ -373,8 +451,12 @@ class BlockRetainCycleRule(BaseRule):
         comment_pos = line.find('//')
         check_line = line[:comment_pos] if comment_pos != -1 else line
 
-        # 跳过 weak/strong 声明行
-        if self.WEAK_MANUAL_PATTERN.search(check_line) or self.STRONG_MANUAL_PATTERN.search(check_line):
+        # 移除字符串字面量中的内容（避免 @"self" 被误检）
+        check_line = self._strip_string_literals(check_line)
+
+        # 跳过 weak/strong 声明行（manual 和 macro）
+        if (self.WEAK_MANUAL_PATTERN.search(check_line) or self.STRONG_MANUAL_PATTERN.search(check_line)
+                or self.WEAK_MACRO_PATTERN.search(check_line) or self.STRONG_MACRO_PATTERN.search(check_line)):
             return usages
 
         # 如果行包含 block 开始 (^{)，只检查 ^{ 之后的部分
@@ -435,9 +517,20 @@ class BlockRetainCycleRule(BaseRule):
         has_macro_strong = any(d.is_macro for d in strong_decls)
         has_strong = len(strong_decls) > 0
 
+        # 检查是否存在 shadow self（manual 或 macro）
+        # shadow self 意味着 self 已被重定义为局部变量，不会导致循环引用
+        has_shadow_self = False
+        if has_strong:
+            manual_strong_name = next((d.var_name for d in strong_decls if not d.is_macro), None)
+            if manual_strong_name == 'self' or has_macro_strong:
+                has_shadow_self = True
+
         # 规则 0: C 函数中的 block -> WARNING 或不检测
         if block_context == 'c_function':
             if usage_type == 'self':
+                # 如果 self 已被 shadow，则安全
+                if has_shadow_self:
+                    return None
                 return self.create_violation(
                     file_path=file_path,
                     line=line_num,
@@ -448,9 +541,27 @@ class BlockRetainCycleRule(BaseRule):
                 )
             return None  # 其他情况 OK
 
-        # 规则 1: 类方法调用中的 block -> WARNING
+        # 规则 1a: 会持有 block 的类方法（如 NSTimer）-> ERROR
+        if block_context == 'retain_class_method':
+            if usage_type == 'self':
+                if has_shadow_self:
+                    return None
+                return self.create_violation(
+                    file_path=file_path,
+                    line=line_num,
+                    column=column,
+                    lines=lines,
+                    violation_type=SubType.TIMER_BLOCK_SELF,
+                    related_lines=related_lines
+                )
+            return None
+
+        # 规则 1b: 一般类方法调用中的 block -> WARNING
         if block_context == 'class_method':
             if usage_type == 'self' and not has_weak:
+                # 如果 self 已被 shadow，则安全
+                if has_shadow_self:
+                    return None
                 return self.create_violation(
                     file_path=file_path,
                     line=line_num,
@@ -481,6 +592,15 @@ class BlockRetainCycleRule(BaseRule):
             strong_var_name = next((d.var_name for d in strong_decls if not d.is_macro), None)
 
             if usage_type == 'self':
+                # 如果 strong 声明的变量名就是 self（如 __strong typeof(weakSelf) self = weakSelf），
+                # 则 self 已被 shadow 为 block 内的局部变量，等价于 @strongify(self) -> OK
+                if has_strong and strong_var_name == 'self':
+                    return None
+
+                # 如果同时有 @strongify(self) 宏，self 也已被 shadow -> OK
+                if has_macro_strong:
+                    return None
+
                 # 有 weak 但使用了 self -> ERROR
                 if has_strong:
                     return self.create_violation(
