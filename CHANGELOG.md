@@ -2,10 +2,20 @@
 
 所有重要的版本更新都会记录在此文件中。
 
-## v1.6.4 (2026-03-02)
+## v1.6.5 (2026-03-04)
 
 ### 重要
-- 移除了 ~/.biliobjclint/projects.json 依赖，编译时不再读取该文件。已部署机器上的旧文件无害，无需手动清理。若升级后遇到问题可通过 brew switch biliobjclint 1.6.4 回退。
+- 移除了 `~/.biliobjclint/projects.json` 全局状态依赖，编译时不再读取该文件，改为从 `scripts_dir` 参数实时计算。已部署机器上的旧文件无害，无需手动清理。若升级后遇到问题可通过 `brew switch biliobjclint 1.6.4` 回退
+
+### 重构
+- **移除 `project_config.py`（204 行）和 `scripts_path_utils.py`（116 行）**：两个全局 JSON 存储模块被替换为各调用处内联的 2 行 `os.path.relpath()` 计算，净减少约 350 行代码
+- **`checker.py` / `phase_updater.py` / `phase_manager.py` / `bootstrap.py`**：移除所有 `project_config.get()` / `project_config.save()` 调用，消除对 `~/.biliobjclint/projects.json` 的读写依赖
+
+### 修复
+- **后台升级后编译失败**：修复 `phase_updater.py` 忽略已传入的 `scripts_dir` 参数、依赖 `projects.json` 查询导致文件缺失时报「未找到项目配置」的问题
+- **`biliobjclint-server clear` 后编译失败**：不再依赖 `~/.biliobjclint/` 目录下的全局状态文件，清理全局目录后编译不受影响
+
+## v1.6.4 (2026-03-02)
 
 ### 修复
 - **忽略全部功能失效**：修复 `/ignore-all` 端点因 dict 键名不匹配（`file` vs `file_path`、`rule` vs `rule_id`）导致所有忽略操作失败的问题，同时增加调试日志辅助排查
