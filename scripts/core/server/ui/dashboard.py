@@ -118,14 +118,29 @@ def render_dashboard(
     # 新增 Violation Type 卡片
     new_types_html = ""
     if new_violation_types:
-        new_types_rows = "".join(
-            f"<tr><td>{render_rule_name(t[0], t[1], t[4] if len(t) > 4 else None)}</td><td>{t[2] or '-'}</td><td>{t[3]}</td></tr>"
-            for t in new_violation_types
-        )
+        from datetime import date as _date
+        today_str = _date.today().isoformat()
+        new_types_rows_list = []
+        for t in new_violation_types:
+            rule_id_val = t[0]
+            rule_name_val = t[1]
+            sub_type_val = t[2]
+            count_val = t[3]
+            desc_val = t[4] if len(t) > 4 else None
+            # 构建跳转链接：violations 页面 + rule_id + 今日日期
+            link = f"/violations?project_key={selected_project_key}&project_name={selected_project_name}&rule_id={rule_id_val}&start_date={today_str}&end_date={today_str}"
+            if sub_type_val:
+                link += f"&sub_type={sub_type_val}"
+            new_types_rows_list.append(
+                f"<tr class='clickable-row' onclick=\"window.location='{link}'\">"
+                f"<td>{render_rule_name(rule_id_val, rule_name_val, desc_val)}</td>"
+                f"<td>{sub_type_val or '-'}</td><td>{count_val}</td></tr>"
+            )
+        new_types_rows = "".join(new_types_rows_list)
         new_types_html = f"""
         <div class="card">
           <h3>今日新增 Violation Type <span class="badge-new">{len(new_violation_types)} 种</span></h3>
-          <p class="muted">今日首次出现的 (rule_id, sub_type) 组合</p>
+          <p class="muted">今日首次出现的 (rule_id, sub_type) 组合，点击可查看详情</p>
           <table class="table">
             <thead><tr><th>规则</th><th>子类型</th><th>数量</th></tr></thead>
             <tbody>{new_types_rows or '<tr><td colspan="3">暂无新增</td></tr>'}</tbody>

@@ -493,6 +493,8 @@ class Database:
         search: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
         """
         获取违规详情（从 Per-project 表）
@@ -508,6 +510,8 @@ class Database:
             search: 搜索关键词（匹配 file_path 或 message）
             limit: 返回数量限制
             offset: 分页偏移量
+            start_date: 开始日期过滤 (YYYY-MM-DD)，筛选 first_seen >= start_date
+            end_date: 结束日期过滤 (YYYY-MM-DD)，筛选 first_seen <= end_date
 
         Returns:
             (violations_list, total_count) 元组
@@ -541,6 +545,12 @@ class Database:
             where_clauses.append("(file_path LIKE ? OR message LIKE ?)")
             search_pattern = f"%{search}%"
             params.extend([search_pattern, search_pattern])
+        if start_date:
+            where_clauses.append("first_seen >= ?")
+            params.append(start_date + "T00:00:00")
+        if end_date:
+            where_clauses.append("first_seen <= ?")
+            params.append(end_date + "T23:59:59")
 
         where_sql = " AND ".join(where_clauses)
 

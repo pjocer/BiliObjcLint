@@ -494,6 +494,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         rule_id = (query.get("rule_id") or [""])[0].strip() or None
         sub_type = (query.get("sub_type") or [""])[0].strip() or None
         search = (query.get("search") or [""])[0].strip() or None
+        start_date = (query.get("start_date") or [""])[0].strip() or None
+        end_date = (query.get("end_date") or [""])[0].strip() or None
         page = 1
         try:
             page = int((query.get("page") or ["1"])[0])
@@ -503,7 +505,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         offset = (page - 1) * page_size
 
         violations, total = state.db.get_violations(
-            project_key, project_name, rule_id, sub_type, None, search, page_size, offset
+            project_key, project_name, rule_id, sub_type, None, search, page_size, offset,
+            start_date=start_date, end_date=end_date,
         )
 
         total_pages = (total + page_size - 1) // page_size
@@ -527,6 +530,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 search=search,
                 available_rules=available_rules,
                 available_sub_types=available_sub_types,
+                start_date=start_date,
+                end_date=end_date,
             ),
         )
 

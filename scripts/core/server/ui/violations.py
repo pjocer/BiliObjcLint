@@ -21,6 +21,8 @@ def render_violations_list(
     search: Optional[str] = None,
     available_rules: Optional[List[tuple]] = None,
     available_sub_types: Optional[List[str]] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
 ) -> str:
     """Render the violations list page.
 
@@ -38,6 +40,8 @@ def render_violations_list(
         search: Search query
         available_rules: List of (rule_id, rule_name, count) for filter dropdown
         available_sub_types: List of sub_type values for filter dropdown
+        start_date: Start date filter (YYYY-MM-DD)
+        end_date: End date filter (YYYY-MM-DD)
     """
     # 构建过滤条件描述
     filter_desc = []
@@ -47,7 +51,16 @@ def render_violations_list(
         filter_desc.append(f"子类型: {sub_type}")
     if search:
         filter_desc.append(f"搜索: {search}")
+    if start_date and end_date and start_date == end_date:
+        filter_desc.append(f"日期: {start_date}")
+    else:
+        if start_date:
+            filter_desc.append(f"从: {start_date}")
+        if end_date:
+            filter_desc.append(f"至: {end_date}")
     filter_text = " | ".join(filter_desc) if filter_desc else "全部"
+
+    has_any_filter = rule_id or sub_type or search or start_date or end_date
 
     # 构建违规行
     violation_rows = []
@@ -87,7 +100,8 @@ def render_violations_list(
 
     # 构建分页
     pagination_html = _render_pagination(
-        page, total_pages, project_key, project_name, rule_id, sub_type, search
+        page, total_pages, project_key, project_name, rule_id, sub_type, search,
+        start_date, end_date,
     )
 
     # 构建搜索表单
@@ -161,13 +175,21 @@ def render_violations_list(
               <select name="sub_type">{sub_type_options}</select>
             </div>
             <div class="filter-group">
+              <label>开始日期</label>
+              <input type="date" name="start_date" value="{start_date or ''}" />
+            </div>
+            <div class="filter-group">
+              <label>结束日期</label>
+              <input type="date" name="end_date" value="{end_date or ''}" />
+            </div>
+            <div class="filter-group">
               <label>搜索</label>
               <input type="text" name="search" value="{search_value}" placeholder="文件路径或消息内容..." />
             </div>
             <button type="submit">筛选</button>
-            {f'<a class="clear-link" href="/violations?project_key={project_key}&project_name={project_name}">清除筛选</a>' if (rule_id or sub_type or search) else ''}
+            {f'<a class="clear-link" href="/violations?project_key={project_key}&project_name={project_name}">清除筛选</a>' if has_any_filter else ''}
           </form>
-          <p class="filter-info">共 {total} 条违规</p>
+          <p class="filter-info">共 {total} 条违规 | 筛选: {filter_text}</p>
         </div>
 
         <div class="card">
@@ -200,6 +222,8 @@ def _render_pagination(
     rule_id: Optional[str],
     sub_type: Optional[str],
     search: Optional[str],
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
 ) -> str:
     """Render pagination controls."""
     if total_pages <= 1:
@@ -213,6 +237,10 @@ def _render_pagination(
         base_params += f"&sub_type={sub_type}"
     if search:
         base_params += f"&search={search}"
+    if start_date:
+        base_params += f"&start_date={start_date}"
+    if end_date:
+        base_params += f"&end_date={end_date}"
 
     parts = ['<div class="pagination">']
 
@@ -348,7 +376,9 @@ def render_violation_detail(
     if related_lines:
         related_lines_html = f"<p><strong>关联行范围:</strong> {related_lines[0]} - {related_lines[1]}</p>"
 
+    # 从 query string 还原返回链接（保留 rule_id）
     back_link = f"/violations?project_key={project_key}&project_name={project_name}&rule_id={rule_id}"
+    # 注意: 详情页不直接接收 start_date/end_date，这里仅按 rule_id 返回
 
     return f"""
     <html><head><title>Violation Detail</title>{STYLE}
