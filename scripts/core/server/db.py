@@ -1165,6 +1165,56 @@ class Database:
         with self._connect() as conn:
             return conn.execute(query, params).fetchall()
 
+    def _get_violations_tables(
+        self,
+        project_key: Optional[str] = None,
+        project_name: Optional[str] = None,
+    ) -> List[str]:
+        """获取 violations 表名列表（不创建新表）"""
+        with self._connect() as conn:
+            if project_key and project_name:
+                row = conn.execute(
+                    "SELECT table_name FROM projects WHERE project_key = ? AND project_name = ?",
+                    (project_key, project_name)
+                ).fetchone()
+                return [row[0]] if row else []
+            elif project_key:
+                rows = conn.execute(
+                    "SELECT table_name FROM projects WHERE project_key = ?",
+                    (project_key,)
+                ).fetchall()
+                return [r[0] for r in rows]
+            else:
+                rows = conn.execute(
+                    "SELECT table_name FROM projects"
+                ).fetchall()
+                return [r[0] for r in rows]
+
+    def _chart_stats_from_last_run(
+        self,
+        slots: List[str],
+        project_key: Optional[str],
+        project_name: Optional[str],
+        time_expr: str,
+    ) -> List[Tuple[str, int, int, int]]:
+        """回退方案：无 violations 表时取每个时间槽最后一次 run 的数据"""
+        results: List[Tuple[str, int, int, int]] = []
+        with self._connect() as conn:
+            for slot in slots:
+                query = f"SELECT total, warning, error FROM runs WHERE {time_expr} = ?"
+                params: List[Any] = [slot]
+                if project_key:
+                    query += " AND project_key = ?"
+                    params.append(project_key)
+                if project_name:
+                    query += " AND project_name = ?"
+                    params.append(project_name)
+                query += " ORDER BY created_at DESC LIMIT 1"
+                row = conn.execute(query, params).fetchone()
+                if row:
+                    results.append((slot, row[0] or 0, row[1] or 0, row[2] or 0))
+        return results
+
     def get_chart_stats(
         self,
         project_key: Optional[str],
@@ -1173,7 +1223,11 @@ class Database:
         end_date: Optional[str],
         granularity: str = "day",
     ) -> List[Tuple[str, int, int, int]]:
-        """获取趋势图统计数据（支持动态粒度）
+        """获取趋势图统计数据（基于 violations 表去重）
+
+        使用 Per-project violations 表的 first_seen/last_seen 字段，
+        统计每个时间槽内的"活跃"违规数（first_seen <= 槽末 AND last_seen >= 槽初）。
+        仅返回有编译记录的时间槽（从 runs 表获取时间槽列表）。
 
         Args:
             project_key: 项目 key
@@ -1185,41 +1239,76 @@ class Database:
         Returns:
             List of (time_slot, total, warning, error) tuples
         """
-        # 根据粒度选择时间截取长度
-        # hour: substr(created_at, 1, 13) -> "2026-02-04T10"
-        # day: substr(created_at, 1, 10) -> "2026-02-04"
+        from datetime import date, timedelta
+
+        # 确定日期范围
+        if not end_date:
+            end_date = date.today().isoformat()
+        if not start_date:
+            start_date = (date.fromisoformat(end_date) - timedelta(days=6)).isoformat()
+
+        # 从 runs 表获取有编译活动的时间槽
         if granularity == "hour":
             time_expr = "substr(created_at, 1, 13)"
         else:
             time_expr = "substr(created_at, 1, 10)"
 
-        query = f"""
-            SELECT {time_expr} as time_slot,
-                   sum(total) as total,
-                   sum(warning) as warning,
-                   sum(error) as error
-            FROM runs
-            WHERE 1=1
-        """
-        params: List[Any] = []
+        slot_query = f"SELECT DISTINCT {time_expr} as slot FROM runs WHERE date(created_at) >= date(?) AND date(created_at) <= date(?)"
+        slot_params: List[Any] = [start_date, end_date]
         if project_key:
-            query += " AND project_key = ?"
-            params.append(project_key)
+            slot_query += " AND project_key = ?"
+            slot_params.append(project_key)
         if project_name:
-            query += " AND project_name = ?"
-            params.append(project_name)
-        if start_date:
-            query += " AND date(created_at) >= date(?)"
-            params.append(start_date)
-        if end_date:
-            query += " AND date(created_at) <= date(?)"
-            params.append(end_date)
-        if not start_date and not end_date:
-            # 默认最近 7 天
-            query += " AND date(created_at) >= date('now', '-7 days')"
-        query += " GROUP BY time_slot ORDER BY time_slot ASC"
+            slot_query += " AND project_name = ?"
+            slot_params.append(project_name)
+        slot_query += " ORDER BY slot ASC"
+
         with self._connect() as conn:
-            return conn.execute(query, params).fetchall()
+            slots = [row[0] for row in conn.execute(slot_query, slot_params).fetchall()]
+
+        if not slots:
+            return []
+
+        # 获取 violations 表
+        tables = self._get_violations_tables(project_key, project_name)
+        if not tables:
+            return self._chart_stats_from_last_run(slots, project_key, project_name, time_expr)
+
+        # 对每个时间槽统计活跃违规数
+        results: List[Tuple[str, int, int, int]] = []
+        with self._connect() as conn:
+            for slot in slots:
+                if granularity == "hour":
+                    slot_start = slot + ":00:00"
+                    slot_end = slot + ":59:59"
+                else:
+                    slot_start = slot + "T00:00:00"
+                    slot_end = slot + "T23:59:59"
+
+                total = 0
+                warning = 0
+                error = 0
+                for table_name in tables:
+                    try:
+                        row = conn.execute(
+                            f"""
+                            SELECT COUNT(*),
+                                   SUM(CASE WHEN severity = 'warning' THEN 1 ELSE 0 END),
+                                   SUM(CASE WHEN severity = 'error' THEN 1 ELSE 0 END)
+                            FROM {table_name}
+                            WHERE first_seen <= ? AND last_seen >= ?
+                            """,
+                            (slot_end, slot_start)
+                        ).fetchone()
+                        total += row[0] or 0
+                        warning += row[1] or 0
+                        error += row[2] or 0
+                    except Exception:
+                        continue
+
+                results.append((slot, total, warning, error))
+
+        return results
 
     def get_rule_stats(
         self,
