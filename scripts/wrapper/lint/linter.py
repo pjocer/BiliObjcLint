@@ -266,13 +266,13 @@ class BiliObjCLint:
             # 全量模式：获取所有匹配文件
             files = self._find_all_files()
 
-        # 应用 exclude 过滤
-        files = self._filter_excluded(files)
-
         # 添加本地 Pod 文件
         if self.config.local_pods.enabled:
             local_pod_files = self._get_local_pod_files()
             files.extend(local_pod_files)
+
+        # 应用 exclude 过滤（在所有文件合并后统一过滤，包括本地 Pod 文件）
+        files = self._filter_excluded(files)
 
         # 去重（防止主工程和本地 Pod 文件重叠）
         return list(dict.fromkeys(files))
@@ -375,7 +375,7 @@ class BiliObjCLint:
         result = []
 
         for file_path in files:
-            rel_path = str(Path(file_path).relative_to(self.project_root))
+            rel_path = os.path.relpath(file_path, str(self.project_root))
 
             excluded = False
             for pattern in self.config.excluded:
