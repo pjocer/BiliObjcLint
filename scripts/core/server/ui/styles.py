@@ -162,7 +162,14 @@ button:hover {
 
 .muted { color: var(--muted); font-size: 12px; }
 
-.chart { display: flex; flex-direction: column; gap: 10px; }
+.chart { display: flex; flex-direction: column; gap: 10px; position: relative; }
+.chart-tooltip {
+  position: absolute; pointer-events: none; opacity: 0;
+  background: rgba(30,30,30,.88); color: #fff; font-size: 12px;
+  padding: 4px 10px; border-radius: 6px; white-space: nowrap;
+  transform: translate(-50%, -130%); transition: opacity .08s;
+  z-index: 10;
+}
 .legend { display: flex; gap: 12px; font-size: 12px; color: var(--muted); }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
 .legend-item i { display: inline-block; width: 12px; height: 12px; border-radius: 999px; }

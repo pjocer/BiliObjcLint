@@ -189,20 +189,20 @@ def render_trend_chart(
     errs = " ".join(f"{_x(i):.1f},{_y(p[3] or 0):.1f}" for i, p in enumerate(points))
 
     # Generate circle markers for each data point (only for non-zero values)
-    # Each circle has a <title> element for tooltip showing the count
+    # Using data-tip attribute for instant custom tooltip (no browser delay)
     total_circles = "".join(
-        f"<circle cx='{_x(i):.1f}' cy='{_y(p[1] or 0):.1f}' r='4' fill='#1f7a5b'>"
-        f"<title>{_format_label(p[0], granularity)} 总数: {p[1] or 0}</title></circle>"
+        f"<circle class='tip' cx='{_x(i):.1f}' cy='{_y(p[1] or 0):.1f}' r='4' fill='#1f7a5b'"
+        f" data-tip='{_format_label(p[0], granularity)} 总数: {p[1] or 0}' />"
         for i, p in enumerate(points) if (p[1] or 0) > 0
     )
     warn_circles = "".join(
-        f"<circle cx='{_x(i):.1f}' cy='{_y(p[2] or 0):.1f}' r='3.5' fill='#d97706'>"
-        f"<title>{_format_label(p[0], granularity)} 警告: {p[2] or 0}</title></circle>"
+        f"<circle class='tip' cx='{_x(i):.1f}' cy='{_y(p[2] or 0):.1f}' r='3.5' fill='#d97706'"
+        f" data-tip='{_format_label(p[0], granularity)} 警告: {p[2] or 0}' />"
         for i, p in enumerate(points) if (p[2] or 0) > 0
     )
     err_circles = "".join(
-        f"<circle cx='{_x(i):.1f}' cy='{_y(p[3] or 0):.1f}' r='3.5' fill='#b00020'>"
-        f"<title>{_format_label(p[0], granularity)} 错误: {p[3] or 0}</title></circle>"
+        f"<circle class='tip' cx='{_x(i):.1f}' cy='{_y(p[3] or 0):.1f}' r='3.5' fill='#b00020'"
+        f" data-tip='{_format_label(p[0], granularity)} 错误: {p[3] or 0}' />"
         for i, p in enumerate(points) if (p[3] or 0) > 0
     )
 
@@ -239,6 +239,7 @@ def render_trend_chart(
 
     return f"""
     <div class="chart">
+      <div class="chart-tooltip" id="chartTip"></div>
       <svg viewBox="0 0 {width} {height}" width="100%" height="{height}">
         <rect x="0" y="0" width="{width}" height="{height}" fill="#fff" stroke="#efe5d7" rx="14" />
         <line x1="{pad}" y1="{height - pad}" x2="{width - pad}" y2="{height - pad}" stroke="#d8d0c4" />
@@ -258,6 +259,25 @@ def render_trend_chart(
         <span class="legend-item"><i style="background:#b00020"></i>错误</span>
         <span class="muted" style="margin-left:auto;">({granularity_text})</span>
       </div>
+      <script>
+      (function(){{
+        var tip=document.getElementById('chartTip');
+        document.querySelectorAll('.tip').forEach(function(c){{
+          c.style.cursor='pointer';
+          c.addEventListener('mouseenter',function(e){{
+            var r=c.closest('.chart').getBoundingClientRect();
+            var cr=c.getBoundingClientRect();
+            tip.textContent=c.getAttribute('data-tip');
+            tip.style.left=(cr.left+cr.width/2-r.left)+'px';
+            tip.style.top=(cr.top-r.top)+'px';
+            tip.style.opacity='1';
+          }});
+          c.addEventListener('mouseleave',function(){{
+            tip.style.opacity='0';
+          }});
+        }});
+      }})();
+      </script>
     </div>
     """
 
