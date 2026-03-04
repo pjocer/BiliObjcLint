@@ -38,7 +38,6 @@ def update_build_phase(
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
     from wrapper.xcode import XcodeIntegrator, SCRIPT_VERSION
-    from core.lint import project_config
 
     try:
         # 获取 brew prefix 作为 lint_path
@@ -74,13 +73,15 @@ def update_build_phase(
                 print(f"Build Phase already at version {SCRIPT_VERSION}")
                 return True
 
-        # 从持久化存储获取项目配置
-        config = project_config.get(str(integrator.xcodeproj_path), target.name)
-        if config:
-            scripts_path = project_config.get_scripts_srcroot_path(config)
-            print(f"Scripts path: {config.scripts_dir_relative}")
+        # 直接从 scripts_dir 计算 Build Phase 脚本路径
+        if scripts_dir:
+            import os
+            srcroot = integrator.xcodeproj_path.parent
+            rel = os.path.relpath(scripts_dir, str(srcroot))
+            scripts_path = "${SRCROOT}/" + rel
+            print(f"Scripts path: {rel}")
         else:
-            print("ERROR: No config found")
+            print("ERROR: No scripts_dir provided")
             return False
 
         # 更新 Build Phase

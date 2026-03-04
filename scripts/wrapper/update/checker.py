@@ -28,7 +28,6 @@ SCRIPTS_ROOT = SCRIPT_DIR.parent.parent
 sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from core.lint.logger import get_logger
-from core.lint import project_config
 
 # GitHub 仓库信息
 GITHUB_REPO = "pjocer/BiliObjcLint"
@@ -341,16 +340,11 @@ def do_check_and_inject(
                 print(f"[BiliObjCLint] Target '{target.name}' 已存在 Lint Phase (v{current_version})")
                 return True
 
-        # 从持久化存储获取项目配置
-        config = project_config.get(str(integrator.xcodeproj_path), target_name)
-        if config:
-            scripts_path_in_phase = project_config.get_scripts_srcroot_path(config)
-            logger.info(f"Loaded config, scripts path: {config.scripts_dir_relative}")
-        else:
-            key = project_config.make_key(str(integrator.xcodeproj_path), target_name)
-            logger.error(f"No config found for key: {key}")
-            print("[BiliObjCLint] Error: 未找到项目配置，请先执行 --bootstrap", file=sys.stderr)
-            return False
+        # 直接从 scripts_dir 计算 Build Phase 脚本路径
+        srcroot = integrator.xcodeproj_path.parent
+        rel = os.path.relpath(scripts_dir, str(srcroot))
+        scripts_path_in_phase = "${SRCROOT}/" + rel
+        logger.info(f"Scripts phase path: {scripts_path_in_phase}")
 
         # 注入 Build Phase
         success = integrator.add_lint_phase(

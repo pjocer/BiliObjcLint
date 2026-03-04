@@ -98,9 +98,6 @@ class PhaseManagerMixin:
             override: 是否强制覆盖
             scripts_path: scripts 目录相对于 SRCROOT 的路径（用于 bootstrap 模式）
         """
-        # 延迟导入避免循环
-        from core.lint import project_config
-
         self.logger.info(f"Adding lint phase to target: {target.name}")
 
         if self.has_lint_phase(target):
@@ -113,19 +110,11 @@ class PhaseManagerMixin:
                 print(f"Target '{target.name}' 已存在 Lint Phase，跳过（使用 --override 强制覆盖）")
                 return True
 
-        # 获取 scripts_path（如果未提供）
+        # scripts_path 必须由调用方提供
         if not scripts_path:
-            # 从持久化存储读取配置
-            config = project_config.get(str(self.xcodeproj_path), target.name)
-            if config:
-                scripts_path = project_config.get_scripts_srcroot_path(config)
-                self.logger.debug(f"Loaded scripts path from config: {config.scripts_dir_relative}")
-            else:
-                # 没有保存的配置，需要先执行 --bootstrap
-                key = project_config.make_key(str(self.xcodeproj_path), target.name)
-                self.logger.error(f"No config found for key: {key}")
-                print("Error: 未找到项目配置，请先执行 --bootstrap", file=sys.stderr)
-                return False
+            self.logger.error("scripts_path is required")
+            print("Error: 未提供 scripts_path 参数", file=sys.stderr)
+            return False
 
         script_content = LINT_SCRIPT_TEMPLATE.format(
             version=SCRIPT_VERSION,

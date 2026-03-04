@@ -4,6 +4,9 @@
 
 ## v1.6.4 (2026-03-02)
 
+### 重要
+- 移除了 ~/.biliobjclint/projects.json 依赖，编译时不再读取该文件。已部署机器上的旧文件无害，无需手动清理。若升级后遇到问题可通过 brew switch biliobjclint 1.6.4 回退。
+
 ### 修复
 - **忽略全部功能失效**：修复 `/ignore-all` 端点因 dict 键名不匹配（`file` vs `file_path`、`rule` vs `rule_id`）导致所有忽略操作失败的问题，同时增加调试日志辅助排查
 

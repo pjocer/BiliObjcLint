@@ -194,9 +194,6 @@ class BootstrapMixin:
         dry_run: bool = False
     ) -> bool:
         """执行 bootstrap 操作：复制脚本并注入 Build Phase"""
-        # 延迟导入避免循环
-        from core.lint import project_config
-
         self.logger.info("Executing bootstrap operation")
         if self.debug_path:
             self.logger.info(f"[DEBUG MODE] Debug path: {self.debug_path}")
@@ -261,23 +258,7 @@ class BootstrapMixin:
         print(f"Scripts 相对路径: {relative_path}")
         print()
 
-        # 7. 保存完整项目配置到持久化存储
-        # Key = normalize(xcodeproj_path)|target_name
-        # 这样在 Xcode Build Phase 中可以通过 ${PROJECT_FILE_PATH} 和 ${TARGET_NAME} 构建 key
-        if not dry_run:
-            config = project_config.ProjectConfig(
-                xcode_path=str(self.project_path),
-                is_workspace=(self.project_path.suffix == '.xcworkspace'),
-                xcodeproj_path=str(self.xcodeproj_path),
-                project_name=self.project_name or self.xcodeproj_path.stem,
-                target_name=target.name,
-                scripts_dir_absolute=str(scripts_dir),
-                scripts_dir_relative=relative_path
-            )
-            key = project_config.save(config)
-            self.logger.info(f"Saved project config (key: {key})")
-
-        # 8. 复制配置文件
+        # 7. 复制配置文件
         self.copy_config(dry_run)
 
         # 9. 添加 Bootstrap Build Phase
