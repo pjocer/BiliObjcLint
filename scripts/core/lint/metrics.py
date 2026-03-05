@@ -256,23 +256,55 @@ def _post_payload(metrics_cfg: MetricsConfig, payload: Dict[str, Any], logger) -
     return False
 
 
-def _flush_spool(metrics_cfg: MetricsConfig, logger) -> None:
+def _probe_endpoint(metrics_cfg: MetricsConfig, logger) -> bool:
+    """快速探测 metrics endpoint 是否可达（TCP 连接，1 秒超时）"""
+    import socket
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(metrics_cfg.endpoint)
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 80
+        sock = socket.create_connection((host, port), timeout=1.0)
+        sock.close()
+        return True
+    except Exception as e:
+        logger.debug(f"Metrics endpoint unreachable: {e}")
+        return False
+
+
+def _flush_spool(metrics_cfg: MetricsConfig, logger, max_entries: int = 0) -> None:
+    """Flush spool file, uploading pending payloads.
+
+    Args:
+        max_entries: 最多重发条数，0 表示不限制
+    """
     spool_path = _spool_path(metrics_cfg)
     if not spool_path.exists():
         return
 
     lines = spool_path.read_text(encoding="utf-8").splitlines()
+    valid_lines = [l for l in lines if l.strip()]
+    if not valid_lines:
+        spool_path.unlink(missing_ok=True)
+        return
+
+    flushed = 0
     remaining = []
 
-    for line in lines:
-        if not line.strip():
+    for line in valid_lines:
+        if max_entries > 0 and flushed >= max_entries:
+            remaining.append(line)
             continue
+
         try:
             payload = json.loads(line)
         except json.JSONDecodeError:
             continue
 
-        if not _post_payload(metrics_cfg, payload, logger):
+        if _post_payload(metrics_cfg, payload, logger):
+            flushed += 1
+        else:
             remaining.append(line)
 
     if remaining:
@@ -280,8 +312,12 @@ def _flush_spool(metrics_cfg: MetricsConfig, logger) -> None:
     else:
         spool_path.unlink(missing_ok=True)
 
+    if flushed > 0:
+        logger.debug(f"Flushed {flushed} spooled entries, {len(remaining)} remaining")
+
 
 def send_payload(payload: Dict[str, Any], metrics_cfg: MetricsConfig, logger=None) -> None:
+    """将 payload 写入 spool 文件（零阻塞，实际上报由独立后台进程完成）"""
     logger = logger or get_logger("biliobjclint")
     if not metrics_cfg.enabled:
         logger.debug("Metrics disabled, skip send")
@@ -290,13 +326,23 @@ def send_payload(payload: Dict[str, Any], metrics_cfg: MetricsConfig, logger=Non
         logger.debug("Metrics endpoint empty, skip send")
         return
 
-    _flush_spool(metrics_cfg, logger)
-    if _post_payload(metrics_cfg, payload, logger):
-        logger.info("Metrics payload sent")
-        return
-
     spool_path = _spool_path(metrics_cfg)
     spool_path.parent.mkdir(parents=True, exist_ok=True)
     with spool_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    logger.warning(f"Metrics payload spooled: {spool_path}")
+    logger.debug(f"Metrics payload spooled for background upload: {spool_path}")
+
+
+def flush_and_upload(metrics_cfg: MetricsConfig, logger=None) -> None:
+    """Flush spool 并上报所有积压 payload（由独立后台进程调用）"""
+    logger = logger or get_logger("biliobjclint")
+
+    if not _probe_endpoint(metrics_cfg, logger):
+        spool_path = _spool_path(metrics_cfg)
+        pending = 0
+        if spool_path.exists():
+            pending = len([l for l in spool_path.read_text().splitlines() if l.strip()])
+        logger.debug(f"Endpoint unreachable, skipping upload ({pending} entries pending)")
+        return
+
+    _flush_spool(metrics_cfg, logger, max_entries=0)

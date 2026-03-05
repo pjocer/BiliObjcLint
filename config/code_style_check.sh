@@ -215,6 +215,18 @@ if [ -s "$VIOLATIONS_FILE" ]; then
     ) &
 fi
 
+# ==================== Metrics 后台上报 ====================
+
+# 在后台进程中上报 metrics（不阻塞 Xcode 编译）
+# upload.py 会从 spool 文件读取积压的 payload 并上报
+_METRICS_SCRIPT="${SCRIPTS_PATH}/wrapper/metrics/upload.py"
+if [ -f "$_METRICS_SCRIPT" ]; then
+    log_info "Launching metrics upload in background..."
+    (
+        "$PYTHON_BIN" "$_METRICS_SCRIPT" --config "$CONFIG_PATH"
+    ) &
+fi
+
 # 清理临时文件
 rm -f "$VIOLATIONS_FILE"
 log_debug "Temp file cleaned up"
