@@ -97,6 +97,62 @@ class Database:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS violation_observations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    project_key TEXT NOT NULL,
+                    project_name TEXT NOT NULL,
+                    violation_id TEXT NOT NULL,
+                    severity TEXT,
+                    seen_at TEXT NOT NULL,
+                    UNIQUE(run_id, violation_id)
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_violation_observations_scope_time
+                ON violation_observations(project_key, project_name, seen_at)
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_violation_observations_time
+                ON violation_observations(seen_at)
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS autofix_actions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    project_key TEXT NOT NULL,
+                    project_name TEXT NOT NULL,
+                    flow TEXT DEFAULT '',
+                    action_type TEXT NOT NULL,
+                    result TEXT,
+                    target_count INTEGER DEFAULT 0,
+                    target_rule TEXT,
+                    message TEXT,
+                    occurred_at TEXT NOT NULL,
+                    include_in_summary INTEGER NOT NULL DEFAULT 1
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_autofix_actions_scope_time
+                ON autofix_actions(project_key, project_name, occurred_at)
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_autofix_actions_run_id
+                ON autofix_actions(run_id)
+                """
+            )
             # 项目元数据表（Per-project 表设计）
             conn.execute(
                 """
@@ -292,7 +348,7 @@ class Database:
         config_snapshot = payload.get("config_snapshot")
         autofix = payload.get("autofix")
 
-        created_at = payload.get("created_at") or (existing[3] if existing else datetime.now().isoformat())
+        created_at = existing[3] if existing else (payload.get("created_at") or datetime.now().isoformat())
         project_key = project.get("key") or (existing[1] if existing else "")
         project_name = project.get("name") or (existing[2] if existing else "")
         tool_name = tool.get("name") or (existing[4] if existing else "biliobjclint")
@@ -334,7 +390,16 @@ class Database:
         # 处理 violations（去重 upsert 到 Per-project 表）
         if "violations" in payload and isinstance(payload.get("violations"), list):
             if project_key and project_name:
-                self.upsert_violations(project_key, project_name, payload.get("violations", []))
+                violations = payload.get("violations", [])
+                self.upsert_violations(project_key, project_name, violations)
+                self.replace_violation_observations(run_id, project_key, project_name, created_at, violations)
+
+        # 记录 autofix 行为明细（用于 Dashboard 行为统计）
+        if isinstance(autofix, dict) and project_key and project_name:
+            actions = autofix.get("actions", [])
+            if isinstance(actions, list):
+                action_time = payload.get("created_at") or datetime.now().isoformat()
+                self.replace_autofix_actions(run_id, project_key, project_name, action_time, actions)
 
         return True, "ok"
 
@@ -482,6 +547,109 @@ class Database:
                     self.logger.debug(f"Failed to upsert violation: {e}")
 
         return inserted, updated
+
+    def replace_violation_observations(
+        self,
+        run_id: str,
+        project_key: str,
+        project_name: str,
+        seen_at: str,
+        violations: list,
+    ) -> None:
+        """替换单次 run 的 violation 观测明细。"""
+        import hashlib
+
+        normalized: Dict[str, str] = {}
+        for item in violations:
+            if hasattr(item, "to_dict"):
+                violation_id = item.violation_id
+                severity = item.severity.value if hasattr(item.severity, "value") else str(item.severity)
+            elif isinstance(item, dict):
+                violation_id = item.get("violation_id")
+                severity = item.get("severity", "")
+                if not violation_id:
+                    file_path = item.get("file") or item.get("file_path", "")
+                    line = item.get("line", 0)
+                    rule_id = item.get("rule_id", "")
+                    sub_type = item.get("sub_type") or ""
+                    code_hash = item.get("code_hash") or ""
+                    if not file_path or not rule_id:
+                        continue
+                    fallback_input = f"{file_path}:{line}:{rule_id}:{sub_type}:{code_hash}"
+                    violation_id = hashlib.md5(fallback_input.encode()).hexdigest()[:16]
+            else:
+                continue
+
+            if not violation_id:
+                continue
+            normalized.setdefault(violation_id, severity or "")
+
+        with self._connect() as conn:
+            conn.execute("DELETE FROM violation_observations WHERE run_id = ?", (run_id,))
+            if not normalized:
+                return
+            conn.executemany(
+                """
+                INSERT INTO violation_observations
+                    (run_id, project_key, project_name, violation_id, severity, seen_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (run_id, project_key, project_name, violation_id, severity, seen_at)
+                    for violation_id, severity in normalized.items()
+                ],
+            )
+
+    def replace_autofix_actions(
+        self,
+        run_id: str,
+        project_key: str,
+        project_name: str,
+        default_occurred_at: str,
+        actions: list,
+    ) -> None:
+        """替换单次 run 的 autofix 行为明细。"""
+        normalized = []
+        for item in actions:
+            if not isinstance(item, dict):
+                continue
+            action_type = str(item.get("type", "")).strip()
+            if not action_type:
+                continue
+            target_count = item.get("target_count", 0) or 0
+            try:
+                target_count = int(target_count)
+            except (TypeError, ValueError):
+                target_count = 0
+            normalized.append(
+                (
+                    run_id,
+                    project_key,
+                    project_name,
+                    str(item.get("flow", "") or ""),
+                    action_type,
+                    str(item.get("result", "") or ""),
+                    target_count,
+                    item.get("target_rule"),
+                    str(item.get("message", "") or ""),
+                    str(item.get("occurred_at") or default_occurred_at),
+                    1 if item.get("include_in_summary", True) else 0,
+                )
+            )
+
+        with self._connect() as conn:
+            conn.execute("DELETE FROM autofix_actions WHERE run_id = ?", (run_id,))
+            if not normalized:
+                return
+            conn.executemany(
+                """
+                INSERT INTO autofix_actions
+                    (run_id, project_key, project_name, flow, action_type, result, target_count,
+                     target_rule, message, occurred_at, include_in_summary)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                normalized,
+            )
 
     def get_violations(
         self,
@@ -1163,10 +1331,10 @@ class Database:
             query += " AND project_name = ?"
             params.append(project_name)
         if start_date:
-            query += " AND date(created_at) >= date(?)"
+            query += " AND substr(created_at, 1, 10) >= ?"
             params.append(start_date)
         if end_date:
-            query += " AND date(created_at) <= date(?)"
+            query += " AND substr(created_at, 1, 10) <= ?"
             params.append(end_date)
         if not start_date and not end_date and days is not None and days > 0:
             query += " AND date(created_at) >= date('now', ?)"
@@ -1233,11 +1401,7 @@ class Database:
         end_date: Optional[str],
         granularity: str = "day",
     ) -> List[Tuple[str, int, int, int]]:
-        """获取趋势图统计数据（基于 violations 表去重）
-
-        使用 Per-project violations 表的 first_seen/last_seen 字段，
-        统计每个时间槽内的"活跃"违规数（first_seen <= 槽末 AND last_seen >= 槽初）。
-        仅返回有编译记录的时间槽（从 runs 表获取时间槽列表）。
+        """获取趋势图统计数据（基于 run 观测明细精确去重）。
 
         Args:
             project_key: 项目 key
@@ -1257,68 +1421,32 @@ class Database:
         if not start_date:
             start_date = (date.fromisoformat(end_date) - timedelta(days=6)).isoformat()
 
-        # 从 runs 表获取有编译活动的时间槽
         if granularity == "hour":
-            time_expr = "substr(created_at, 1, 13)"
+            time_expr = "substr(seen_at, 1, 13)"
         else:
-            time_expr = "substr(created_at, 1, 10)"
+            time_expr = "substr(seen_at, 1, 10)"
+        distinct_expr = "project_key || '|||' || project_name || '|||' || violation_id"
 
-        slot_query = f"SELECT DISTINCT {time_expr} as slot FROM runs WHERE date(created_at) >= date(?) AND date(created_at) <= date(?)"
-        slot_params: List[Any] = [start_date, end_date]
+        query = f"""
+            SELECT {time_expr} as slot,
+                   COUNT(DISTINCT {distinct_expr}) as total,
+                   COUNT(DISTINCT CASE WHEN severity = 'warning' THEN {distinct_expr} END) as warning,
+                   COUNT(DISTINCT CASE WHEN severity = 'error' THEN {distinct_expr} END) as error
+            FROM violation_observations
+            WHERE substr(seen_at, 1, 10) >= ?
+              AND substr(seen_at, 1, 10) <= ?
+        """
+        params: List[Any] = [start_date, end_date]
         if project_key:
-            slot_query += " AND project_key = ?"
-            slot_params.append(project_key)
+            query += " AND project_key = ?"
+            params.append(project_key)
         if project_name:
-            slot_query += " AND project_name = ?"
-            slot_params.append(project_name)
-        slot_query += " ORDER BY slot ASC"
+            query += " AND project_name = ?"
+            params.append(project_name)
+        query += " GROUP BY slot ORDER BY slot ASC"
 
         with self._connect() as conn:
-            slots = [row[0] for row in conn.execute(slot_query, slot_params).fetchall()]
-
-        if not slots:
-            return []
-
-        # 获取 violations 表
-        tables = self._get_violations_tables(project_key, project_name)
-        if not tables:
-            return self._chart_stats_from_last_run(slots, project_key, project_name, time_expr)
-
-        # 对每个时间槽统计活跃违规数
-        results: List[Tuple[str, int, int, int]] = []
-        with self._connect() as conn:
-            for slot in slots:
-                if granularity == "hour":
-                    slot_start = slot + ":00:00"
-                    slot_end = slot + ":59:59"
-                else:
-                    slot_start = slot + "T00:00:00"
-                    slot_end = slot + "T23:59:59"
-
-                total = 0
-                warning = 0
-                error = 0
-                for table_name in tables:
-                    try:
-                        row = conn.execute(
-                            f"""
-                            SELECT COUNT(*),
-                                   SUM(CASE WHEN severity = 'warning' THEN 1 ELSE 0 END),
-                                   SUM(CASE WHEN severity = 'error' THEN 1 ELSE 0 END)
-                            FROM {table_name}
-                            WHERE first_seen <= ? AND last_seen >= ?
-                            """,
-                            (slot_end, slot_start)
-                        ).fetchone()
-                        total += row[0] or 0
-                        warning += row[1] or 0
-                        error += row[2] or 0
-                    except Exception:
-                        continue
-
-                results.append((slot, total, warning, error))
-
-        return results
+            return conn.execute(query, params).fetchall()
 
     def get_rule_stats(
         self,
@@ -1364,7 +1492,11 @@ class Database:
         days: Optional[int] = None,
     ) -> Dict[str, int]:
         """获取 autofix 汇总统计"""
-        query = "SELECT autofix_json FROM runs WHERE 1=1"
+        query = """
+            SELECT result, target_count
+            FROM autofix_actions
+            WHERE include_in_summary = 1
+        """
         params: List[Any] = []
         if project_key:
             query += " AND project_key = ?"
@@ -1373,13 +1505,13 @@ class Database:
             query += " AND project_name = ?"
             params.append(project_name)
         if start_date:
-            query += " AND date(created_at) >= date(?)"
+            query += " AND substr(occurred_at, 1, 10) >= ?"
             params.append(start_date)
         if end_date:
-            query += " AND date(created_at) <= date(?)"
+            query += " AND substr(occurred_at, 1, 10) <= ?"
             params.append(end_date)
         if not start_date and not end_date and days is not None and days > 0:
-            query += " AND date(created_at) >= date('now', ?)"
+            query += " AND date(occurred_at) >= date('now', ?)"
             params.append(f"-{days} days")
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
@@ -1391,6 +1523,39 @@ class Database:
             "cancelled": 0,
             "target_total": 0,
         }
+        if rows:
+            for result, target_count in rows:
+                summary["attempts"] += 1
+                summary["target_total"] += int(target_count or 0)
+                if result == "success":
+                    summary["success"] += 1
+                elif result in ("failed", "timeout", "not_available"):
+                    summary["failed"] += 1
+                elif result == "cancelled":
+                    summary["cancelled"] += 1
+            return summary
+
+        # 兼容旧数据：历史 run 仅保存 autofix.summary，没有行为明细时沿用旧口径
+        query = "SELECT autofix_json FROM runs WHERE 1=1"
+        params = []
+        if project_key:
+            query += " AND project_key = ?"
+            params.append(project_key)
+        if project_name:
+            query += " AND project_name = ?"
+            params.append(project_name)
+        if start_date:
+            query += " AND substr(created_at, 1, 10) >= ?"
+            params.append(start_date)
+        if end_date:
+            query += " AND substr(created_at, 1, 10) <= ?"
+            params.append(end_date)
+        if not start_date and not end_date and days is not None and days > 0:
+            query += " AND date(created_at) >= date('now', ?)"
+            params.append(f"-{days} days")
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+
         for row in rows:
             if not row or not row[0]:
                 continue
@@ -1403,11 +1568,111 @@ class Database:
                 continue
         return summary
 
+    def get_autofix_action_stats(
+        self,
+        project_key: Optional[str],
+        project_name: Optional[str],
+        start_date: Optional[str],
+        end_date: Optional[str],
+        days: Optional[int] = None,
+    ) -> List[Tuple[str, str, int, int, int, int, int]]:
+        """获取 autofix 行为聚合明细。"""
+        query = """
+            SELECT flow, action_type, result, target_count
+            FROM autofix_actions
+            WHERE 1=1
+        """
+        params: List[Any] = []
+        if project_key:
+            query += " AND project_key = ?"
+            params.append(project_key)
+        if project_name:
+            query += " AND project_name = ?"
+            params.append(project_name)
+        if start_date:
+            query += " AND substr(occurred_at, 1, 10) >= ?"
+            params.append(start_date)
+        if end_date:
+            query += " AND substr(occurred_at, 1, 10) <= ?"
+            params.append(end_date)
+        if not start_date and not end_date and days is not None and days > 0:
+            query += " AND date(occurred_at) >= date('now', ?)"
+            params.append(f"-{days} days")
+        query += " ORDER BY occurred_at DESC"
+
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+
+        stats: Dict[Tuple[str, str], Dict[str, int]] = {}
+        for flow, action_type, result, target_count in rows:
+            key = (flow or "", action_type or "")
+            bucket = stats.setdefault(
+                key,
+                {
+                    "count": 0,
+                    "success": 0,
+                    "failed": 0,
+                    "cancelled": 0,
+                    "target_total": 0,
+                },
+            )
+            bucket["count"] += 1
+            bucket["target_total"] += int(target_count or 0)
+            if result == "success":
+                bucket["success"] += 1
+            elif result in ("failed", "timeout", "not_available"):
+                bucket["failed"] += 1
+            elif result == "cancelled":
+                bucket["cancelled"] += 1
+
+        flow_order = {"dialog": 0, "html": 1, "skip_dialog": 2, "": 3}
+        action_order = {
+            "choose_fix": 0,
+            "view_detail": 1,
+            "cancel": 2,
+            "ignore_single": 3,
+            "ignore_all": 4,
+            "fix_single": 5,
+            "fix_all": 6,
+            "open_in_xcode": 7,
+            "done": 8,
+        }
+
+        result = [
+            (
+                flow,
+                action_type,
+                item["count"],
+                item["success"],
+                item["failed"],
+                item["cancelled"],
+                item["target_total"],
+            )
+            for (flow, action_type), item in stats.items()
+        ]
+        return sorted(
+            result,
+            key=lambda item: (
+                flow_order.get(item[0], 99),
+                action_order.get(item[1], 99),
+                item[0],
+                item[1],
+            ),
+        )
+
     def cleanup_retention(self, retention_days: int) -> None:
         """清理过期数据"""
         if retention_days <= 0:
             return
         with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM autofix_actions WHERE occurred_at < date('now', ?)",
+                (f"-{retention_days} days",)
+            )
+            conn.execute(
+                "DELETE FROM violation_observations WHERE seen_at < date('now', ?)",
+                (f"-{retention_days} days",)
+            )
             conn.execute(
                 "DELETE FROM rule_counts WHERE run_id IN (SELECT run_id FROM runs WHERE created_at < date('now', ?))",
                 (f"-{retention_days} days",)

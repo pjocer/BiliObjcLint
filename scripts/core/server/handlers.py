@@ -286,16 +286,12 @@ class RequestHandler(BaseHTTPRequestHandler):
         # 获取当前 project_key 下的 project_names
         project_names = state.db.list_project_names(project_key) if project_key else []
 
-        # 使用去重后的 violations 表数据作为主要统计
-        current_stats = state.db.get_current_violations_summary(project_key, project_name)
-        # 构造兼容的 daily 格式：[(day, total, warning, error)]
-        from datetime import date
-        today = date.today().isoformat()
-        daily = [(today, current_stats[0], current_stats[1], current_stats[2])]
+        daily = state.db.get_daily_stats(project_key, project_name, start_date, end_date, days)
 
         # 使用去重后的规则统计
         rules = state.db.get_current_rule_stats(project_key, project_name)
         autofix = state.db.get_autofix_summary(project_key, project_name, start_date, end_date, days)
+        autofix_behaviors = state.db.get_autofix_action_stats(project_key, project_name, start_date, end_date, days)
 
         # 获取今日新增 Violation Type
         new_types = []
@@ -323,6 +319,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 daily=daily,
                 rules=rules,
                 autofix=autofix,
+                autofix_behaviors=autofix_behaviors,
                 start_date=start_date,
                 end_date=end_date,
                 chart_data=chart_data,

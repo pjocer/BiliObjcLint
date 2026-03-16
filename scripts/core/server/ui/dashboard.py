@@ -58,6 +58,7 @@ def render_dashboard(
     daily: Iterable[Tuple[str, int, int, int]],
     rules: Iterable[Tuple[str, str, str, int, int, str]],
     autofix: dict,
+    autofix_behaviors: Sequence[Tuple[str, str, int, int, int, int, int]],
     start_date: Optional[str],
     end_date: Optional[str],
     chart_data: Sequence[Tuple[str, int, int, int]],
@@ -76,6 +77,7 @@ def render_dashboard(
         daily: Daily statistics data
         rules: Rule statistics data
         autofix: Autofix summary data
+        autofix_behaviors: Autofix behavior breakdown data
         start_date: Start date filter
         end_date: End date filter
         chart_data: Trend chart data
@@ -98,6 +100,33 @@ def render_dashboard(
     daily_rows = "".join(
         f"<tr><td>{d[0]}</td><td>{d[1] or 0}</td><td>{d[2] or 0}</td><td>{d[3] or 0}</td></tr>"
         for d in daily
+    )
+
+    flow_labels = {
+        "dialog": "弹窗",
+        "html": "详情页",
+        "skip_dialog": "直接修复",
+        "": "未标记",
+    }
+    action_labels = {
+        "choose_fix": "自动修复",
+        "view_detail": "查看详情",
+        "cancel": "取消",
+        "ignore_single": "忽略单个",
+        "ignore_all": "忽略全部",
+        "fix_single": "修复单个",
+        "fix_all": "修复全部",
+        "open_in_xcode": "在 Xcode 中打开",
+        "done": "完成并继续编译",
+    }
+    behavior_rows = "".join(
+        (
+            f"<tr><td>{flow_labels.get(item[0], item[0] or '-')}</td>"
+            f"<td>{action_labels.get(item[1], item[1])}</td>"
+            f"<td>{item[2]}</td><td>{item[3]}</td><td>{item[4]}</td>"
+            f"<td>{item[5]}</td><td>{item[6]}</td></tr>"
+        )
+        for item in autofix_behaviors
     )
 
     # 规则统计行（可点击跳转到违规列表）
@@ -234,6 +263,14 @@ def render_dashboard(
             <div class="stat"><div class="label">已取消</div><div class="value">{autofix.get('cancelled', 0)}</div></div>
             <div class="stat"><div class="label">目标总数</div><div class="value">{autofix.get('target_total', 0)}</div></div>
           </div>
+        </div>
+
+        <div class="card">
+          <h3>Autofix 行为明细</h3>
+          <table class="table">
+            <thead><tr><th>场景</th><th>行为</th><th>次数</th><th>成功</th><th>失败</th><th>已取消</th><th>目标数</th></tr></thead>
+            <tbody>{behavior_rows or '<tr><td colspan="7">暂无数据</td></tr>'}</tbody>
+          </table>
         </div>
 
         <div class="card">

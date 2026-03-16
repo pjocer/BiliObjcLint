@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
@@ -70,10 +71,16 @@ class AutofixTracker:
         self.cli_available = value
 
     def record_action(self, action: Dict[str, Any]):
-        self.actions.append(action)
+        event = dict(action)
+        event.setdefault("occurred_at", datetime.now().astimezone().isoformat())
+        event.setdefault("flow", self.flow)
+        event.setdefault("include_in_summary", True)
+        self.actions.append(event)
+        if not event.get("include_in_summary", True):
+            return
         self.summary["attempts"] += 1
-        self.summary["target_total"] += int(action.get("target_count", 0))
-        result = action.get("result")
+        self.summary["target_total"] += int(event.get("target_count", 0))
+        result = event.get("result")
         if result == "success":
             self.summary["success"] += 1
         elif result in ("failed", "timeout", "not_available"):
@@ -152,6 +159,88 @@ class ClaudeFixer:
 
     def get_autofix_report(self) -> Dict[str, Any]:
         return self.autofix_tracker.to_dict()
+
+    def record_autofix_action(
+        self,
+        action_type: str,
+        result: str,
+        target_count: int = 0,
+        message: str = "",
+        flow: Optional[str] = None,
+        target_rule: Optional[str] = None,
+        include_in_summary: bool = True,
+        occurred_at: Optional[str] = None,
+    ) -> None:
+        action = {
+            "type": action_type,
+            "result": result,
+            "target_count": target_count,
+            "message": message,
+            "include_in_summary": include_in_summary,
+        }
+        if flow is not None:
+            action["flow"] = flow
+        if target_rule:
+            action["target_rule"] = target_rule
+        if occurred_at:
+            action["occurred_at"] = occurred_at
+        self.autofix_tracker.record_action(action)
+
+    def ignore_all_violations(
+        self,
+        violations: List[Dict],
+        ignore_cache: Optional[IgnoreCache] = None,
+        flow: str = "dialog",
+        occurred_at: Optional[str] = None,
+    ) -> Tuple[bool, str, int, int]:
+        """将违规批量加入忽略列表，并记录行为。"""
+        cache = ignore_cache or IgnoreCache(project_root=str(self.project_root))
+        total = len(violations)
+        ignored = 0
+        failed = 0
+
+        for item in violations:
+            if hasattr(item, "file_path"):
+                file_path = item.file_path
+                line = item.line
+                rule = item.rule_id
+                message = item.message
+                related_lines = item.related_lines
+            else:
+                file_path = item.get("file_path") or item.get("file") or ""
+                line = item.get("line", 0)
+                rule = item.get("rule_id") or item.get("rule") or ""
+                message = item.get("message", "")
+                related_lines = item.get("related_lines")
+                if isinstance(related_lines, list) and len(related_lines) == 2:
+                    related_lines = tuple(related_lines)
+
+            if not file_path or not line or not rule or not related_lines:
+                failed += 1
+                continue
+
+            try:
+                if cache.add_ignore_from_request(file_path, line, rule, message, related_lines):
+                    ignored += 1
+                else:
+                    failed += 1
+            except Exception as e:
+                logger.warning(f"Failed to ignore violation: {e}")
+                failed += 1
+
+        success = ignored > 0
+        result = "success" if success else "failed"
+        message = f"已忽略 {ignored}/{total} 个问题" if success else f"所有 {total} 个问题忽略失败"
+        self.record_autofix_action(
+            action_type="ignore_all",
+            result=result,
+            target_count=total,
+            message=message,
+            flow=flow,
+            include_in_summary=True,
+            occurred_at=occurred_at,
+        )
+        return success, message, ignored, failed
 
     def _find_claude_path(self) -> Optional[str]:
         """
@@ -353,7 +442,9 @@ class ClaudeFixer:
         self,
         violations: List[Dict],
         action_type: str = "fix_all",
-        target_rule: Optional[str] = None
+        target_rule: Optional[str] = None,
+        occurred_at: Optional[str] = None,
+        flow: Optional[str] = None,
     ) -> Tuple[bool, str]:
         """
         静默模式修复违规
@@ -420,6 +511,8 @@ class ClaudeFixer:
                     "result": "success",
                     "elapsed_ms": int(elapsed * 1000),
                     "message": "Fix completed",
+                    "occurred_at": occurred_at,
+                    "flow": flow or self.autofix_tracker.flow,
                 })
                 return True, "修复完成"
             else:
@@ -434,6 +527,8 @@ class ClaudeFixer:
                     "result": "failed",
                     "elapsed_ms": int(elapsed * 1000),
                     "message": error_output,
+                    "occurred_at": occurred_at,
+                    "flow": flow or self.autofix_tracker.flow,
                 })
                 return False, f"修复失败: {error_output}"
 
@@ -447,6 +542,8 @@ class ClaudeFixer:
                 "result": "timeout",
                 "elapsed_ms": int(elapsed * 1000),
                 "message": f"Timeout {self.timeout}s",
+                "occurred_at": occurred_at,
+                "flow": flow or self.autofix_tracker.flow,
             })
             return False, f"修复超时（{self.timeout}秒）"
         except Exception as e:
@@ -458,6 +555,8 @@ class ClaudeFixer:
                 "result": "failed",
                 "elapsed_ms": int((time.time() - fix_start_time) * 1000),
                 "message": str(e),
+                "occurred_at": occurred_at,
+                "flow": flow or self.autofix_tracker.flow,
             })
             return False, f"修复异常: {e}"
         finally:
@@ -602,9 +701,10 @@ class ClaudeFixer:
         dialog_result = show_dialog(
             "BiliObjCLint",
             f"发现 {len(violations)} 个代码问题\n（{error_count} errors, {warning_count} warnings）\n\n是否让 Claude 尝试自动修复？",
-            ["取消", "查看详情", "自动修复"],
+            ["取消", "查看详情", "忽略全部", "自动修复"],
             icon="caution"
         )
+        dialog_occurred_at = datetime.now().astimezone().isoformat()
 
         with open("/tmp/biliobjclint_debug.log", "a") as f:
             f.write(f"Initial dialog result: {dialog_result}\n")
@@ -613,34 +713,47 @@ class ClaudeFixer:
             logger.info("User cancelled from dialog")
             log_claude_fix_end(False, "User cancelled", time.time() - self.start_time)
             self.autofix_tracker.set_decision("cancel")
-            self.autofix_tracker.record_action({
-                "type": "cancel",
-                "target_count": len(violations),
-                "result": "cancelled",
-                "elapsed_ms": int((time.time() - self.start_time) * 1000),
-                "message": "User cancelled",
-            })
+            self.record_autofix_action(
+                action_type="cancel",
+                result="cancelled",
+                target_count=len(violations),
+                message="User cancelled",
+                flow="dialog",
+                include_in_summary=True,
+                occurred_at=dialog_occurred_at,
+            )
             return 0
 
         # 用户选择直接修复
         if dialog_result == "自动修复":
+            self.record_autofix_action(
+                action_type="choose_fix",
+                result="success",
+                target_count=len(violations),
+                message="User chose fix",
+                flow="dialog",
+                include_in_summary=False,
+                occurred_at=dialog_occurred_at,
+            )
             user_action = 'fix'
             self.autofix_tracker.set_decision("fix")
         # 用户选择查看详情
         elif dialog_result == "查看详情":
+            self.record_autofix_action(
+                action_type="view_detail",
+                result="success",
+                target_count=len(violations),
+                message="User opened HTML details",
+                flow="dialog",
+                include_in_summary=False,
+                occurred_at=dialog_occurred_at,
+            )
             self.autofix_tracker.set_flow("html")
             user_action = self._show_html_report_and_wait(violations)
             if user_action == 'cancel' or user_action is None:
                 logger.info("User cancelled or timed out from HTML")
                 log_claude_fix_end(False, "User cancelled", time.time() - self.start_time)
                 self.autofix_tracker.set_decision("cancel")
-                self.autofix_tracker.record_action({
-                    "type": "cancel",
-                    "target_count": len(violations),
-                    "result": "cancelled",
-                    "elapsed_ms": int((time.time() - self.start_time) * 1000),
-                    "message": "User cancelled",
-                })
                 return 0
             if user_action == 'done':
                 logger.info("User finished reviewing (done)")
@@ -649,13 +762,34 @@ class ClaudeFixer:
                 return 0
             if user_action == 'fix':
                 self.autofix_tracker.set_decision("fix")
+        elif dialog_result == "忽略全部":
+            success, message, ignored, failed = self.ignore_all_violations(
+                violations,
+                flow="dialog",
+                occurred_at=dialog_occurred_at,
+            )
+            if success:
+                logger.info(f"User ignored all from dialog: {ignored}/{len(violations)} ignored, {failed} failed")
+                log_claude_fix_end(True, message, time.time() - self.start_time)
+                self.autofix_tracker.set_decision("ignore_all")
+                return 0
+            logger.error("Ignore-all from dialog failed")
+            show_dialog(
+                "BiliObjCLint",
+                message,
+                ["确定"],
+                icon="stop"
+            )
+            log_claude_fix_end(False, message, time.time() - self.start_time)
+            self.autofix_tracker.set_decision("ignore_all_failed")
+            return 1
         else:
             # 未知结果
             logger.info(f"Unknown dialog result: {dialog_result}")
             return 0
 
         # user_action == 'fix'
-        return self._execute_fix(violations)
+        return self._execute_fix(violations, occurred_at=dialog_occurred_at, flow="dialog")
 
     def _show_html_report_and_wait(self, violations: List[Dict]) -> Optional[str]:
         """显示 HTML 报告并等待用户操作"""
@@ -707,7 +841,12 @@ class ClaudeFixer:
                 except Exception:
                     pass
 
-    def _execute_fix(self, violations: List[Dict]) -> int:
+    def _execute_fix(
+        self,
+        violations: List[Dict],
+        occurred_at: Optional[str] = None,
+        flow: Optional[str] = None,
+    ) -> int:
         """执行修复操作"""
         logger.info(f"User confirmed fix, mode={self.mode}")
 
@@ -717,7 +856,12 @@ class ClaudeFixer:
             show_progress_notification("Claude 正在修复代码问题...")
 
             # 执行修复
-            success, result_msg = self.fix_violations_silent(violations, action_type="fix_all")
+            success, result_msg = self.fix_violations_silent(
+                violations,
+                action_type="fix_all",
+                occurred_at=occurred_at,
+                flow=flow,
+            )
 
             # 显示结果
             if success:
@@ -747,6 +891,8 @@ class ClaudeFixer:
                 "result": "started",
                 "elapsed_ms": 0,
                 "message": "Terminal opened",
+                "occurred_at": occurred_at,
+                "flow": flow or self.autofix_tracker.flow,
             })
             success, result_msg = self.fix_violations_terminal(violations)
             logger.info(f"Terminal mode result: success={success}, msg={result_msg}")
@@ -768,6 +914,8 @@ class ClaudeFixer:
                 "result": "started",
                 "elapsed_ms": 0,
                 "message": "VSCode opened",
+                "occurred_at": occurred_at,
+                "flow": flow or self.autofix_tracker.flow,
             })
             success, result_msg = self.fix_violations_vscode(violations)
             logger.info(f"VSCode mode result: success={success}, msg={result_msg}")
@@ -808,6 +956,7 @@ class ClaudeFixer:
         self.autofix_tracker.set_flow("skip_dialog")
         self.autofix_tracker.set_decision("fix")
         self.autofix_tracker.set_triggered(True)
+        occurred_at = datetime.now().astimezone().isoformat()
 
         log_claude_fix_start(len(violations), str(self.project_root))
 
@@ -828,7 +977,12 @@ class ClaudeFixer:
             return 1
 
         # 直接执行修复
-        success, result_msg = self.fix_violations_silent(violations, action_type="fix_all")
+        success, result_msg = self.fix_violations_silent(
+            violations,
+            action_type="fix_all",
+            occurred_at=occurred_at,
+            flow="skip_dialog",
+        )
 
         elapsed = time.time() - self.start_time
         if success:

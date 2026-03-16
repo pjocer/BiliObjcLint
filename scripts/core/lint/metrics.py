@@ -16,7 +16,7 @@ from .logger import get_logger
 from .reporter import Reporter, Severity, Violation
 
 
-SCHEMA_VERSION = "1.2"
+SCHEMA_VERSION = "1.3"
 
 
 def _now_iso() -> str:

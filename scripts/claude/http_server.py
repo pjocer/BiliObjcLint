@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import time
+from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Optional
@@ -84,15 +85,39 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
         if path == '/fix':
             _user_action = 'fix'
             _server_should_stop = True
+            self._record_action(
+                action_type="choose_fix",
+                result="success",
+                target_count=len(_all_violations),
+                message="User chose fix from HTML",
+                flow="html",
+                include_in_summary=False,
+            )
             self._send_response("正在启动自动修复...")
         elif path == '/cancel':
             _user_action = 'cancel'
             _server_should_stop = True
+            self._record_action(
+                action_type="cancel",
+                result="cancelled",
+                target_count=len(_all_violations),
+                message="User cancelled from HTML",
+                flow="html",
+                include_in_summary=True,
+            )
             self._send_response("已取消")
         elif path == '/done':
             # 完成并继续编译
             _user_action = 'done'
             _server_should_stop = True
+            self._record_action(
+                action_type="done",
+                result="success",
+                target_count=len(_all_violations),
+                message="User finished review",
+                flow="html",
+                include_in_summary=False,
+            )
             self._send_response("已完成")
         elif path == '/status':
             self._send_response("running")
@@ -118,6 +143,27 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
             self._handle_fix_all()
         else:
             self.send_error(404)
+
+    def _record_action(
+        self,
+        action_type: str,
+        result: str,
+        target_count: int = 0,
+        message: str = "",
+        flow: str = "html",
+        include_in_summary: bool = True,
+        target_rule: Optional[str] = None,
+    ) -> None:
+        if _fixer_instance:
+            _fixer_instance.record_autofix_action(
+                action_type=action_type,
+                result=result,
+                target_count=target_count,
+                message=message,
+                flow=flow,
+                target_rule=target_rule,
+                include_in_summary=include_in_summary,
+            )
 
     def _handle_ignore(self, params: dict):
         """处理忽略单个违规的请求"""
@@ -151,12 +197,48 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
                 success = _ignore_cache.add_ignore_from_request(file_path, line, rule, message, related_lines)
                 if success:
                     _timeout_reset_time = time.time()  # 重置超时
+                    self._record_action(
+                        action_type="ignore_single",
+                        result="success",
+                        target_count=1,
+                        message="Ignored single violation",
+                        flow="html",
+                        include_in_summary=True,
+                        target_rule=rule,
+                    )
                     self._send_json_response({'success': True, 'message': '已添加到忽略列表'})
                 else:
+                    self._record_action(
+                        action_type="ignore_single",
+                        result="failed",
+                        target_count=1,
+                        message="Ignore single failed",
+                        flow="html",
+                        include_in_summary=True,
+                        target_rule=rule,
+                    )
                     self._send_json_response({'success': False, 'message': '添加忽略失败'})
             else:
+                self._record_action(
+                    action_type="ignore_single",
+                    result="failed",
+                    target_count=1,
+                    message="Ignore cache not initialized",
+                    flow="html",
+                    include_in_summary=True,
+                    target_rule=rule,
+                )
                 self._send_json_response({'success': False, 'message': '忽略缓存未初始化'})
         except Exception as e:
+            self._record_action(
+                action_type="ignore_single",
+                result="failed",
+                target_count=1,
+                message=str(e),
+                flow="html",
+                include_in_summary=True,
+                target_rule=rule,
+            )
             self._send_json_response({'success': False, 'message': str(e)})
 
     def _handle_ignore_all(self):
@@ -172,60 +254,23 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
             return
 
         total = len(_all_violations)
-        ignored = 0
-        failed = 0
-
         logger.info(f"Ignore-all requested for {total} violations")
-
-        for v in _all_violations:
-            try:
-                # 支持 Violation 对象和 dict 两种格式
-                if hasattr(v, 'file_path'):
-                    # Violation dataclass 对象
-                    file_path = v.file_path
-                    line = v.line
-                    rule = v.rule_id
-                    message = v.message
-                    related_lines = v.related_lines
-                else:
-                    # dict 格式（来自 Violation.to_dict() 序列化）
-                    file_path = v.get('file_path', '')
-                    line = v.get('line', 0)
-                    rule = v.get('rule_id', '')
-                    message = v.get('message', '')
-                    related_lines = v.get('related_lines', None)
-                    # JSON 反序列化后 related_lines 为 list，需转为 tuple
-                    if isinstance(related_lines, list) and len(related_lines) == 2:
-                        related_lines = tuple(related_lines)
-
-                if not file_path or not line or not rule or not related_lines:
-                    logger.debug(f"Ignore-all: skipping violation with missing fields: "
-                                 f"file_path={bool(file_path)}, line={line}, "
-                                 f"rule={bool(rule)}, related_lines={related_lines}")
-                    failed += 1
-                    continue
-
-                success = _ignore_cache.add_ignore_from_request(
-                    file_path, line, rule, message, related_lines
-                )
-                if success:
-                    ignored += 1
-                else:
-                    logger.debug(f"Ignore-all: add_ignore_from_request returned False for "
-                                 f"{file_path}:{line} [{rule}]")
-                    failed += 1
-            except Exception as e:
-                logger.warning(f"Failed to ignore violation: {e}")
-                failed += 1
-
+        if _fixer_instance:
+            success, message, ignored, failed = _fixer_instance.ignore_all_violations(
+                _all_violations,
+                ignore_cache=_ignore_cache,
+                flow="html",
+            )
+        else:
+            success, message, ignored, failed = False, f"所有 {total} 个问题忽略失败", 0, total
         logger.info(f"Ignore-all completed: {ignored}/{total} ignored, {failed} failed")
 
         _timeout_reset_time = time.time()
 
-        if ignored == 0:
+        if not success:
             self._send_json_response({
                 'success': False,
-                'message': f'所有 {total} 个问题忽略失败',
+                'message': message,
                 'total': total,
                 'ignored': 0,
                 'failed': failed,
@@ -233,7 +278,7 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
         else:
             self._send_json_response({
                 'success': True,
-                'message': f'已忽略 {ignored}/{total} 个问题',
+                'message': message,
                 'total': total,
                 'ignored': ignored,
                 'failed': failed,
@@ -260,6 +305,7 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
         # 创建任务 ID
         task_id = str(uuid.uuid4())[:8]
         _fix_tasks[task_id] = {'status': 'running', 'message': '正在修复...'}
+        click_occurred_at = datetime.now().astimezone().isoformat()
 
         # 构建单个违规
         violation = {
@@ -277,7 +323,9 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
                     success, result_msg = _fixer_instance.fix_violations_silent(
                         [violation],
                         action_type="fix_single",
-                        target_rule=rule
+                        target_rule=rule,
+                        occurred_at=click_occurred_at,
+                        flow="html",
                     )
                     if success:
                         _fix_tasks[task_id] = {'status': 'completed', 'message': '修复完成'}
@@ -337,6 +385,7 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
             'total': total_count,
             'completed': 0
         }
+        click_occurred_at = datetime.now().astimezone().isoformat()
 
         def do_fix_all():
             global _fix_tasks
@@ -344,7 +393,9 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
                 if _fixer_instance:
                     success, result_msg = _fixer_instance.fix_violations_silent(
                         _all_violations,
-                        action_type="fix_all"
+                        action_type="fix_all",
+                        occurred_at=click_occurred_at,
+                        flow="html",
                     )
                     if success:
                         _fix_tasks[task_id] = {
@@ -395,10 +446,34 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
                                 stderr=subprocess.DEVNULL)
                 # 重置超时计时
                 _timeout_reset_time = time.time()
+                self._record_action(
+                    action_type="open_in_xcode",
+                    result="success",
+                    target_count=1,
+                    message="Opened file in Xcode",
+                    flow="html",
+                    include_in_summary=False,
+                )
                 self._send_json_response({'success': True, 'message': '已在 Xcode 中打开'})
             else:
+                self._record_action(
+                    action_type="open_in_xcode",
+                    result="failed",
+                    target_count=1,
+                    message="File not found",
+                    flow="html",
+                    include_in_summary=False,
+                )
                 self._send_json_response({'success': False, 'message': '文件不存在'})
         except Exception as e:
+            self._record_action(
+                action_type="open_in_xcode",
+                result="failed",
+                target_count=1,
+                message=str(e),
+                flow="html",
+                include_in_summary=False,
+            )
             self._send_json_response({'success': False, 'message': str(e)})
 
     def _send_json_response(self, data: dict):
