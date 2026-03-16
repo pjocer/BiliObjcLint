@@ -1368,30 +1368,45 @@ class Database:
                 ).fetchall()
                 return [r[0] for r in rows]
 
-    def _chart_stats_from_last_run(
+    def _chart_stats_from_legacy_runs(
         self,
-        slots: List[str],
         project_key: Optional[str],
         project_name: Optional[str],
-        time_expr: str,
-    ) -> List[Tuple[str, int, int, int]]:
-        """回退方案：无 violations 表时取每个时间槽最后一次 run 的数据"""
-        results: List[Tuple[str, int, int, int]] = []
+        start_date: str,
+        end_date: str,
+        granularity: str,
+    ) -> Dict[Tuple[str, str, str], Tuple[int, int, int]]:
+        """历史兼容：按时间槽取每个项目观测到的最高 run 统计值。"""
+        time_expr = "substr(created_at, 1, 13)" if granularity == "hour" else "substr(created_at, 1, 10)"
+        query = f"""
+            SELECT {time_expr} AS slot, project_key, project_name, total, warning, error
+            FROM runs
+            WHERE substr(created_at, 1, 10) >= ?
+              AND substr(created_at, 1, 10) <= ?
+        """
+        params: List[Any] = [start_date, end_date]
+        if project_key:
+            query += " AND project_key = ?"
+            params.append(project_key)
+        if project_name:
+            query += " AND project_name = ?"
+            params.append(project_name)
+        query += " ORDER BY total DESC, warning DESC, error DESC, created_at DESC"
+
+        scoped_results: Dict[Tuple[str, str, str], Tuple[int, int, int]] = {}
         with self._connect() as conn:
-            for slot in slots:
-                query = f"SELECT total, warning, error FROM runs WHERE {time_expr} = ?"
-                params: List[Any] = [slot]
-                if project_key:
-                    query += " AND project_key = ?"
-                    params.append(project_key)
-                if project_name:
-                    query += " AND project_name = ?"
-                    params.append(project_name)
-                query += " ORDER BY created_at DESC LIMIT 1"
-                row = conn.execute(query, params).fetchone()
-                if row:
-                    results.append((slot, row[0] or 0, row[1] or 0, row[2] or 0))
-        return results
+            rows = conn.execute(query, params).fetchall()
+
+        for slot, row_project_key, row_project_name, total, warning, error in rows:
+            scope_key = (slot, row_project_key or "", row_project_name or "")
+            if scope_key in scoped_results:
+                continue
+            scoped_results[scope_key] = (
+                int(total or 0),
+                int(warning or 0),
+                int(error or 0),
+            )
+        return scoped_results
 
     def get_chart_stats(
         self,
@@ -1400,7 +1415,7 @@ class Database:
         start_date: Optional[str],
         end_date: Optional[str],
         granularity: str = "day",
-    ) -> List[Tuple[str, int, int, int]]:
+    ) -> Tuple[List[Tuple[str, int, int, int]], bool]:
         """获取趋势图统计数据（基于 run 观测明细精确去重）。
 
         Args:
@@ -1411,7 +1426,7 @@ class Database:
             granularity: 粒度，"hour" 或 "day"
 
         Returns:
-            List of (time_slot, total, warning, error) tuples
+            (图表数据, 是否使用历史兼容兜底)
         """
         from datetime import date, timedelta
 
@@ -1421,17 +1436,15 @@ class Database:
         if not start_date:
             start_date = (date.fromisoformat(end_date) - timedelta(days=6)).isoformat()
 
-        if granularity == "hour":
-            time_expr = "substr(seen_at, 1, 13)"
-        else:
-            time_expr = "substr(seen_at, 1, 10)"
-        distinct_expr = "project_key || '|||' || project_name || '|||' || violation_id"
+        time_expr = "substr(seen_at, 1, 13)" if granularity == "hour" else "substr(seen_at, 1, 10)"
 
         query = f"""
             SELECT {time_expr} as slot,
-                   COUNT(DISTINCT {distinct_expr}) as total,
-                   COUNT(DISTINCT CASE WHEN severity = 'warning' THEN {distinct_expr} END) as warning,
-                   COUNT(DISTINCT CASE WHEN severity = 'error' THEN {distinct_expr} END) as error
+                   project_key,
+                   project_name,
+                   COUNT(DISTINCT violation_id) as total,
+                   COUNT(DISTINCT CASE WHEN severity = 'warning' THEN violation_id END) as warning,
+                   COUNT(DISTINCT CASE WHEN severity = 'error' THEN violation_id END) as error
             FROM violation_observations
             WHERE substr(seen_at, 1, 10) >= ?
               AND substr(seen_at, 1, 10) <= ?
@@ -1443,10 +1456,45 @@ class Database:
         if project_name:
             query += " AND project_name = ?"
             params.append(project_name)
-        query += " GROUP BY slot ORDER BY slot ASC"
+        query += " GROUP BY slot, project_key, project_name ORDER BY slot ASC"
 
         with self._connect() as conn:
-            return conn.execute(query, params).fetchall()
+            exact_rows = conn.execute(query, params).fetchall()
+
+        scoped_stats: Dict[Tuple[str, str, str], Tuple[int, int, int]] = {}
+        for slot, row_project_key, row_project_name, total, warning, error in exact_rows:
+            scoped_stats[(slot, row_project_key or "", row_project_name or "")] = (
+                int(total or 0),
+                int(warning or 0),
+                int(error or 0),
+            )
+
+        legacy_scoped_stats = self._chart_stats_from_legacy_runs(
+            project_key,
+            project_name,
+            start_date,
+            end_date,
+            granularity,
+        )
+        used_legacy_fallback = False
+        for scope_key, stats in legacy_scoped_stats.items():
+            if scope_key in scoped_stats:
+                continue
+            scoped_stats[scope_key] = stats
+            used_legacy_fallback = True
+
+        slot_totals: Dict[str, List[int]] = {}
+        for (slot, _, _), (total, warning, error) in scoped_stats.items():
+            bucket = slot_totals.setdefault(slot, [0, 0, 0])
+            bucket[0] += total
+            bucket[1] += warning
+            bucket[2] += error
+
+        chart_rows = [
+            (slot, values[0], values[1], values[2])
+            for slot, values in sorted(slot_totals.items())
+        ]
+        return chart_rows, used_legacy_fallback
 
     def get_rule_stats(
         self,

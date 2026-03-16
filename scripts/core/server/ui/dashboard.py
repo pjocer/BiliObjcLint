@@ -63,6 +63,7 @@ def render_dashboard(
     end_date: Optional[str],
     chart_data: Sequence[Tuple[str, int, int, int]],
     chart_granularity: str = "day",
+    chart_uses_legacy_fallback: bool = False,
     new_violation_types: Optional[List[Tuple[str, Optional[str], Optional[str], int, Optional[str]]]] = None,
 ) -> str:
     """Render the dashboard page.
@@ -82,6 +83,7 @@ def render_dashboard(
         end_date: End date filter
         chart_data: Trend chart data
         chart_granularity: Chart granularity ("day" or "hour")
+        chart_uses_legacy_fallback: Whether the chart contains legacy run-based fallback data
         new_violation_types: Today's new violation types (rule_id, rule_name, sub_type, count, description)
     """
     # 构建 project_key 下拉选项
@@ -185,6 +187,13 @@ def render_dashboard(
         """
 
     chart_html = render_trend_chart(chart_data, granularity=chart_granularity, start_date=start_date, end_date=end_date)
+    chart_notice = ""
+    if chart_uses_legacy_fallback:
+        chart_notice = (
+            "<p class='muted' style='margin-top:8px;'>"
+            "部分历史时间段缺少逐条 violation 观测明细，已按该时间槽每个项目历史 runs 的最高统计值兼容展示。"
+            "</p>"
+        )
 
     return f"""
     <html><head><title>Dashboard</title>{STYLE}
@@ -252,6 +261,7 @@ def render_dashboard(
         <div class="card">
           <h3>趋势图（{('筛选范围' if (start_date or end_date) else '近 7 天')}）</h3>
           {chart_html}
+          {chart_notice}
         </div>
 
         <div class="card">

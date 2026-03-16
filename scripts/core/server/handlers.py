@@ -303,7 +303,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         if start_date and end_date and start_date == end_date:
             chart_granularity = "hour"
 
-        chart_data = state.db.get_chart_stats(
+        chart_data, chart_uses_legacy_fallback = state.db.get_chart_stats(
             project_key, project_name, start_date, end_date, chart_granularity
         )
 
@@ -324,6 +324,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 end_date=end_date,
                 chart_data=chart_data,
                 chart_granularity=chart_granularity,
+                chart_uses_legacy_fallback=chart_uses_legacy_fallback,
                 new_violation_types=new_types,
             ),
         )
