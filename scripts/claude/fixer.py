@@ -699,12 +699,10 @@ class ClaudeFixer:
         # 先显示对话框
         self.autofix_tracker.set_flow("dialog")
         try:
-            # AppleScript display dialog 最多支持 3 个按钮。
-            # “取消”使用标准的关闭窗口 / Esc 路径处理，避免四按钮直接报 -50。
             dialog_result = show_dialog(
                 "BiliObjCLint",
-                f"发现 {len(violations)} 个代码问题\n（{error_count} errors, {warning_count} warnings）\n\n是否让 Claude 尝试自动修复？",
-                ["查看详情", "忽略全部", "自动修复"],
+                f"发现 {len(violations)} 个代码问题\n（{error_count} errors, {warning_count} warnings）\n\n查看详情后可执行忽略或自动修复。",
+                ["取消", "查看详情"],
                 icon="caution",
                 raise_on_error=True
             )
@@ -750,21 +748,7 @@ class ClaudeFixer:
             )
             return 0
 
-        # 用户选择直接修复
-        if dialog_result == "自动修复":
-            self.record_autofix_action(
-                action_type="choose_fix",
-                result="success",
-                target_count=len(violations),
-                message="User chose fix",
-                flow="dialog",
-                include_in_summary=False,
-                occurred_at=dialog_occurred_at,
-            )
-            user_action = 'fix'
-            self.autofix_tracker.set_decision("fix")
-        # 用户选择查看详情
-        elif dialog_result == "查看详情":
+        if dialog_result == "查看详情":
             self.record_autofix_action(
                 action_type="view_detail",
                 result="success",
@@ -788,27 +772,6 @@ class ClaudeFixer:
                 return 0
             if user_action == 'fix':
                 self.autofix_tracker.set_decision("fix")
-        elif dialog_result == "忽略全部":
-            success, message, ignored, failed = self.ignore_all_violations(
-                violations,
-                flow="dialog",
-                occurred_at=dialog_occurred_at,
-            )
-            if success:
-                logger.info(f"User ignored all from dialog: {ignored}/{len(violations)} ignored, {failed} failed")
-                log_claude_fix_end(True, message, time.time() - self.start_time)
-                self.autofix_tracker.set_decision("ignore_all")
-                return 0
-            logger.error("Ignore-all from dialog failed")
-            show_dialog(
-                "BiliObjCLint",
-                message,
-                ["确定"],
-                icon="stop"
-            )
-            log_claude_fix_end(False, message, time.time() - self.start_time)
-            self.autofix_tracker.set_decision("ignore_all_failed")
-            return 1
         else:
             # 未知结果
             logger.info(f"Unknown dialog result: {dialog_result}")
