@@ -18,8 +18,27 @@ from core.lint.logger import get_logger
 logger = get_logger("claude_fix")
 
 
+class DialogError(RuntimeError):
+    """macOS 对话框调用失败。"""
+
+
+def _escape_applescript_string(value: str) -> str:
+    """转义 AppleScript 字符串。"""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _format_applescript_message(message: str) -> str:
+    """将多行消息转换为 AppleScript 字符串表达式。"""
+    normalized = message.replace('\r\n', '\n').replace('\r', '\n')
+    return '" & return & "'.join(
+        _escape_applescript_string(part)
+        for part in normalized.split('\n')
+    )
+
+
 def show_dialog(title: str, message: str, buttons: List[str],
-                default_button: str = None, icon: str = "caution") -> Optional[str]:
+                default_button: str = None, icon: str = "caution",
+                raise_on_error: bool = False) -> Optional[str]:
     """
     显示 macOS 原生对话框
 
@@ -29,21 +48,33 @@ def show_dialog(title: str, message: str, buttons: List[str],
         buttons: 按钮列表
         default_button: 默认按钮
         icon: 图标类型 (stop, note, caution)
+        raise_on_error: 显示失败时是否抛出异常
 
     Returns:
         用户点击的按钮名称，如果取消则返回 None
     """
+    if not buttons:
+        raise ValueError("buttons must not be empty")
+
     if default_button is None:
         default_button = buttons[-1]
 
-    buttons_str = ', '.join(f'"{b}"' for b in buttons)
+    buttons_str = ', '.join(f'"{_escape_applescript_string(b)}"' for b in buttons)
+    escaped_default_button = _escape_applescript_string(default_button)
+    escaped_title = _escape_applescript_string(title)
 
     # 处理消息中的换行符，使用 AppleScript 的 return 关键字
-    # AppleScript 不支持 \ 续行符，必须在单行中构建
-    escaped_message = message.replace('\n', '" & return & "')
+    escaped_message = _format_applescript_message(message)
 
-    # 构建单行 AppleScript 命令（AppleScript 不支持 \ 续行符）
-    script = f'display dialog "{escaped_message}" buttons {{{buttons_str}}} default button "{default_button}" with title "{title}" with icon {icon}'
+    script = (
+        'tell current application\n'
+        'activate\n'
+        f'display dialog "{escaped_message}" '
+        f'buttons {{{buttons_str}}} '
+        f'default button "{escaped_default_button}" '
+        f'with title "{escaped_title}" with icon {icon}\n'
+        'end tell'
+    )
 
     try:
         logger.debug(f"Showing dialog: {title}")
@@ -51,7 +82,8 @@ def show_dialog(title: str, message: str, buttons: List[str],
         result = subprocess.run(
             ['osascript', '-e', script],
             capture_output=True,
-            text=True
+            text=True,
+            timeout=30
         )
         logger.debug(f"Dialog result: returncode={result.returncode}, stdout={result.stdout}, stderr={result.stderr}")
         if result.returncode == 0:
@@ -59,9 +91,22 @@ def show_dialog(title: str, message: str, buttons: List[str],
             output = result.stdout.strip()
             if 'button returned:' in output:
                 return output.split('button returned:')[1].strip()
+            error_msg = "Dialog returned successfully but no button result was found"
+        else:
+            error_output = result.stderr.strip() or result.stdout.strip() or f"osascript exit code {result.returncode}"
+            if 'User canceled' in error_output or '用户已取消' in error_output or '(-128)' in error_output:
+                logger.info(f"Dialog cancelled by user: {error_output}")
+                return None
+            error_msg = f"Dialog AppleScript failed: {error_output}"
+
+        logger.error(error_msg)
+        if raise_on_error:
+            raise DialogError(error_msg)
         return None
     except Exception as e:
         logger.exception(f"Dialog exception: {e}")
+        if raise_on_error:
+            raise DialogError(str(e)) from e
         return None
 
 
@@ -73,7 +118,7 @@ def show_progress_notification(message: str) -> subprocess.Popen:
         进程对象，可用于后续关闭
     """
     script = f'''
-    display notification "{message}" with title "BiliObjCLint" subtitle "Claude 自动修复"
+    display notification "{_escape_applescript_string(message)}" with title "BiliObjCLint" subtitle "Claude 自动修复"
     '''
     return subprocess.Popen(
         ['osascript', '-e', script],
@@ -91,16 +136,11 @@ def show_progress_dialog(message: str) -> subprocess.Popen:
     Returns:
         进程对象
     """
-    # 使用一个简单的弹窗来显示进度状态
-    # 注意：真正的进度条需要 Cocoa 应用，这里使用简化方案
+    escaped_message = _format_applescript_message(message)
     script = f'''
-    tell application "System Events"
-        display dialog "{message}" \\
-            buttons {{"请稍候..."}} \\
-            default button 1 \\
-            with title "BiliObjCLint - Claude 修复中" \\
-            with icon note \\
-            giving up after 300
+    tell current application
+        activate
+        display dialog "{escaped_message}" buttons {{"请稍候..."}} default button 1 with title "BiliObjCLint - Claude 修复中" with icon note giving up after 300
     end tell
     '''
     return subprocess.Popen(

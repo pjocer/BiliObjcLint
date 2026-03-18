@@ -22,7 +22,7 @@ if str(_SCRIPT_DIR) not in sys.path:
 from core.lint.logger import get_logger, log_claude_fix_start, log_claude_fix_end
 from core.lint.ignore_cache import IgnoreCache
 
-from claude.dialogs import show_dialog, show_progress_notification
+from claude.dialogs import DialogError, show_dialog, show_progress_notification
 from claude.prompt_builder import build_fix_prompt
 from claude.html_report import HtmlReportGenerator, open_html_report
 from claude.http_server import (
@@ -698,18 +698,44 @@ class ClaudeFixer:
 
         # 先显示对话框
         self.autofix_tracker.set_flow("dialog")
-        dialog_result = show_dialog(
-            "BiliObjCLint",
-            f"发现 {len(violations)} 个代码问题\n（{error_count} errors, {warning_count} warnings）\n\n是否让 Claude 尝试自动修复？",
-            ["取消", "查看详情", "忽略全部", "自动修复"],
-            icon="caution"
-        )
+        try:
+            # AppleScript display dialog 最多支持 3 个按钮。
+            # “取消”使用标准的关闭窗口 / Esc 路径处理，避免四按钮直接报 -50。
+            dialog_result = show_dialog(
+                "BiliObjCLint",
+                f"发现 {len(violations)} 个代码问题\n（{error_count} errors, {warning_count} warnings）\n\n是否让 Claude 尝试自动修复？",
+                ["查看详情", "忽略全部", "自动修复"],
+                icon="caution",
+                raise_on_error=True
+            )
+        except DialogError as e:
+            logger.error(f"Initial dialog failed, fallback to HTML report: {e}")
+            self.autofix_tracker.set_flow("html")
+            user_action = self._show_html_report_and_wait(violations)
+            if user_action == 'cancel' or user_action is None:
+                logger.info("User cancelled or timed out from HTML")
+                log_claude_fix_end(False, "User cancelled", time.time() - self.start_time)
+                self.autofix_tracker.set_decision("cancel")
+                return 0
+            if user_action == 'done':
+                logger.info("User finished reviewing (done)")
+                log_claude_fix_end(True, "User finished", time.time() - self.start_time)
+                self.autofix_tracker.set_decision("done")
+                return 0
+            if user_action == 'fix':
+                self.autofix_tracker.set_decision("fix")
+                dialog_result = "自动修复"
+            elif user_action == 'ignore_all':
+                dialog_result = "忽略全部"
+            else:
+                logger.info(f"Unknown HTML action: {user_action}")
+                return 0
         dialog_occurred_at = datetime.now().astimezone().isoformat()
 
         with open("/tmp/biliobjclint_debug.log", "a") as f:
             f.write(f"Initial dialog result: {dialog_result}\n")
 
-        if dialog_result == "取消":
+        if dialog_result is None or dialog_result == "取消":
             logger.info("User cancelled from dialog")
             log_claude_fix_end(False, "User cancelled", time.time() - self.start_time)
             self.autofix_tracker.set_decision("cancel")
