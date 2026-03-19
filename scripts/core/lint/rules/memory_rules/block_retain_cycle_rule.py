@@ -6,7 +6,7 @@ from typing import List, Set, Optional, Tuple
 from dataclasses import dataclass
 
 from ..base_rule import BaseRule
-from ..rule_utils import get_method_range
+from ..rule_utils import get_method_range, strip_line_comment
 from core.lint.reporter import Violation, Severity, ViolationType
 
 
@@ -220,18 +220,9 @@ class BlockRetainCycleRule(BaseRule):
 
     def _line_contains_self(self, line: str) -> bool:
         """检查行是否包含 self（排除注释和字符串中的）"""
-        # 简单检查，后续会更精确过滤（不区分大小写以匹配 wSelf, weakSelf 等）
-        line_lower = line.lower()
+        line_lower = strip_line_comment(line).lower()
         if 'self' not in line_lower:
             return False
-
-        # 排除注释
-        comment_pos = line.find('//')
-        if comment_pos != -1:
-            self_pos = line_lower.find('self')
-            if self_pos > comment_pos:
-                return False
-
         return True
 
     def _is_in_block(self, lines: List[str], line_num: int) -> bool:
@@ -286,8 +277,7 @@ class BlockRetainCycleRule(BaseRule):
 
     def _strip_comment(self, line: str) -> str:
         """移除行尾注释"""
-        comment_pos = line.find('//')
-        return line[:comment_pos] if comment_pos != -1 else line
+        return strip_line_comment(line)
 
     def _find_weak_declarations(self, lines: List[str], start_line: int, end_line: int) -> List[WeakDeclaration]:
         """在指定范围内查找 weak 声明"""
@@ -448,8 +438,7 @@ class BlockRetainCycleRule(BaseRule):
         usages = []
 
         # 跳过注释部分
-        comment_pos = line.find('//')
-        check_line = line[:comment_pos] if comment_pos != -1 else line
+        check_line = strip_line_comment(line)
 
         # 移除字符串字面量中的内容（避免 @"self" 被误检）
         check_line = self._strip_string_literals(check_line)
@@ -496,6 +485,14 @@ class BlockRetainCycleRule(BaseRule):
                 usages.append((col, 'strong_var'))
 
         return usages
+
+    def _line_has_weak_dereference(self, line: str) -> bool:
+        """weak/self_weak_ 只有在被真正解引用时才需要 strongify。"""
+        check_line = self._strip_string_literals(strip_line_comment(line))
+        return bool(
+            re.search(r'\[\s*(?:self_weak_|\w*[sS]elf)\b', check_line) or
+            re.search(r'\b(?:self_weak_|\w*[sS]elf)\s*(?:\.|->)', check_line)
+        )
 
     def _check_self_usage(self, file_path: str, line_num: int, column: int,
                           usage_type: str, weak_decls: List[WeakDeclaration],
@@ -558,19 +555,9 @@ class BlockRetainCycleRule(BaseRule):
 
         # 规则 1b: 一般类方法调用中的 block -> WARNING
         if block_context == 'class_method':
-            if usage_type == 'self' and not has_weak:
-                # 如果 self 已被 shadow，则安全
-                if has_shadow_self:
-                    return None
-                return self.create_violation(
-                    file_path=file_path,
-                    line=line_num,
-                    column=column,
-                    lines=lines,
-                    violation_type=SubType.CLASS_METHOD_SELF,
-                    related_lines=related_lines
-                )
-            return None  # 类方法中其他情况 OK
+            # 仅凭“类方法 + block”无法推导出 retain cycle。
+            # 保留对已知持有 block 的 API（如 NSTimer）的专项检测，其他类方法默认不报。
+            return None
 
         # 以下为实例方法中的检测
 
@@ -624,6 +611,8 @@ class BlockRetainCycleRule(BaseRule):
                     )
 
             elif usage_type == 'weak_var':
+                if not self._line_has_weak_dereference(line):
+                    return None
                 # 使用 weak 变量
                 if has_strong:
                     # 有 strong 但用了 weak -> WARNING
@@ -669,6 +658,8 @@ class BlockRetainCycleRule(BaseRule):
                     )
 
             elif usage_type == 'self_weak_':
+                if not self._line_has_weak_dereference(line):
+                    return None
                 # 使用 self_weak_ -> WARNING (建议用 @strongify)
                 return self.create_violation(
                     file_path=file_path,

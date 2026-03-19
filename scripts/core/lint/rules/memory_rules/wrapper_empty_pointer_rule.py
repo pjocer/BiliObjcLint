@@ -5,7 +5,12 @@ import re
 from typing import List, Set, Optional, Tuple
 
 from ..base_rule import BaseRule
-from ..rule_utils import find_matching_brace, is_safe_value, SAFE_VALUE_PATTERNS
+from ..rule_utils import (
+    SAFE_VALUE_PATTERNS,
+    find_matching_brace,
+    is_comment_line,
+    strip_line_comment,
+)
 from core.lint.reporter import Violation, ViolationType
 
 
@@ -29,9 +34,16 @@ class WrapperEmptyPointerRule(BaseRule):
     description = "检查容器字面量中的元素是否可能为 nil"
     display_name = "空指针检查"
     default_severity = "warning"
+    METHOD_START_PATTERN = re.compile(r'^\s*[-+]\s*\([^)]+\)')
+    SAFE_CONSTRUCTOR_PATTERNS = [
+        re.compile(r'^\[\s*[\w.]+\s+new\s*\]$'),
+        re.compile(r'^\[\[\s*[\w.]+\s+alloc\s*\]\s*init(?:[A-Z]\w*)?:?.*\]$'),
+        re.compile(r'^\[\s*[\w.]+\s+(?:copy|mutableCopy)\s*\]$'),
+    ]
 
     def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
         violations = []
+        self._safe_local_methods = self._collect_safe_local_methods(lines)
 
         # 查找所有容器字面量
         containers = self._find_containers(content, lines)
@@ -84,64 +96,132 @@ class WrapperEmptyPointerRule(BaseRule):
 
         for line_num, line in enumerate(lines, 1):
             # 跳过注释
-            stripped = line.strip()
-            if stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*'):
+            if is_comment_line(line):
                 continue
 
             # 移除行尾注释
-            comment_pos = line.find('//')
-            check_line = line[:comment_pos] if comment_pos != -1 else line
-
-            # 查找单行字典字面量 @{...}
-            dict_containers = self._find_dict_literals(check_line, line_num)
-            containers.extend(dict_containers)
-
-            # 查找单行数组字面量 @[...]
-            array_containers = self._find_array_literals(check_line, line_num)
-            containers.extend(array_containers)
-
-            # 检测多行字典开始 @{ 且未闭合
-            if '@{' in check_line:
-                # 计算该行的 { 和 } 是否平衡
-                after_at_brace = check_line[check_line.find('@{') + 2:]
-                open_braces = 1 + after_at_brace.count('{')
-                close_braces = after_at_brace.count('}')
-                if open_braces > close_braces:
-                    in_dict = True
-                    dict_brace_count = open_braces - close_braces
+            check_line = strip_line_comment(line)
 
             # 如果在多行字典内，检测键值对
-            elif in_dict:
+            if in_dict:
                 # 检测字典键值对: @"key": value 或带有逗号结尾
                 kv_values = self._find_dict_key_value_in_line(check_line, line_num)
                 containers.extend(kv_values)
 
                 # 更新括号计数
-                dict_brace_count += check_line.count('{') - check_line.count('}')
+                dict_brace_count += self._count_pair_delta(check_line, '{', '}')
                 if dict_brace_count <= 0:
                     in_dict = False
                     dict_brace_count = 0
+            else:
+                # 查找单行字典字面量 @{...}
+                dict_containers = self._find_dict_literals(check_line, line_num)
+                containers.extend(dict_containers)
 
-            # 检测多行数组开始 @[ 且未闭合
-            if '@[' in check_line:
-                after_at_bracket = check_line[check_line.find('@[') + 2:]
-                open_brackets = 1 + after_at_bracket.count('[')
-                close_brackets = after_at_bracket.count(']')
-                if open_brackets > close_brackets:
-                    in_array = True
-                    array_bracket_count = open_brackets - close_brackets
+                # 检测多行字典开始 @{ 且未闭合
+                if '@{' in check_line:
+                    brace_balance = self._container_balance(check_line, '@{', '{', '}')
+                    if brace_balance > 0:
+                        in_dict = True
+                        dict_brace_count = brace_balance
 
             # 如果在多行数组内，检测元素
-            elif in_array:
+            if in_array:
                 array_values = self._find_array_element_in_line(check_line, line_num)
                 containers.extend(array_values)
 
-                array_bracket_count += check_line.count('[') - check_line.count(']')
+                array_bracket_count += self._count_pair_delta(check_line, '[', ']')
                 if array_bracket_count <= 0:
                     in_array = False
                     array_bracket_count = 0
+            else:
+                # 查找单行数组字面量 @[...]
+                array_containers = self._find_array_literals(check_line, line_num)
+                containers.extend(array_containers)
+
+                # 检测多行数组开始 @[ 且未闭合
+                if '@[' in check_line:
+                    bracket_balance = self._container_balance(check_line, '@[', '[', ']')
+                    if bracket_balance > 0:
+                        in_array = True
+                        array_bracket_count = bracket_balance
 
         return containers
+
+    def _collect_safe_local_methods(self, lines: List[str]) -> Set[str]:
+        """收集当前文件内可确定返回非空对象的方法 selector。"""
+        safe_methods = set()
+        line_num = 1
+
+        while line_num <= len(lines):
+            line = lines[line_num - 1]
+            if not self.METHOD_START_PATTERN.match(line.strip()):
+                line_num += 1
+                continue
+
+            signature_end = line_num
+            while signature_end <= len(lines):
+                code = strip_line_comment(lines[signature_end - 1])
+                if '{' in code or ';' in code:
+                    break
+                signature_end += 1
+
+            if signature_end > len(lines):
+                break
+
+            signature_lines = lines[line_num - 1:signature_end]
+            signature_text = " ".join(s.strip() for s in signature_lines)
+            if ';' in strip_line_comment(lines[signature_end - 1]):
+                line_num = signature_end + 1
+                continue
+
+            selector = self._extract_selector_from_signature(signature_text)
+            method_end = find_matching_brace(lines, signature_end, '{', '}')
+            method_lines = lines[signature_end - 1:method_end]
+
+            if selector and self._method_returns_safe_value(method_lines):
+                safe_methods.add(selector)
+
+            line_num = max(signature_end + 1, method_end + 1)
+
+        return safe_methods
+
+    def _container_balance(self, line: str, token: str, open_char: str, close_char: str) -> int:
+        """计算从容器起始 token 开始的括号余额。"""
+        token_pos = line.find(token)
+        if token_pos == -1:
+            return 0
+        after_token = line[token_pos + len(token):]
+        return 1 + self._count_pair_delta(after_token, open_char, close_char)
+
+    def _count_pair_delta(self, text: str, open_char: str, close_char: str) -> int:
+        """统计字符串中括号差值，忽略字符串字面量中的字符。"""
+        delta = 0
+        in_string = False
+        escape_next = False
+
+        for char in text:
+            if escape_next:
+                escape_next = False
+                continue
+
+            if char == '\\':
+                escape_next = True
+                continue
+
+            if char == '"':
+                in_string = not in_string
+                continue
+
+            if in_string:
+                continue
+
+            if char == open_char:
+                delta += 1
+            elif char == close_char:
+                delta -= 1
+
+        return delta
 
     def _find_dict_key_value_in_line(self, line: str, line_num: int) -> List[dict]:
         """在多行字典中检测键值对"""
@@ -412,6 +492,9 @@ class WrapperEmptyPointerRule(BaseRule):
         if ternary_result is not None:
             return ternary_result
 
+        if self._is_safe_method_call(value):
+            return True, None
+
         return False, None
 
     def _check_ternary_operator(self, value: str) -> Optional[Tuple[bool, Optional[str]]]:
@@ -514,6 +597,160 @@ class WrapperEmptyPointerRule(BaseRule):
             return ternary_result
 
         return False, None
+
+    def _extract_selector_from_signature(self, signature_text: str) -> Optional[str]:
+        """从方法声明提取 selector。"""
+        return_type_end = signature_text.find(')')
+        if return_type_end == -1:
+            return None
+
+        signature_body = signature_text[return_type_end + 1:]
+        signature_body = signature_body.split('{', 1)[0].strip()
+        if not signature_body:
+            return None
+
+        keywords = re.findall(r'([A-Za-z_]\w*)\s*:', signature_body)
+        if keywords:
+            return ''.join(f"{keyword}:" for keyword in keywords)
+
+        first_token = signature_body.split(None, 1)[0]
+        return first_token if first_token else None
+
+    def _method_returns_safe_value(self, method_lines: List[str]) -> bool:
+        """判断方法的所有返回路径是否都能确定返回非空值。"""
+        safe_vars = set()
+        return_exprs = []
+
+        for line in method_lines:
+            code = strip_line_comment(line).strip()
+            if not code:
+                continue
+
+            decl_match = re.search(r'\*\s*(\w+)\s*=\s*(.+?)\s*;', code)
+            if decl_match:
+                var_name = decl_match.group(1)
+                expr = decl_match.group(2).strip()
+                if self._is_definitely_nonnull_expression(expr):
+                    safe_vars.add(var_name)
+                else:
+                    safe_vars.discard(var_name)
+
+            assign_match = re.search(r'^\s*(\w+)\s*=\s*(.+?)\s*;$', code)
+            if assign_match:
+                var_name = assign_match.group(1)
+                expr = assign_match.group(2).strip()
+                if self._is_definitely_nonnull_expression(expr):
+                    safe_vars.add(var_name)
+                else:
+                    safe_vars.discard(var_name)
+
+            return_match = re.search(r'\breturn\s+(.+?)\s*;', code)
+            if return_match:
+                return_exprs.append(return_match.group(1).strip())
+
+        if not return_exprs:
+            return False
+
+        return all(self._is_safe_return_expression(expr, safe_vars) for expr in return_exprs)
+
+    def _is_safe_return_expression(self, expr: str, safe_vars: Set[str]) -> bool:
+        if expr == 'nil':
+            return False
+        if expr in safe_vars:
+            return True
+        return self._is_definitely_nonnull_expression(expr)
+
+    def _is_definitely_nonnull_expression(self, expr: str) -> bool:
+        expr = expr.strip()
+        if not expr:
+            return False
+
+        for pattern in SAFE_VALUE_PATTERNS:
+            if pattern.match(expr):
+                return True
+
+        for pattern in self.SAFE_CONSTRUCTOR_PATTERNS:
+            if pattern.match(expr):
+                return True
+
+        return False
+
+    def _is_safe_method_call(self, value: str) -> bool:
+        """识别明显安全的方法调用。"""
+        value = value.strip()
+
+        for pattern in self.SAFE_CONSTRUCTOR_PATTERNS:
+            if pattern.match(value):
+                return True
+
+        local_selector = self._extract_selector_from_message_call(value)
+        if local_selector and local_selector in getattr(self, '_safe_local_methods', set()):
+            return True
+
+        return False
+
+    def _extract_selector_from_message_call(self, value: str) -> Optional[str]:
+        """从 Objective-C 消息发送表达式提取 selector。"""
+        if not (value.startswith('[') and value.endswith(']')):
+            return None
+
+        inner = value[1:-1].strip()
+        if not inner.startswith('self ') and not inner.startswith('super '):
+            return None
+
+        parts = inner.split(None, 1)
+        if len(parts) != 2:
+            return None
+
+        message = parts[1]
+        selector_parts = []
+        token = []
+        depth = 0
+        in_string = False
+        escape_next = False
+
+        for char in message:
+            if escape_next:
+                escape_next = False
+                continue
+
+            if char == '\\':
+                escape_next = True
+                continue
+
+            if char == '"':
+                in_string = not in_string
+                continue
+
+            if in_string:
+                continue
+
+            if char in '([{':
+                depth += 1
+                continue
+            if char in ')]}':
+                depth = max(0, depth - 1)
+                continue
+
+            if depth == 0 and (char.isalnum() or char == '_'):
+                token.append(char)
+                continue
+
+            if depth == 0 and char == ':' and token:
+                selector_parts.append(''.join(token) + ':')
+                token = []
+                continue
+
+            if depth == 0 and token:
+                if selector_parts:
+                    token = []
+                else:
+                    break
+
+        if selector_parts:
+            return ''.join(selector_parts)
+
+        return ''.join(token) if token else None
 
     def get_related_lines(self, file_path: str, line: int, lines: List[str]) -> Tuple[int, int]:
         """
