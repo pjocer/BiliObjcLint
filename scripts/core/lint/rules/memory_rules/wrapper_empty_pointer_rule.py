@@ -35,6 +35,9 @@ class WrapperEmptyPointerRule(BaseRule):
     display_name = "空指针检查"
     default_severity = "warning"
     METHOD_START_PATTERN = re.compile(r'^\s*[-+]\s*\([^)]+\)')
+    FUNCTION_START_PATTERN = re.compile(
+        r'^\s*(?:static\s+)?(?:const\s+)?[A-Za-z_]\w*(?:\s*<[^>]+>)?\s*\*\s*\w+\s*\([^;]*\)'
+    )
     SAFE_CONSTRUCTOR_PATTERNS = [
         re.compile(r'^\[\s*[\w.]+\s+new\s*\]$'),
         re.compile(r'^\[\[\s*[\w.]+\s+alloc\s*\]\s*init(?:[A-Z]\w*)?:?.*\]$'),
@@ -44,6 +47,7 @@ class WrapperEmptyPointerRule(BaseRule):
     def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
         violations = []
         self._safe_local_methods = self._collect_safe_local_methods(lines)
+        self._safe_local_functions = self._collect_safe_local_functions(lines)
 
         # 查找所有容器字面量
         containers = self._find_containers(content, lines)
@@ -68,7 +72,7 @@ class WrapperEmptyPointerRule(BaseRule):
                 value = value_info['value']
                 col = value_info['column']
 
-                is_safe, unsafe_part = self._is_safe_value(value)
+                is_safe, unsafe_part = self._is_safe_value(value, line_num, lines)
                 if not is_safe:
                     # 如果有 unsafe_part（来自三目运算符），使用它作为警告内容
                     warn_value = unsafe_part if unsafe_part else value
@@ -186,6 +190,44 @@ class WrapperEmptyPointerRule(BaseRule):
 
         return safe_methods
 
+    def _collect_safe_local_functions(self, lines: List[str]) -> Set[str]:
+        """收集当前文件内可确定返回非空对象的 C 函数。"""
+        safe_functions = set()
+        line_num = 1
+
+        while line_num <= len(lines):
+            line = strip_line_comment(lines[line_num - 1]).strip()
+            if not self.FUNCTION_START_PATTERN.match(line):
+                line_num += 1
+                continue
+
+            signature_end = line_num
+            while signature_end <= len(lines):
+                code = strip_line_comment(lines[signature_end - 1])
+                if '{' in code or ';' in code:
+                    break
+                signature_end += 1
+
+            if signature_end > len(lines):
+                break
+
+            signature_lines = lines[line_num - 1:signature_end]
+            signature_text = " ".join(s.strip() for s in signature_lines)
+            if ';' in strip_line_comment(lines[signature_end - 1]):
+                line_num = signature_end + 1
+                continue
+
+            function_name = self._extract_function_name_from_signature(signature_text)
+            function_end = find_matching_brace(lines, signature_end, '{', '}')
+            function_lines = lines[signature_end - 1:function_end]
+
+            if function_name and self._method_returns_safe_value(function_lines):
+                safe_functions.add(function_name)
+
+            line_num = max(signature_end + 1, function_end + 1)
+
+        return safe_functions
+
     def _container_balance(self, line: str, token: str, open_char: str, close_char: str) -> int:
         """计算从容器起始 token 开始的括号余额。"""
         token_pos = line.find(token)
@@ -252,6 +294,8 @@ class WrapperEmptyPointerRule(BaseRule):
         for elem in elements:
             elem = elem.strip()
             if elem and not elem.startswith(']'):
+                if self._looks_like_message_fragment(elem):
+                    continue
                 # 计算列位置
                 elem_pos = line.find(elem)
                 containers.append({
@@ -469,7 +513,7 @@ class WrapperEmptyPointerRule(BaseRule):
 
         return -1
 
-    def _is_safe_value(self, value: str) -> Tuple[bool, Optional[str]]:
+    def _is_safe_value(self, value: str, line_num: int, lines: List[str]) -> Tuple[bool, Optional[str]]:
         """
         判断值是否安全（一定非 nil）
 
@@ -480,6 +524,9 @@ class WrapperEmptyPointerRule(BaseRule):
         value = value.strip()
 
         if not value:
+            return True, None
+
+        if self._looks_like_message_fragment(value):
             return True, None
 
         # 检查是否匹配安全模式（使用 rule_utils 中的 SAFE_VALUE_PATTERNS）
@@ -493,6 +540,12 @@ class WrapperEmptyPointerRule(BaseRule):
             return ternary_result
 
         if self._is_safe_method_call(value):
+            return True, None
+
+        if self._is_safe_function_call(value):
+            return True, None
+
+        if self._is_safe_local_identifier(value, line_num, lines):
             return True, None
 
         return False, None
@@ -598,6 +651,13 @@ class WrapperEmptyPointerRule(BaseRule):
 
         return False, None
 
+    def _looks_like_message_fragment(self, value: str) -> bool:
+        """识别多行 Objective-C 消息发送的参数续行，避免误判为独立数组元素。"""
+        normalized = value.rstrip('];').strip()
+        if normalized.startswith('@'):
+            return False
+        return bool(re.match(r'^[A-Za-z_]\w*\s*:', normalized))
+
     def _extract_selector_from_signature(self, signature_text: str) -> Optional[str]:
         """从方法声明提取 selector。"""
         return_type_end = signature_text.find(')')
@@ -615,6 +675,12 @@ class WrapperEmptyPointerRule(BaseRule):
 
         first_token = signature_body.split(None, 1)[0]
         return first_token if first_token else None
+
+    def _extract_function_name_from_signature(self, signature_text: str) -> Optional[str]:
+        """从 C 函数声明提取函数名。"""
+        signature_body = signature_text.split('{', 1)[0].strip()
+        match = re.search(r'(\w+)\s*\([^()]*\)\s*$', signature_body)
+        return match.group(1) if match else None
 
     def _method_returns_safe_value(self, method_lines: List[str]) -> bool:
         """判断方法的所有返回路径是否都能确定返回非空值。"""
@@ -673,6 +739,9 @@ class WrapperEmptyPointerRule(BaseRule):
             if pattern.match(expr):
                 return True
 
+        if self._is_safe_function_call(expr):
+            return True
+
         return False
 
     def _is_safe_method_call(self, value: str) -> bool:
@@ -695,14 +764,14 @@ class WrapperEmptyPointerRule(BaseRule):
             return None
 
         inner = value[1:-1].strip()
-        if not inner.startswith('self ') and not inner.startswith('super '):
+        receiver_match = re.match(r'^(self|super|\w*[sS]elf)\b', inner)
+        if not receiver_match:
             return None
 
-        parts = inner.split(None, 1)
-        if len(parts) != 2:
+        receiver = receiver_match.group(1)
+        message = inner[len(receiver):].strip()
+        if not message:
             return None
-
-        message = parts[1]
         selector_parts = []
         token = []
         depth = 0
@@ -751,6 +820,47 @@ class WrapperEmptyPointerRule(BaseRule):
             return ''.join(selector_parts)
 
         return ''.join(token) if token else None
+
+    def _is_safe_function_call(self, value: str) -> bool:
+        """识别当前文件内可确定返回非空对象的 C 函数调用。"""
+        value = value.strip()
+        match = re.match(r'^([A-Za-z_]\w*)\s*\(.*\)$', value)
+        if not match:
+            return False
+        return match.group(1) in getattr(self, '_safe_local_functions', set())
+
+    def _is_safe_local_identifier(self, value: str, line_num: int, lines: List[str]) -> bool:
+        """识别在当前作用域内已被安全初始化的局部变量。"""
+        value = value.strip()
+        if not re.match(r'^[A-Za-z_]\w*$', value):
+            return False
+
+        scope_start = self._find_enclosing_scope_start(lines, line_num)
+        assign_pattern = re.compile(rf'(?<![.\w]){re.escape(value)}\s*=\s*(.+?)\s*;')
+
+        for i in range(line_num - 2, scope_start - 2, -1):
+            code = strip_line_comment(lines[i]).strip()
+            if not code:
+                continue
+
+            assign_match = assign_pattern.search(code)
+            if not assign_match:
+                continue
+
+            expr = assign_match.group(1).strip()
+            if expr == value:
+                continue
+            return self._is_definitely_nonnull_expression(expr) or self._is_safe_method_call(expr)
+
+        return False
+
+    def _find_enclosing_scope_start(self, lines: List[str], line_num: int) -> int:
+        """向上查找当前行所属的方法或 C 函数起始行。"""
+        for i in range(line_num - 1, -1, -1):
+            code = strip_line_comment(lines[i]).strip()
+            if self.METHOD_START_PATTERN.match(code) or self.FUNCTION_START_PATTERN.match(code):
+                return i + 1
+        return 1
 
     def get_related_lines(self, file_path: str, line: int, lines: List[str]) -> Tuple[int, int]:
         """

@@ -2,6 +2,17 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.7.4 (2026-04-08)
+
+### 修复
+- **block_retain_cycle 作用域判断**：修复带 block 参数的方法声明和普通方法代码被误判为 block 内 `self` 的问题；同时对未知类方法回调中的直接 `self` 补充 warning，避免遗漏真实风险
+- **wrapper_empty_pointer 误报收敛**：多行数组里的 Objective-C 消息续行、`strongSelf` 调用的本地 builder 方法，以及已安全初始化的局部变量不再被误判为可能插入 `nil`
+- **collection_mutation 误报收敛**：当前文件内明确返回非空对象的 C 函数调用，以及 `isKindOfClass:` 保护下的安全强转值，不再被误判为 `addObject:` 传入 `nil`
+- **/ignore-all 无 fixer 回退**：HTTP server 在未初始化 fixer 时，改为直接通过 `IgnoreCache` 批量忽略违规，恢复 `/ignore-all` 端点的兜底能力
+
+### 测试
+- 新增针对 `block_retain_cycle`、`wrapper_empty_pointer`、`collection_mutation` 的回归测试，并同步更新本地测试基线；全量 `pytest tests -q` 通过
+
 ## v1.7.3 (2026-03-19)
 
 ### 修复

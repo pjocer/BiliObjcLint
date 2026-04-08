@@ -166,12 +166,16 @@ class BlockRetainCycleRule(BaseRule):
             if not self._line_contains_self(line):
                 continue
 
-            # 检测是否在 block 内
-            if not self._is_in_block(lines, line_num):
-                continue
-
             # 检测 self 的具体使用位置和类型
             self_usages = self._find_self_usages(line)
+            if not self_usages:
+                continue
+
+            self_usages = [
+                (col, usage_type)
+                for col, usage_type in self_usages
+                if self._is_in_block_at_position(lines, line_num, col)
+            ]
             if not self_usages:
                 continue
 
@@ -225,48 +229,78 @@ class BlockRetainCycleRule(BaseRule):
             return False
         return True
 
-    def _is_in_block(self, lines: List[str], line_num: int) -> bool:
-        """检测当前行是否在 block 内"""
-        # 向上查找 block 开始标记
-        # line_num 是 1-indexed，lines 是 0-indexed
-        # 从当前行的上一行开始往上查找
-        brace_count = 0
-        found_block_start = False
-
-        # 先检查当前行是否同时包含 block 开始和 self 使用
-        current_line = lines[line_num - 1] if line_num > 0 else ''
-        if self.BLOCK_START_PATTERN.search(current_line):
-            # 当前行有 block 开始，检查 self 是否在 ^{ 之后
-            block_match = self.BLOCK_START_PATTERN.search(current_line)
-            if block_match:
-                after_block = current_line[block_match.end():]
-                if 'self' in after_block:
-                    return True
-
-        # 获取方法起始行，作为搜索边界
+    def _is_in_block_at_position(self, lines: List[str], line_num: int, column: int) -> bool:
+        """检测指定位置是否位于 block 作用域内。"""
         method_start = self._find_method_start(lines, line_num)
+        brace_stack = []
+        pending_block = False
+        block_param_depth = 0
 
-        for i in range(line_num - 2, method_start - 2, -1):
-            if i < 0:
-                break
-            line = lines[i]
+        for i in range(method_start - 1, line_num):
+            code_line = strip_line_comment(lines[i])
+            scan_limit = len(code_line)
+            if i == line_num - 1:
+                scan_limit = max(0, min(len(code_line), column - 1))
 
-            # 如果遇到方法定义，停止搜索（已离开当前方法作用域）
-            if self.METHOD_START_PATTERN.match(line.strip()):
-                break
+            in_string = False
+            escape_next = False
 
-            # 计算大括号（向上扫描时，} 表示进入作用域，{ 表示离开作用域）
-            brace_count += line.count('}') - line.count('{')
+            for char in code_line[:scan_limit]:
+                if escape_next:
+                    escape_next = False
+                    continue
 
-            # 检测 block 开始
-            if self.BLOCK_START_PATTERN.search(line):
-                # 只有当 brace_count < 0 时，说明该 block 的 { 还未被关闭
-                # brace_count = 0 表示 block 已经被对应的 } 关闭了
-                if brace_count < 0:
-                    found_block_start = True
-                    break
+                if char == '\\':
+                    escape_next = True
+                    continue
 
-        return found_block_start
+                if char == '"':
+                    in_string = not in_string
+                    continue
+
+                if in_string:
+                    continue
+
+                if pending_block:
+                    if char.isspace():
+                        continue
+
+                    if char == ')' and block_param_depth == 0:
+                        pending_block = False
+                        continue
+
+                    if char == '(':
+                        block_param_depth += 1
+                        continue
+
+                    if block_param_depth > 0:
+                        if char == ')':
+                            block_param_depth = max(0, block_param_depth - 1)
+                        continue
+
+                if char == '^':
+                    pending_block = True
+                    block_param_depth = 0
+                    continue
+
+                if char == '{':
+                    brace_stack.append(pending_block)
+                    pending_block = False
+                    block_param_depth = 0
+                    continue
+
+                if char == '}':
+                    if brace_stack:
+                        brace_stack.pop()
+                    pending_block = False
+                    block_param_depth = 0
+                    continue
+
+                if char == ';':
+                    pending_block = False
+                    block_param_depth = 0
+
+        return any(brace_stack)
 
     def _find_method_start(self, lines: List[str], line_num: int) -> int:
         """查找当前行所属方法的起始行号"""
@@ -555,8 +589,16 @@ class BlockRetainCycleRule(BaseRule):
 
         # 规则 1b: 一般类方法调用中的 block -> WARNING
         if block_context == 'class_method':
-            # 仅凭“类方法 + block”无法推导出 retain cycle。
-            # 保留对已知持有 block 的 API（如 NSTimer）的专项检测，其他类方法默认不报。
+            # 类方法对 block 的持有语义未知，但直接使用 self 仍然值得提醒。
+            if usage_type == 'self' and not has_shadow_self:
+                return self.create_violation(
+                    file_path=file_path,
+                    line=line_num,
+                    column=column,
+                    lines=lines,
+                    violation_type=SubType.CLASS_METHOD_SELF,
+                    related_lines=related_lines
+                )
             return None
 
         # 以下为实例方法中的检测

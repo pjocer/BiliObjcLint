@@ -262,7 +262,7 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
                 flow="html",
             )
         else:
-            success, message, ignored, failed = False, f"所有 {total} 个问题忽略失败", 0, total
+            success, message, ignored, failed = self._ignore_all_with_cache(_all_violations, _ignore_cache)
         logger.info(f"Ignore-all completed: {ignored}/{total} ignored, {failed} failed")
 
         _timeout_reset_time = time.time()
@@ -283,6 +283,45 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
                 'ignored': ignored,
                 'failed': failed,
             })
+
+    def _ignore_all_with_cache(self, violations, ignore_cache):
+        """在 fixer 未初始化时，直接通过 IgnoreCache 批量忽略。"""
+        total = len(violations)
+        ignored = 0
+        failed = 0
+
+        for item in violations:
+            if hasattr(item, "file_path"):
+                file_path = item.file_path
+                line = item.line
+                rule = item.rule_id
+                message = item.message
+                related_lines = item.related_lines
+            else:
+                file_path = item.get("file_path") or item.get("file") or ""
+                line = item.get("line", 0)
+                rule = item.get("rule_id") or item.get("rule") or ""
+                message = item.get("message", "")
+                related_lines = item.get("related_lines")
+                if isinstance(related_lines, list) and len(related_lines) == 2:
+                    related_lines = tuple(related_lines)
+
+            if not file_path or not line or not rule or not related_lines:
+                failed += 1
+                continue
+
+            try:
+                if ignore_cache.add_ignore_from_request(file_path, line, rule, message, related_lines):
+                    ignored += 1
+                else:
+                    failed += 1
+            except Exception as e:
+                logger.warning(f"Failed to ignore violation: {e}")
+                failed += 1
+
+        success = ignored > 0
+        message = f"已忽略 {ignored}/{total} 个问题" if success else f"所有 {total} 个问题忽略失败"
+        return success, message, ignored, failed
 
     def _handle_fix_single(self, params: dict):
         """处理修复单个违规的请求"""

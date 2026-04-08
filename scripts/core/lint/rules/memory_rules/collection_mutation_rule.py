@@ -5,7 +5,7 @@ import re
 from typing import List, Set
 
 from ..base_rule import BaseRule
-from ..rule_utils import SAFE_VALUE_PATTERNS
+from ..rule_utils import SAFE_VALUE_PATTERNS, find_matching_brace, strip_line_comment
 from core.lint.reporter import Violation, Severity, ViolationType
 
 
@@ -56,6 +56,9 @@ class CollectionMutationRule(BaseRule):
     description = "检查集合修改操作的安全性"
     display_name = "集合变异"
     default_severity = "warning"
+    FUNCTION_START_PATTERN = re.compile(
+        r'^\s*(?:static\s+)?(?:const\s+)?[A-Za-z_]\w*(?:\s*<[^>]+>)?\s*\*\s*\w+\s*\([^;]*\)'
+    )
 
     # 字典下标赋值: dict[key] = value 或 self.dict[key] = value
     # 匹配变量名后跟 [xxx] = ，排除数组声明如 NSArray *arr = @[...]
@@ -93,6 +96,7 @@ class CollectionMutationRule(BaseRule):
     def check(self, file_path: str, content: str, lines: List[str], changed_lines: Set[int]) -> List[Violation]:
         del content  # unused
         violations = []
+        self._safe_local_functions = self._collect_safe_local_functions(lines)
 
         for line_num, line in enumerate(lines, 1):
             if not self.should_check_line(line_num, changed_lines):
@@ -162,7 +166,7 @@ class CollectionMutationRule(BaseRule):
             add_match = self.ADD_OBJECT_PATTERN.search(check_line)
             if add_match:
                 value = add_match.group(2).strip()
-                if not self._is_safe_value(value):
+                if not self._is_safe_value(value, line_num, lines):
                     violations.append(self.create_violation(
                         file_path=file_path,
                         line=line_num,
@@ -177,7 +181,7 @@ class CollectionMutationRule(BaseRule):
             insert_match = self.INSERT_OBJECT_PATTERN.search(check_line)
             if insert_match:
                 value = insert_match.group(2).strip()
-                if not self._is_safe_value(value):
+                if not self._is_safe_value(value, line_num, lines):
                     violations.append(self.create_violation(
                         file_path=file_path,
                         line=line_num,
@@ -192,7 +196,7 @@ class CollectionMutationRule(BaseRule):
             replace_match = self.REPLACE_OBJECT_PATTERN.search(check_line)
             if replace_match:
                 value = replace_match.group(2).strip()
-                if not self._is_safe_value(value):
+                if not self._is_safe_value(value, line_num, lines):
                     violations.append(self.create_violation(
                         file_path=file_path,
                         line=line_num,
@@ -252,7 +256,7 @@ class CollectionMutationRule(BaseRule):
 
         return False
 
-    def _is_safe_value(self, value: str) -> bool:
+    def _is_safe_value(self, value: str, line_num: int, lines: List[str]) -> bool:
         """检查值是否安全"""
         value = value.strip()
 
@@ -267,6 +271,12 @@ class CollectionMutationRule(BaseRule):
         # 检查三目运算符
         if '?' in value:
             return self._check_ternary_safe(value)
+
+        if self._is_safe_function_call(value):
+            return True
+
+        if self._is_guarded_cast_value(value, line_num, lines):
+            return True
 
         return False
 
@@ -285,5 +295,96 @@ class CollectionMutationRule(BaseRule):
         ternary_match = re.search(r'\?\s*(' + literal_pattern + r')\s*:\s*(' + literal_pattern + r')\s*$', value)
         if ternary_match:
             return True
+
+        return False
+
+    def _collect_safe_local_functions(self, lines: List[str]) -> Set[str]:
+        """收集当前文件内可确定返回非空对象的 C 函数。"""
+        safe_functions = set()
+        line_num = 1
+
+        while line_num <= len(lines):
+            code_line = strip_line_comment(lines[line_num - 1]).strip()
+            if not self.FUNCTION_START_PATTERN.match(code_line):
+                line_num += 1
+                continue
+
+            signature_end = line_num
+            while signature_end <= len(lines):
+                code = strip_line_comment(lines[signature_end - 1])
+                if '{' in code or ';' in code:
+                    break
+                signature_end += 1
+
+            if signature_end > len(lines):
+                break
+
+            signature_text = " ".join(s.strip() for s in lines[line_num - 1:signature_end])
+            if ';' in strip_line_comment(lines[signature_end - 1]):
+                line_num = signature_end + 1
+                continue
+
+            function_name = self._extract_function_name(signature_text)
+            function_end = find_matching_brace(lines, signature_end, '{', '}')
+            function_lines = lines[signature_end - 1:function_end]
+
+            if function_name and self._function_returns_safe_value(function_lines):
+                safe_functions.add(function_name)
+
+            line_num = max(signature_end + 1, function_end + 1)
+
+        return safe_functions
+
+    def _extract_function_name(self, signature_text: str) -> str:
+        signature_body = signature_text.split('{', 1)[0].strip()
+        match = re.search(r'(\w+)\s*\([^()]*\)\s*$', signature_body)
+        return match.group(1) if match else ""
+
+    def _function_returns_safe_value(self, function_lines: List[str]) -> bool:
+        return_exprs = []
+        for line in function_lines:
+            code = strip_line_comment(line).strip()
+            if not code:
+                continue
+            return_match = re.search(r'\breturn\s+(.+?)\s*;', code)
+            if return_match:
+                return_exprs.append(return_match.group(1).strip())
+
+        return bool(return_exprs) and all(self._is_safe_return_expr(expr) for expr in return_exprs)
+
+    def _is_safe_return_expr(self, expr: str) -> bool:
+        for pattern in SAFE_VALUE_PATTERNS:
+            if pattern.match(expr):
+                return True
+        if re.match(r'^\[\s*[\w.]+\s+new\s*\]$', expr):
+            return True
+        if re.match(r'^\[\[\s*[\w.]+\s+alloc\s*\]\s*init(?:[A-Z]\w*)?:?.*\]$', expr):
+            return True
+        if re.match(r'^\[\s*[\w.]+\s+(?:copy|mutableCopy)\s*\]$', expr):
+            return True
+        return False
+
+    def _is_safe_function_call(self, value: str) -> bool:
+        match = re.match(r'^([A-Za-z_]\w*)\s*\(.*\)$', value)
+        if not match:
+            return False
+        return match.group(1) in getattr(self, '_safe_local_functions', set())
+
+    def _is_guarded_cast_value(self, value: str, line_num: int, lines: List[str]) -> bool:
+        """识别在 isKindOfClass 保护下的安全强转。"""
+        cast_match = re.match(r'^\(\s*([A-Za-z_]\w*)\s*\*\s*\)\s*([A-Za-z_]\w*)$', value)
+        if not cast_match:
+            return False
+
+        class_name = cast_match.group(1)
+        var_name = cast_match.group(2)
+        guard_pattern = re.compile(
+            rf'\[\s*{re.escape(var_name)}\s+isKindOfClass:\s*\[\s*{re.escape(class_name)}\s+class\s*\]\s*\]'
+        )
+
+        start_line = max(0, line_num - 4)
+        for i in range(start_line, line_num - 1):
+            if guard_pattern.search(strip_line_comment(lines[i])):
+                return True
 
         return False
