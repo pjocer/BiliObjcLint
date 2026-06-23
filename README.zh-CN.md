@@ -37,6 +37,8 @@ brew install biliobjclint
 brew update && brew upgrade biliobjclint
 ```
 
+> **提示（Homebrew 6.0+）**：Homebrew 6.0.0+ 默认要求非官方 tap 显式 trust。若 `brew upgrade biliobjclint` 报 `Refusing to load formula from untrusted tap`，请先执行 `brew trust pjocer/biliobjclint`。
+
 ### 手动安装
 
 ```bash

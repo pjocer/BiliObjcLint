@@ -198,6 +198,10 @@ class BootstrapMixin:
         if self.debug_path:
             self.logger.info(f"[DEBUG MODE] Debug path: {self.debug_path}")
             print(f"[DEBUG MODE] 启用调试模式，使用本地目录: {self.debug_path}")
+        else:
+            # 非调试模式：确保 brew tap 已被信任（Homebrew 6.0+ 默认要求 tap trust）
+            from core.lint.brew_utils import ensure_tap_trusted
+            ensure_tap_trusted(tap="pjocer/biliobjclint", logger=self.logger, dry_run=dry_run)
 
         # 1. 确定工具目录位置（输入路径的同级目录）
         scripts_dir = self.project_path.parent / ".biliobjclint"

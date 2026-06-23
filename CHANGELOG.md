@@ -4,6 +4,9 @@
 
 ## v1.7.5 (2026-06-23)
 
+### 新增
+- **Homebrew 6.0+ tap trust 自动化**：`biliobjclint-xcode --bootstrap` 注入目标工程时自动检测 `pjocer/biliobjclint` tap 的信任状态，未信任则执行 `brew trust pjocer/biliobjclint`，避免 Homebrew 6.0+ 默认 tap trust 策略导致升级链路受阻；调试模式与 dry-run 自动跳过
+
 ### 修复
 - **workspace 子工程漏扫本地 Pod**：`code_style_check.sh` 执行 lint 时改用 `.biliobjclint` 上一级作为项目根目录，避免 Xcode 子工程 `SRCROOT` 下找不到 `Podfile.lock` 导致 `No files to check`
 - **本地 Pod 自动发现**：`LocalPodsAnalyzer` 支持从项目根、workspace 路径、Xcode 环境路径、父级目录和有限深度子目录自动查找 `Podfile.lock`，并在缺少 lock 文件时回退解析 `Podfile` 中的 `:path`
@@ -11,6 +14,13 @@
 
 ### 验证
 - 全量 `pytest tests -q` 通过，并用 GameSDK workspace/子工程根目录分别验证可命中本地 `GSOLoginKit` 中新增的 `CCallback` 属性命名告警
+
+### 重要
+- **Homebrew 6.0+ 用户升级提示**：Homebrew 6.0.0 起默认要求非官方 tap 显式 trust。若 `brew upgrade biliobjclint` 报 `Refusing to load formula from untrusted tap`（常见于已注入老工程、未重新执行 `--bootstrap` 的用户），请先手动执行：
+  ```bash
+  brew trust pjocer/biliobjclint
+  ```
+  然后再 `brew update && brew upgrade biliobjclint`。
 
 ## v1.7.4 (2026-04-08)
 
