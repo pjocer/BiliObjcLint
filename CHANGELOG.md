@@ -2,6 +2,16 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.7.5 (2026-06-23)
+
+### 修复
+- **workspace 子工程漏扫本地 Pod**：`code_style_check.sh` 执行 lint 时改用 `.biliobjclint` 上一级作为项目根目录，避免 Xcode 子工程 `SRCROOT` 下找不到 `Podfile.lock` 导致 `No files to check`
+- **本地 Pod 自动发现**：`LocalPodsAnalyzer` 支持从项目根、workspace 路径、Xcode 环境路径、父级目录和有限深度子目录自动查找 `Podfile.lock`，并在缺少 lock 文件时回退解析 `Podfile` 中的 `:path`
+- **bootstrap 参数链路**：补齐 `biliobjclint-xcode --check-and-inject` 到 `checker.py` 的 `--project-root` 传递，保留自动注入时推导出的真实项目根目录
+
+### 验证
+- 全量 `pytest tests -q` 通过，并用 GameSDK workspace/子工程根目录分别验证可命中本地 `GSOLoginKit` 中新增的 `CCallback` 属性命名告警
+
 ## v1.7.4 (2026-04-08)
 
 ### 修复

@@ -13,9 +13,22 @@ from .logger import get_logger
 class LocalPodsAnalyzer:
     """分析本地 Pod 依赖并检测变更"""
 
+    SEARCH_MAX_DEPTH = 4
+    SEARCH_EXCLUDED_DIRS = {
+        ".git",
+        ".hg",
+        ".svn",
+        "Pods",
+        "DerivedData",
+        "build",
+        ".build",
+        "node_modules",
+    }
+
     def __init__(self, project_root: str):
-        self.project_root = Path(project_root)
-        self.podfile_lock = self.project_root / "Podfile.lock"
+        self.project_root = Path(project_root).resolve()
+        self.podfile_lock: Optional[Path] = None
+        self.podfile: Optional[Path] = None
         self._local_pods_cache: Optional[Dict[str, Path]] = None
         self.logger = get_logger("biliobjclint")
 
@@ -29,20 +42,156 @@ class LocalPodsAnalyzer:
         if self._local_pods_cache is not None:
             return self._local_pods_cache
 
-        if not self.podfile_lock.exists():
-            self.logger.debug("Podfile.lock not found")
-            return {}
+        for podfile_lock in self._get_podfile_lock_candidates():
+            try:
+                local_pods = self._parse_podfile_lock(podfile_lock)
+            except Exception as e:
+                self.logger.warning(f"Failed to parse Podfile.lock {podfile_lock}: {e}")
+                continue
 
-        try:
-            local_pods = self._parse_podfile_lock()
-            self._local_pods_cache = local_pods
-            self.logger.debug(f"Found {len(local_pods)} local pods: {list(local_pods.keys())}")
-            return local_pods
-        except Exception as e:
-            self.logger.warning(f"Failed to parse Podfile.lock: {e}")
-            return {}
+            if local_pods:
+                self.podfile_lock = podfile_lock
+                self._local_pods_cache = local_pods
+                self.logger.debug(f"Using Podfile.lock: {podfile_lock}")
+                self.logger.debug(f"Found {len(local_pods)} local pods: {list(local_pods.keys())}")
+                return local_pods
 
-    def _parse_podfile_lock(self) -> Dict[str, Path]:
+        for podfile in self._get_podfile_candidates():
+            try:
+                local_pods = self._parse_podfile(podfile)
+            except Exception as e:
+                self.logger.warning(f"Failed to parse Podfile {podfile}: {e}")
+                continue
+
+            if local_pods:
+                self.podfile = podfile
+                self._local_pods_cache = local_pods
+                self.logger.debug(f"Using Podfile: {podfile}")
+                self.logger.debug(f"Found {len(local_pods)} local pods: {list(local_pods.keys())}")
+                return local_pods
+
+        self._local_pods_cache = {}
+        self.logger.debug(f"Podfile.lock/Podfile not found with local pods near: {self.project_root}")
+        return {}
+
+    def _get_podfile_lock_candidates(self) -> List[Path]:
+        """按优先级查找 Podfile.lock。"""
+        candidates = []
+        for search_dir in self._get_search_dirs():
+            candidate = search_dir / "Podfile.lock"
+            if candidate.exists():
+                candidates.append(candidate.resolve())
+
+        for search_dir in self._get_descendant_search_roots():
+            candidates.extend(self._find_descendant_files(search_dir, "Podfile.lock"))
+
+        return self._deduplicate_paths(candidates)
+
+    def _get_podfile_candidates(self) -> List[Path]:
+        """按优先级查找 Podfile，作为 Podfile.lock 缺失时的回退。"""
+        candidates = []
+        for search_dir in self._get_search_dirs():
+            candidate = search_dir / "Podfile"
+            if candidate.exists():
+                candidates.append(candidate.resolve())
+
+        for search_dir in self._get_descendant_search_roots():
+            candidates.extend(self._find_descendant_files(search_dir, "Podfile"))
+
+        return self._deduplicate_paths(candidates)
+
+    def _get_search_dirs(self) -> List[Path]:
+        """获取向上查找 Podfile/Podfile.lock 的候选目录。"""
+        candidates = []
+
+        for env_name in (
+            "BILIOBJCLINT_PROJECT_ROOT",
+            "PODS_PODFILE_DIR_PATH",
+            "PODFILE_DIR_PATH",
+            "SRCROOT",
+        ):
+            value = os.environ.get(env_name)
+            if value:
+                candidates.append(Path(value).expanduser())
+
+        workspace_path = os.environ.get("WORKSPACE_PATH")
+        if workspace_path:
+            candidates.append(Path(workspace_path).expanduser().parent)
+
+        project_file_path = os.environ.get("PROJECT_FILE_PATH")
+        if project_file_path:
+            candidates.append(Path(project_file_path).expanduser().parent)
+
+        current = self.project_root
+        while True:
+            candidates.append(current)
+            if (current / ".git").exists() or current == current.parent:
+                break
+            current = current.parent
+
+        existing = [path.resolve() for path in candidates if path.exists()]
+        return self._deduplicate_paths(existing)
+
+    def _get_descendant_search_roots(self) -> List[Path]:
+        """获取需要有限向下查找的根目录。"""
+        candidates = [self.project_root]
+
+        project_root = os.environ.get("BILIOBJCLINT_PROJECT_ROOT")
+        if project_root:
+            candidates.append(Path(project_root).expanduser())
+
+        workspace_path = os.environ.get("WORKSPACE_PATH")
+        if workspace_path:
+            candidates.append(Path(workspace_path).expanduser().parent)
+
+        existing = [path.resolve() for path in candidates if path.exists()]
+        return self._deduplicate_paths(existing)
+
+    def _find_descendant_files(self, root: Path, filename: str) -> List[Path]:
+        """在 root 下有限深度查找文件，避免扫描 Pods/DerivedData 等大目录。"""
+        found = []
+        root = root.resolve()
+
+        for current_root, dirnames, filenames in os.walk(root):
+            current_path = Path(current_root)
+            try:
+                depth = len(current_path.relative_to(root).parts)
+            except ValueError:
+                continue
+
+            dirnames[:] = [
+                dirname for dirname in dirnames
+                if dirname not in self.SEARCH_EXCLUDED_DIRS
+                and not dirname.endswith((".xcodeproj", ".xcworkspace"))
+            ]
+
+            if filename in filenames:
+                found.append((current_path / filename).resolve())
+
+            if depth >= self.SEARCH_MAX_DEPTH:
+                dirnames[:] = []
+
+        return found
+
+    @staticmethod
+    def _deduplicate_paths(paths: List[Path]) -> List[Path]:
+        result = []
+        seen = set()
+        for path in paths:
+            key = str(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(path)
+        return result
+
+    @staticmethod
+    def _resolve_pod_path(base_dir: Path, path_str: str) -> Path:
+        if os.path.isabs(path_str):
+            return Path(path_str).resolve()
+        return (base_dir / path_str).resolve()
+
+    def _parse_podfile_lock(self, podfile_lock: Path) -> Dict[str, Path]:
         """
         解析 Podfile.lock 提取本地 Pod 路径
 
@@ -55,7 +204,7 @@ class LocalPodsAnalyzer:
         """
         local_pods = {}
 
-        with open(self.podfile_lock, 'r', encoding='utf-8') as f:
+        with open(podfile_lock, 'r', encoding='utf-8') as f:
             content = f.read()
 
         # 提取 EXTERNAL SOURCES 部分
@@ -87,17 +236,36 @@ class LocalPodsAnalyzer:
             path_match = path_pattern.search(pod_config)
             if path_match:
                 path_str = path_match.group(1).strip()
-
-                # 处理相对路径
-                if not os.path.isabs(path_str):
-                    pod_path = (self.project_root / path_str).resolve()
-                else:
-                    pod_path = Path(path_str).resolve()
+                pod_path = self._resolve_pod_path(podfile_lock.parent, path_str)
 
                 if pod_path.exists():
                     local_pods[pod_name] = pod_path
                 else:
                     self.logger.debug(f"Local pod path not found: {pod_path}")
+
+        return local_pods
+
+    def _parse_podfile(self, podfile: Path) -> Dict[str, Path]:
+        """从 Podfile 中解析常见的 pod 'Name', :path => '...' 写法。"""
+        local_pods = {}
+
+        with open(podfile, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        pod_pattern = re.compile(
+            r'^\s*pod\s+["\']([^"\']+)["\']\s*,[^\n]*?:path\s*=>\s*["\']([^"\']+)["\']',
+            re.MULTILINE
+        )
+
+        for pod_match in pod_pattern.finditer(content):
+            pod_name = pod_match.group(1).split('/')[0]
+            path_str = pod_match.group(2).strip()
+            pod_path = self._resolve_pod_path(podfile.parent, path_str)
+
+            if pod_path.exists():
+                local_pods[pod_name] = pod_path
+            else:
+                self.logger.debug(f"Local pod path not found: {pod_path}")
 
         return local_pods
 

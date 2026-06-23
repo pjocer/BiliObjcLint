@@ -263,6 +263,7 @@ def do_check_and_inject(
     target_name: Optional[str] = None,
     project_name: Optional[str] = None,
     scripts_dir: Optional[str] = None,
+    project_root: Optional[str] = None,
     dry_run: bool = False
 ) -> bool:
     """
@@ -275,6 +276,7 @@ def do_check_and_inject(
         target_name: Target 名称
         project_name: 项目名称（用于 workspace）
         scripts_dir: 项目 scripts 目录路径
+        project_root: 项目根目录（.biliobjclint 的上一级）
         dry_run: 是否仅模拟运行
 
     Returns:
@@ -284,6 +286,11 @@ def do_check_and_inject(
     logger.info(f"Project: {project_path}")
     logger.info(f"Target: {target_name}")
     logger.info(f"Scripts dir: {scripts_dir}")
+    logger.info(f"Project root: {project_root}")
+
+    if not scripts_dir and project_root:
+        scripts_dir = str(Path(project_root) / ".biliobjclint")
+        logger.info(f"Derived scripts dir from project root: {scripts_dir}")
 
     # 1. 检查版本更新
     needs_update, local_ver, remote_ver = check_version_update()
@@ -409,6 +416,12 @@ def parse_args():
     )
 
     parser.add_argument(
+        '--project-root',
+        help='项目根目录（.biliobjclint 的上一级）',
+        default=None
+    )
+
+    parser.add_argument(
         '--check-only',
         action='store_true',
         help='仅检查版本，不执行注入'
@@ -453,6 +466,7 @@ def main():
         target_name=args.target,
         project_name=args.project,
         scripts_dir=args.scripts_dir,
+        project_root=args.project_root,
         dry_run=args.dry_run
     )
 

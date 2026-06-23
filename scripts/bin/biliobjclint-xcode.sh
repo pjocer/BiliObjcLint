@@ -249,6 +249,9 @@ if [ "$ACTION" = "check-and-inject" ]; then
     if [ -n "$SCRIPTS_DIR" ]; then
         CHECK_ARGS+=("--scripts-dir" "$SCRIPTS_DIR")
     fi
+    if [ -n "$CI_PROJECT_ROOT" ]; then
+        CHECK_ARGS+=("--project-root" "$CI_PROJECT_ROOT")
+    fi
     if [ -n "$DRY_RUN" ]; then
         CHECK_ARGS+=("$DRY_RUN")
     fi

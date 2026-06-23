@@ -82,6 +82,7 @@ fi
 # 项目根目录 = SCRIPT_DIR 的父目录（.biliobjclint/ 的上一级）
 # bootstrap 时 .biliobjclint/ 创建在项目根目录下，因此 SCRIPT_DIR 的父目录就是项目根目录
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+export BILIOBJCLINT_PROJECT_ROOT="$PROJECT_ROOT"
 
 # 配置文件搜索策略（优先级从高到低）：
 # 1. PROJECT_ROOT/.biliobjclint.yaml（项目根目录，即 .biliobjclint/ 同级）
@@ -138,6 +139,7 @@ if [ ! -f "$PYTHON_BIN" ]; then
 fi
 
 log_info "Python binary: $PYTHON_BIN"
+log_info "Project root: $PROJECT_ROOT"
 
 # ==================== 执行 Lint 检查 ====================
 
@@ -163,7 +165,7 @@ log_info "Running lint check..."
 set +e
 "$PYTHON_BIN" "${SCRIPTS_PATH}/wrapper/lint/cli.py" \
     --config "$CONFIG_PATH" \
-    --project-root "${SRCROOT}" \
+    --project-root "${PROJECT_ROOT}" \
     --incremental \
     --xcode-output \
     --json-file "$VIOLATIONS_FILE"
