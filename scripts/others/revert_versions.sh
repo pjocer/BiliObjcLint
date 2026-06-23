@@ -287,8 +287,8 @@ done
 
 step "更新 Homebrew tap"
 
-# 获取最新版本
-LATEST_VERSION="${NEW_VERSION_ARRAY[-1]}"
+# 获取最新版本（用 ${#arr[@]}-1 取末元素，兼容 macOS 默认 bash 3.2，不能用 [-1] 负数下标）
+LATEST_VERSION="${NEW_VERSION_ARRAY[${#NEW_VERSION_ARRAY[@]}-1]}"
 LATEST_VERSION_NUM="${LATEST_VERSION#v}"
 
 info "计算 SHA256 ..."
