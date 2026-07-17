@@ -1,5 +1,5 @@
 """
-Claude Fixer - HTML 报告生成模块
+Auto Fix - HTML 报告生成模块
 
 负责生成交互式 HTML 违规报告
 """
@@ -14,9 +14,9 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 from core.lint.logger import get_logger
-from claude.utils import escape_html, highlight_objc, read_code_context, read_code_context_by_range
+from auto_fix.utils import escape_html, highlight_objc, read_code_context, read_code_context_by_range
 
-logger = get_logger("claude_fix")
+logger = get_logger("auto_fix")
 
 
 # HTML 报告的 CSS 样式
@@ -567,7 +567,7 @@ def _generate_javascript(port: int) -> str:
         }}
 
         // 修复单个违规
-        async function fixSingleViolation(btn, file, line, rule, message) {{
+        async function fixSingleViolation(btn, violationId) {{
             event.stopPropagation();
             btn.disabled = true;
             btn.textContent = '修复中...';
@@ -576,8 +576,7 @@ def _generate_javascript(port: int) -> str:
             try {{
                 const response = await fetch(
                     `http://localhost:${{SERVER_PORT}}/fix-single?` +
-                    `file=${{encodeURIComponent(file)}}&line=${{line}}&` +
-                    `rule=${{rule}}&message=${{encodeURIComponent(message)}}`
+                    `violation_id=${{encodeURIComponent(violationId)}}`
                 );
                 const result = await response.json();
                 if (result.success && result.task_id) {{
@@ -597,7 +596,7 @@ def _generate_javascript(port: int) -> str:
 
         // 轮询修复任务状态
         async function pollFixStatus(btn, taskId) {{
-            const maxAttempts = 120;  // 最多轮询 120 次（约 2 分钟）
+            const maxAttempts = 420;  // 覆盖 Codex 回退 Claude 及 lint 验证的最坏耗时
             const pollInterval = 1000;  // 每秒查询一次
             let attempts = 0;
 
@@ -618,6 +617,7 @@ def _generate_javascript(port: int) -> str:
                         btn.textContent = '修复失败';
                         btn.dataset.state = 'failed';
                         btn.disabled = false;
+                        alert('修复失败: ' + (result.message || '未知错误'));
                         return;
                     }} else if (result.status === 'running') {{
                         // 更新进度显示
@@ -779,7 +779,7 @@ def _generate_javascript(port: int) -> str:
 
         // 轮询修复全部任务状态
         async function pollFixAllStatus(btn, taskId, total) {{
-            const maxAttempts = 300;  // 最多轮询 300 次（约 5 分钟）
+            const maxAttempts = 420;  // 覆盖 Codex 回退 Claude 及 lint 验证的最坏耗时
             const pollInterval = 1000;  // 每秒查询一次
             let attempts = 0;
 
@@ -958,11 +958,12 @@ class HtmlReportGenerator:
                 severity = v.get('severity', 'warning')
                 line = v.get('line', 0)
                 message = v.get('message', '')
-                rule = v.get('rule_id') or v.get('rule', '')
+                rule = v.get('rule_id', '')
                 related_lines = v.get('related_lines')  # (start, end) 或 None
                 # 格式化为 "start,end" 字符串，供前端传递
                 related_lines_str = f"{related_lines[0]},{related_lines[1]}" if related_lines else f"{line},{line}"
-                violation_id = f"v-{hash(file_path)}-{idx}"
+                violation_id = v.get('violation_id', '')
+                dom_id = f"violation-{abs(hash((file_path, violation_id, idx)))}"
 
                 # 读取代码上下文（优先使用 related_lines 范围）
                 code_lines = read_code_context_by_range(file_path, related_lines, fallback_line=line)
@@ -998,9 +999,10 @@ class HtmlReportGenerator:
 
                 escaped_file_path = _escape_for_onclick(file_path)
                 escaped_message = _escape_for_onclick(message)
+                escaped_violation_id = _escape_for_onclick(violation_id)
 
                 html_parts.append(f'''
-            <div class="violation {severity}" id="{violation_id}" onclick="toggleViolation('{violation_id}')">
+            <div class="violation {severity}" id="{dom_id}" onclick="toggleViolation('{dom_id}')">
                 <div class="violation-header">
                     <span class="expand-icon">▶</span>
                     <span class="line-num">Line {line}</span>
@@ -1013,7 +1015,7 @@ class HtmlReportGenerator:
                         <button class="btn-action btn-ignore" onclick="ignoreViolation(this, '{escaped_file_path}', {line}, '{rule}', '{escaped_message}', '{related_lines_str}')" data-state="normal">
                             忽略
                         </button>
-                        <button class="btn-action btn-fix-single" onclick="fixSingleViolation(this, '{escaped_file_path}', {line}, '{rule}', '{escaped_message}')" data-state="normal">
+                        <button class="btn-action btn-fix-single" onclick="fixSingleViolation(this, '{escaped_violation_id}')" data-state="normal">
                             修复
                         </button>
                         <button class="btn-xcode" onclick="openInXcode('{escaped_file_path}', {line})">

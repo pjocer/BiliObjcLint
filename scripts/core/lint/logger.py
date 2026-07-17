@@ -3,7 +3,7 @@ BiliObjCLint Logger Module - 统一日志记录
 
 日志文件存储在 BiliObjCLint/logs/ 目录下，按日期和模块分类：
 - biliobjclint_YYYYMMDD_HHMMSS.log  # 主 lint 日志
-- claude_fix_YYYYMMDD_HHMMSS.log   # Claude 修复日志
+- auto_fix_YYYYMMDD_HHMMSS.log     # 自动修复日志
 - xcode_YYYYMMDD_HHMMSS.log        # Xcode 集成日志
 
 Usage:
@@ -168,7 +168,7 @@ def get_logger(name: str, log_file: Optional[str] = None) -> BiliObjCLintLogger:
     获取日志记录器（单例模式）
 
     Args:
-        name: 日志记录器名称，如 'biliobjclint', 'claude_fix', 'xcode'
+        name: 日志记录器名称，如 'biliobjclint', 'auto_fix', 'xcode'
         log_file: 可选的日志文件路径
 
     Returns:
@@ -249,18 +249,18 @@ def log_lint_end(violations_count: int, errors_count: int, warnings_count: int, 
     logger.log_separator("BiliObjCLint Session End")
 
 
-def log_claude_fix_start(violations_count: int, project_root: str):
-    """记录 Claude 修复开始"""
-    logger = get_logger("claude_fix")
-    logger.log_separator("Claude Fix Session Start")
+def log_auto_fix_start(violations_count: int, project_root: str):
+    """记录自动修复开始"""
+    logger = get_logger("auto_fix")
+    logger.log_separator("Auto Fix Session Start")
     logger.info(f"Project root: {project_root}")
     logger.info(f"Violations to fix: {violations_count}")
 
 
-def log_claude_fix_end(success: bool, message: str, elapsed: float):
-    """记录 Claude 修复结束"""
-    logger = get_logger("claude_fix")
+def log_auto_fix_end(success: bool, message: str, elapsed: float):
+    """记录自动修复结束"""
+    logger = get_logger("auto_fix")
     status = "SUCCESS" if success else "FAILED"
-    logger.info(f"Claude fix {status}: {message}")
+    logger.info(f"Auto fix {status}: {message}")
     logger.info(f"Elapsed time: {elapsed:.2f}s")
-    logger.log_separator("Claude Fix Session End")
+    logger.log_separator("Auto Fix Session End")

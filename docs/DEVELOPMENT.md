@@ -14,8 +14,12 @@ BiliObjCLint/
 │   │   ├── biliobjclint.sh       # biliobjclint 命令入口
 │   │   ├── biliobjclint-xcode.sh # Xcode 集成命令入口
 │   │   └── biliobjclint-server.sh# Server 命令入口
-│   ├── claude/                   # Claude AI 自动修复模块
-│   │   ├── fixer.py              # 修复器主逻辑
+│   ├── auto_fix/                 # AI 自动修复模块
+│   │   ├── fixer.py              # 修复编排、验证与回滚
+│   │   ├── providers.py          # Codex 优先、Claude 回退
+│   │   ├── edit_plan.py          # 结构化修改计划校验与原子应用
+│   │   ├── scope.py              # 审查范围到精确修复范围解析
+│   │   ├── models.py             # 规范化审查结果模型
 │   │   ├── http_server.py        # HTTP 服务器（处理浏览器请求）
 │   │   └── html_report.py        # HTML 报告生成
 │   ├── core/                     # 核心模块
@@ -97,16 +101,29 @@ Python 规则引擎，负责：
 - 执行规则检查
 - 收集违规结果
 
-### claude/ 模块
+### auto_fix/ 模块
 
-Claude AI 自动修复模块，包含以下文件：
+AI 自动修复模块，不读取 lint 配置中的 AI 清单：
 
 **fixer.py** - 修复器主逻辑：
-- 检测 Claude Code CLI 可用性
-- 根据配置决定是否触发修复
-- 构建修复 prompt
-- 调用 Claude 执行修复
-- 支持 silent（静默）和 terminal 模式
+- 默认检测并调用 Codex CLI，失败时回退 Claude Code CLI
+- 将规范化审查结果转换为结构化修复请求
+- 校验并应用修改计划
+- 对受影响文件重新执行 lint，失败时回滚
+
+**providers.py** - AI CLI 适配：
+- 两种 CLI 均以只读方式运行，只返回结构化修改计划
+- Codex 不可用、超时或返回无效计划时尝试 Claude
+
+**edit_plan.py** - 本地安全边界：
+- 仅允许修改审查结果声明的文件和 `related_lines`
+- 检查违规 ID、范围覆盖、重叠和源文件陈旧状态
+- 使用同目录临时文件原子替换，并支持整体回滚
+
+**scope.py** - 修复范围解析：
+- 保留规则给出的 `related_lines` 作为审查范围
+- 对受支持的符号改名补充精确调用点范围，不把整文件开放给 AI
+- 修改后检查旧符号是否仍存在，漏改调用点时回滚
 
 **http_server.py** - HTTP 服务器：
 - 处理浏览器的修复请求（fix/cancel/ignore）
@@ -203,7 +220,7 @@ cat ~/.biliobjclint/projects.json
 | `check_update_*.log` | 版本检查日志 |
 | `background_upgrade_*.log` | 后台升级日志 |
 | `xcode_*.log` | Xcode 集成日志 |
-| `claude_fix_*.log` | Claude 修复日志 |
+| `auto_fix_*.log` | AI 自动修复日志 |
 
 ### 日志级别
 

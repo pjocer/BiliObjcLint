@@ -2,6 +2,12 @@
 
 所有重要的版本更新都会记录在此文件中。
 
+## v1.7.6 (2026-07-17)
+
+### 修复
+- **AI 自动修复全面重构**：将 `scripts/claude` 模块正式更名为 `scripts/auto_fix`，统一仅保留一条修复链路，默认走 Codex CLI；当 Codex 不可用时回退 Claude CLI，仍不可用时走标准“不可用”提示，不再兼容旧链路。
+- **Xcode 注入容错优化**：`[BiliObjcLint] Package Manager` 与 `[BiliObjcLint] Code Style Lint` 两个 Build Phase 的脚本在执行前增加前置判断，若目标 `bootstrap.sh`/`code_style_check.sh` 不存在或无执行权限则安全跳过，避免首次接入或目录不一致时导致编译直接失败。
+
 ## v1.7.5 (2026-06-23)
 
 ### 新增

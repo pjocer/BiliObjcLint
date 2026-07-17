@@ -1,5 +1,5 @@
 """
-Claude Fixer - 命令行入口模块
+Auto Fix - 命令行入口模块
 
 处理命令行参数并启动修复流程
 """
@@ -17,9 +17,9 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 from core.lint.logger import get_logger
-from claude.fixer import ClaudeFixer
+from auto_fix.fixer import AutoFixer
 
-logger = get_logger("claude_fix")
+logger = get_logger("auto_fix")
 
 
 def load_config(config_path: str) -> dict:
@@ -59,7 +59,7 @@ def load_violations(violations_path: str) -> Tuple[List[Dict], Dict[str, Any]]:
 def parse_args() -> argparse.Namespace:
     """解析命令行参数"""
     parser = argparse.ArgumentParser(
-        description='Claude 自动修复工具'
+        description='BiliObjCLint 自动修复工具'
     )
 
     parser.add_argument(
@@ -83,7 +83,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--check-only',
         action='store_true',
-        help='仅检测 Claude CLI 是否可用'
+        help='仅检测 Codex/Claude CLI 是否可用'
     )
 
     parser.add_argument(
@@ -101,7 +101,7 @@ def main():
     debug_file = "/tmp/biliobjclint_debug.log"
     with open(debug_file, "a") as f:
         f.write(f"\n=== {datetime.datetime.now()} ===\n")
-        f.write(f"claude_fixer.py started\n")
+        f.write(f"auto_fix started\n")
         f.write(f"sys.argv: {sys.argv}\n")
 
     args = parse_args()
@@ -110,7 +110,7 @@ def main():
     with open(debug_file, "a") as f:
         f.write(f"args: {vars(args)}\n")
 
-    logger.info(f"Claude fixer started: project_root={args.project_root}")
+    logger.info(f"Auto fixer started: project_root={args.project_root}")
     logger.debug(f"Arguments: {vars(args)}")
 
     # 加载配置
@@ -125,19 +125,26 @@ def main():
     project = meta.get("project", {}) if isinstance(meta, dict) else {}
 
     # 创建修复器
-    fixer = ClaudeFixer(config, args.project_root, run_id=run_id, project=project)
+    fixer = AutoFixer(
+        config,
+        args.project_root,
+        run_id=run_id,
+        project=project,
+        config_path=args.config,
+    )
 
     # 仅检测模式
     if args.check_only:
         logger.info("Running in check-only mode")
-        available, error_msg = fixer.check_claude_available()
+        available, error_msg = fixer.check_auto_fix_available()
         if available:
-            print("Claude Code CLI 可用")
-            logger.info("Check completed: Claude CLI is available")
+            provider = fixer.selected_provider or "unknown"
+            print(f"自动修复可用（{provider}）")
+            logger.info(f"Check completed: provider {provider} is available")
             sys.exit(0)
         else:
-            print(f"Claude Code CLI 不可用: {error_msg}", file=sys.stderr)
-            logger.error(f"Check completed: Claude CLI not available - {error_msg}")
+            print(f"自动修复不可用: {error_msg}", file=sys.stderr)
+            logger.error(f"Check completed: no provider available - {error_msg}")
             sys.exit(1)
 
     if not violations:
@@ -171,7 +178,7 @@ def main():
     except Exception as e:
         logger.warning(f"Autofix metrics send failed: {e}")
 
-    logger.info(f"Claude fixer completed with exit code: {exit_code}")
+    logger.info(f"Auto fixer completed with exit code: {exit_code}")
     sys.exit(exit_code)
 
 

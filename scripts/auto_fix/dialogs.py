@@ -1,5 +1,5 @@
 """
-Claude Fixer - macOS 对话框模块
+Auto Fix - macOS 对话框模块
 
 提供 macOS 原生对话框和通知功能
 """
@@ -15,7 +15,7 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 from core.lint.logger import get_logger
 
-logger = get_logger("claude_fix")
+logger = get_logger("auto_fix")
 
 
 class DialogError(RuntimeError):
@@ -118,7 +118,7 @@ def show_progress_notification(message: str) -> subprocess.Popen:
         进程对象，可用于后续关闭
     """
     script = f'''
-    display notification "{_escape_applescript_string(message)}" with title "BiliObjCLint" subtitle "Claude 自动修复"
+    display notification "{_escape_applescript_string(message)}" with title "BiliObjCLint" subtitle "AI 自动修复"
     '''
     return subprocess.Popen(
         ['osascript', '-e', script],
@@ -140,7 +140,7 @@ def show_progress_dialog(message: str) -> subprocess.Popen:
     script = f'''
     tell current application
         activate
-        display dialog "{escaped_message}" buttons {{"请稍候..."}} default button 1 with title "BiliObjCLint - Claude 修复中" with icon note giving up after 300
+        display dialog "{escaped_message}" buttons {{"请稍候..."}} default button 1 with title "BiliObjCLint - 自动修复中" with icon note giving up after 300
     end tell
     '''
     return subprocess.Popen(

@@ -42,13 +42,6 @@ def _sanitize_config_snapshot(raw: Dict[str, Any]) -> Dict[str, Any]:
     data = json.loads(json.dumps(raw)) if raw else {}
     data.pop("python_rules", None)
 
-    claude_cfg = data.get("claude_autofix")
-    if isinstance(claude_cfg, dict):
-        claude_cfg.pop("api_key", None)
-        claude_cfg.pop("api_token", None)
-        claude_cfg.pop("api_base_url", None)
-        data["claude_autofix"] = claude_cfg
-
     metrics_cfg = data.get("metrics")
     if isinstance(metrics_cfg, dict):
         metrics_cfg.pop("token", None)
@@ -125,20 +118,12 @@ def _build_rules_summary(
 
 def _build_autofix_stub(config: LintConfig, violations: Iterable[Violation]) -> Dict[str, Any]:
     violations = list(violations)
-    trigger = config.claude_autofix.trigger
-    enabled = trigger != "disable"
-    triggered = False
-    if enabled:
-        if trigger == "any":
-            triggered = len(violations) > 0
-        elif trigger == "error":
-            triggered = any(v.severity == Severity.ERROR for v in violations)
 
     return {
-        "enabled": enabled,
-        "trigger": trigger,
-        "mode": config.claude_autofix.mode,
-        "triggered": triggered,
+        "enabled": True,
+        "trigger": "any",
+        "mode": "silent",
+        "triggered": len(violations) > 0,
         "flow": "none",
         "decision": "pending",
         "cli_available": None,

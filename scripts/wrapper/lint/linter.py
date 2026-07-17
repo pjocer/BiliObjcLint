@@ -147,7 +147,7 @@ class BiliObjCLint:
         self.reporter.deduplicate()
         self.reporter.sort()
 
-        # 如果指定了 --json-file，同时输出 JSON 到文件（用于 Claude fixer）
+        # 如果指定了 --json-file，同时输出 JSON 到文件（用于自动修复）
         if self.args.json_file:
             try:
                 with open(self.args.json_file, 'w', encoding='utf-8') as f:

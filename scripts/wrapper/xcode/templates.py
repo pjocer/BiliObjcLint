@@ -27,7 +27,19 @@ LINT_SCRIPT_TEMPLATE = '''#!/bin/bash
 # 代码规范审查
 # Version: {version}
 
-"{scripts_path}/code_style_check.sh"
+LINT_SCRIPT_PATH="{scripts_path}/code_style_check.sh"
+
+if [ ! -f "$LINT_SCRIPT_PATH" ]; then
+    echo "[BiliObjCLint] 跳过 Code Style Check：脚本不存在 -> $LINT_SCRIPT_PATH"
+    exit 0
+fi
+
+if [ ! -x "$LINT_SCRIPT_PATH" ]; then
+    echo "[BiliObjCLint] 跳过 Code Style Check：脚本无执行权限 -> $LINT_SCRIPT_PATH"
+    exit 0
+fi
+
+"$LINT_SCRIPT_PATH"
 '''
 
 # Bootstrap Build Phase 脚本模板
@@ -36,5 +48,17 @@ BOOTSTRAP_SCRIPT_TEMPLATE = '''#!/bin/bash
 # [BiliObjcLint] Package Manager
 # 自动安装和更新 BiliObjCLint
 
-"{scripts_path}/bootstrap.sh"
+BOOTSTRAP_SCRIPT_PATH="{scripts_path}/bootstrap.sh"
+
+if [ ! -f "$BOOTSTRAP_SCRIPT_PATH" ]; then
+    echo "[BiliObjCLint] 跳过 Package Manager：脚本不存在 -> $BOOTSTRAP_SCRIPT_PATH"
+    exit 0
+fi
+
+if [ ! -x "$BOOTSTRAP_SCRIPT_PATH" ]; then
+    echo "[BiliObjCLint] 跳过 Package Manager：脚本无执行权限 -> $BOOTSTRAP_SCRIPT_PATH"
+    exit 0
+fi
+
+"$BOOTSTRAP_SCRIPT_PATH"
 '''

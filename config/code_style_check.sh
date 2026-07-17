@@ -150,7 +150,7 @@ else
     SCRIPTS_PATH="${LINT_PATH}/libexec/scripts"
 fi
 
-# 创建临时文件存储 JSON 输出（用于 Claude fixer）
+# 创建临时文件存储 JSON 输出（用于自动修复）
 VIOLATIONS_FILE=$(mktemp)
 log_debug "Violations temp file: $VIOLATIONS_FILE"
 
@@ -159,7 +159,7 @@ LINT_START_TIME=$("$PYTHON_BIN" -c "import time; print(time.time())")
 
 # 执行 Lint 检查（单次执行，同时输出 Xcode 格式和 JSON 文件）
 # --xcode-output: 输出 Xcode 兼容格式到 stdout（用于 Xcode 显示警告/错误）
-# --json-file: 同时输出 JSON 格式到文件（用于 Claude fixer）
+# --json-file: 同时输出 JSON 格式到文件（用于自动修复）
 # 临时禁用 set -e，因为 lint 检查可能返回非零退出码（有 error 级别违规时）
 log_info "Running lint check..."
 set +e
@@ -180,13 +180,9 @@ info "Lint 检查耗时: ${LINT_DURATION} 秒"
 info "=========================================="
 log_info "Lint exit code: $LINT_EXIT, duration: ${LINT_DURATION}s"
 
-# ==================== Claude 自动修复 ====================
+# ==================== AI 自动修复 ====================
 
-# 如果有违规，调用 Claude 修复模块
-# claude_fixer.py 会根据配置文件中的 claude_autofix.trigger 决定是否显示对话框：
-#   - trigger: "any" → 任何违规都弹窗
-#   - trigger: "error" → 只有 error 级别违规才弹窗
-#   - trigger: "disable" → 禁用自动弹窗
+# 如果有违规，调用自动修复模块。默认使用 Codex CLI，失败时回退 Claude Code CLI。
 if [ -s "$VIOLATIONS_FILE" ]; then
     # 保存违规信息到固定位置
     VIOLATIONS_COPY="/tmp/biliobjclint_violations_$$.json"
@@ -201,14 +197,11 @@ if [ -s "$VIOLATIONS_FILE" ]; then
     _PROJECT_ROOT="${PROJECT_ROOT}"
     _VIOLATIONS_COPY="$VIOLATIONS_COPY"
 
-    log_info "Launching Claude fixer in background..."
+    log_info "Launching auto fixer in background..."
 
-    # 在后台调用 claude_fixer.py，它会：
-    # 1. 根据 trigger 配置决定是否触发
-    # 2. 显示对话框询问用户
-    # 3. 执行修复（如果用户同意）
+    # 在后台显示审查结果，并按用户操作执行修复或忽略。
     (
-        "$_PYTHON_BIN" "$_SCRIPTS_PATH/claude/cli.py" \
+        "$_PYTHON_BIN" "$_SCRIPTS_PATH/auto_fix/cli.py" \
             --violations "$_VIOLATIONS_COPY" \
             --config "$_CONFIG_PATH" \
             --project-root "$_PROJECT_ROOT"

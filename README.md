@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">BiliObjCLint</h1>
-  <p align="center">Objective-C Code Linting Tool with Xcode Integration and Claude AI Auto-fix</p>
+  <p align="center">Objective-C Code Linting Tool with Xcode Integration and AI Auto-fix</p>
   <p align="center">
     <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
   </p>
@@ -13,7 +13,7 @@
 - **Incremental Check**: Only check Git-changed code for fast and efficient linting
 - **Xcode Integration**: Output native Xcode warning/error format
 - **Python Rule Engine**: Lightweight, fast, and easy to extend
-- **Claude AI Auto-fix**: Automatically fix code issues with Claude Code CLI
+- **AI Auto-fix**: Uses Codex CLI by default and falls back to Claude Code CLI
 - **Highly Configurable**: YAML configuration file for flexible rule customization
 - **Easy to Extend**: Support custom Python rules
 
@@ -182,11 +182,6 @@ python_rules:
     params:
       max_length: 120
 
-# Claude auto-fix settings
-claude_autofix:
-  trigger: "any"     # any | error | disable
-  mode: "silent"     # silent | terminal | vscode
-  timeout: 120
 ```
 
 See `config/default.yaml` for a complete example.
@@ -319,30 +314,11 @@ excluded:
   - "Legacy/**"
 ```
 
-### Q: How to use Claude auto-fix?
+### Q: How does AI auto-fix work?
 
-1. Install [Claude Code CLI](https://claude.ai/code)
-2. Configure Claude environment variables in `~/.zshrc` or `~/.bashrc`:
+No AI configuration is required in `.biliobjclint.yaml`. The Xcode review page invokes Codex CLI first. If Codex is unavailable or cannot return a valid structured repair plan, it falls back to Claude Code CLI. If neither CLI can be used, the page reports that automatic repair is unavailable.
 
-```bash
-# Required: API endpoint and authentication
-export ANTHROPIC_BASE_URL=https://api.anthropic.com  # or your custom endpoint
-export ANTHROPIC_AUTH_TOKEN=your-api-key-here
-
-# Optional: Model and timeout settings
-export ANTHROPIC_MODEL=claude-4.5-opus
-export API_TIMEOUT_MS=600000
-```
-
-> **Important**: These environment variables must be configured in your shell config file (`.zshrc` or `.bashrc`), as Xcode Build Phase runs as a background process that doesn't inherit your terminal session environment.
-
-3. Configure in `.biliobjclint.yaml`:
-
-```yaml
-claude_autofix:
-  trigger: "any"
-  mode: "silent"
-```
+The provider only generates a structured edit plan in read-only mode. BiliObjCLint validates edit paths and line ranges, applies changes locally, reruns lint for the affected files, and rolls the changes back when verification fails.
 
 ## Documentation
 

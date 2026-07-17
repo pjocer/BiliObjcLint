@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">BiliObjCLint</h1>
-  <p align="center">集成 Xcode 和 Claude AI 自动修复的 Objective-C 代码检查工具</p>
+  <p align="center">集成 Xcode 和 AI 自动修复的 Objective-C 代码检查工具</p>
   <p align="center">
     <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
   </p>
@@ -13,7 +13,7 @@
 - **增量检查**: 仅检查 Git 变更的代码，快速高效
 - **Xcode 集成**: 输出原生 Xcode 警告/错误格式
 - **Python 规则引擎**: 轻量、快速、易扩展
-- **Claude AI 自动修复**: 使用 Claude Code CLI 自动修复代码问题
+- **AI 自动修复**: 默认使用 Codex CLI，失败时回退 Claude Code CLI
 - **高度可配置**: YAML 配置文件，灵活的规则定制
 - **易于扩展**: 支持 Python 自定义规则
 
@@ -182,11 +182,6 @@ python_rules:
     params:
       max_length: 120
 
-# Claude 自动修复设置
-claude_autofix:
-  trigger: "any"     # any | error | disable
-  mode: "silent"     # silent | terminal | vscode
-  timeout: 120
 ```
 
 完整示例请参考 `config/default.yaml`。
@@ -319,30 +314,11 @@ excluded:
   - "Legacy/**"
 ```
 
-### Q: 如何使用 Claude 自动修复？
+### Q: AI 自动修复如何工作？
 
-1. 安装 [Claude Code CLI](https://claude.ai/code)
-2. 在 `~/.zshrc` 或 `~/.bashrc` 中配置 Claude 环境变量：
+`.biliobjclint.yaml` 不再需要 AI 配置。Xcode 审查页会优先调用 Codex CLI；Codex 不可用或无法返回有效的结构化修复计划时，自动回退到 Claude Code CLI；两者均不可用时，按自动修复不可用处理。
 
-```bash
-# 必须：API 端点和认证信息
-export ANTHROPIC_BASE_URL=https://api.anthropic.com  # 或你的自定义端点
-export ANTHROPIC_AUTH_TOKEN=your-api-key-here
-
-# 可选：模型和超时设置
-export ANTHROPIC_MODEL=claude-4.5-opus
-export API_TIMEOUT_MS=600000
-```
-
-> **重要**：这些环境变量必须配置在 shell 配置文件（`.zshrc` 或 `.bashrc`）中，因为 Xcode Build Phase 作为后台进程运行，不会继承终端会话的环境变量。
-
-3. 在 `.biliobjclint.yaml` 中配置：
-
-```yaml
-claude_autofix:
-  trigger: "any"
-  mode: "silent"
-```
+AI CLI 只在只读模式下生成结构化修改计划。BiliObjCLint 在本地校验文件路径和允许修改的行范围，应用后重新检查受影响文件；验证失败会回滚本次修改。
 
 ## 文档
 

@@ -100,6 +100,7 @@ X-BiliObjCLint-Token: <token>   # 可选，取决于服务端配置
     "flow": "dialog",
     "decision": "fix",
     "cli_available": true,
+    "provider": "codex",
 
     "actions": [
       {
@@ -126,12 +127,6 @@ X-BiliObjCLint-Token: <token>   # 可选，取决于服务端配置
     "fail_on_error": true,
     "included": ["**/*.m", "**/*.mm", "**/*.h"],
     "excluded": ["Pods/**", "**/Vendor/**"],
-    "claude_autofix": {
-      "trigger": "any",
-      "mode": "silent",
-      "timeout": 120,
-      "disable_nonessential_traffic": true
-    },
     "metrics": {
       "enabled": true,
       "endpoint": "http://127.0.0.1:18080",

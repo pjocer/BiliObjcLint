@@ -146,57 +146,6 @@ custom_rules:
     enabled: true
     path: "./custom_rules/python/"
 
-# ==================== Claude 自动修复配置 ====================
-claude_autofix:
-  # 触发模式
-  # - any: 任何违规时都弹窗询问
-  # - error: 仅当存在 error 级别违规时弹窗
-  # - disable: 禁用自动弹窗（可通过命令行手动触发）
-  trigger: "any"
-
-  # 执行模式
-  # - silent: 静默修复（后台执行，显示进度和结果弹窗）
-  # - terminal: 打开 Terminal.app 与 Claude 交互
-  # - vscode: 在 VSCode 中打开项目，将 prompt 复制到剪贴板
-  mode: "silent"
-
-  # 修复超时时间（秒），仅对 silent 模式有效
-  timeout: 120
-
-  # ---------- Claude Code API 配置 ----------
-  # 以下配置用于 Claude Code CLI 调用，支持两种方式：
-  #
-  # 方式一：使用内部网关（推荐公司内部使用）
-  #   设置 api_base_url 指向内部网关地址，使用 api_token 认证
-  #   示例：
-  #     api_base_url: "http://llmapi.bilibili.co"
-  #     api_token: "bsk-xxxxxxxxxxxx"
-  #
-  # 方式二：使用官方 Claude API
-  #   不设置 api_base_url（留空），使用 api_key 认证
-  #   示例：
-  #     api_base_url: ""
-  #     api_key: "sk-ant-xxxxxxxxxxxx"
-  #
-  # 注意：api_token 和 api_key 二选一即可，优先使用 api_token
-  # 如果配置为空，将尝试从环境变量或 ~/.zshrc 中读取
-
-  # API 基础地址（内部网关地址，留空则使用官方 API）
-  api_base_url: ""
-
-  # API 认证令牌（用于内部网关，对应 ANTHROPIC_AUTH_TOKEN）
-  api_token: ""
-
-  # API 密钥（用于官方 API，对应 ANTHROPIC_API_KEY）
-  api_key: ""
-
-  # Claude 模型名称（留空则使用 Claude Code 默认模型）
-  # 常用模型：claude-4.5-opus, claude-4.5-sonnet, claude-4-opus
-  model: ""
-
-  # 是否禁用非必要的网络请求（推荐开启以提高性能）
-  disable_nonessential_traffic: true
-
 # ==================== 统计上报配置 ====================
 metrics:
   # 是否启用统计上报

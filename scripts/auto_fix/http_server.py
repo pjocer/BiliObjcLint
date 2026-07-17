@@ -1,8 +1,4 @@
-"""
-Claude Fixer - HTTP 服务器模块
-
-处理来自 HTML 报告页面的用户操作请求
-"""
+"""Handle automatic-repair actions from the local HTML report."""
 import json
 import os
 import socket
@@ -22,7 +18,7 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 from core.lint.logger import get_logger
 
-logger = get_logger("claude_fix")
+logger = get_logger("auto_fix")
 
 # 全局变量用于 HTTP 服务器通信
 _user_action = None
@@ -50,7 +46,7 @@ def set_all_violations(violations):
 
 
 def set_fixer_instance(fixer):
-    """设置 ClaudeFixer 实例引用"""
+    """设置 AutoFixer 实例引用"""
     global _fixer_instance
     _fixer_instance = fixer
 
@@ -82,19 +78,7 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
         path = parsed.path
         params = parse_qs(parsed.query)
 
-        if path == '/fix':
-            _user_action = 'fix'
-            _server_should_stop = True
-            self._record_action(
-                action_type="choose_fix",
-                result="success",
-                target_count=len(_all_violations),
-                message="User chose fix from HTML",
-                flow="html",
-                include_in_summary=False,
-            )
-            self._send_response("正在启动自动修复...")
-        elif path == '/cancel':
+        if path == '/cancel':
             _user_action = 'cancel'
             _server_should_stop = True
             self._record_action(
@@ -325,18 +309,27 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_fix_single(self, params: dict):
         """处理修复单个违规的请求"""
-        global _fixer_instance, _timeout_reset_time, _fix_tasks
+        global _fixer_instance, _timeout_reset_time, _fix_tasks, _all_violations
         import threading
         import uuid
 
-        file_path = unquote(params.get('file', [''])[0])
-        line = int(params.get('line', ['0'])[0])
-        rule = params.get('rule', [''])[0]
-        message = unquote(params.get('message', [''])[0])
-
-        if not file_path or not line or not rule:
-            self._send_json_response({'success': False, 'message': '参数不完整'})
+        violation_id = params.get('violation_id', [''])[0]
+        if not violation_id:
+            self._send_json_response({'success': False, 'message': '缺少 violation_id'})
             return
+
+        violation = next(
+            (
+                dict(item)
+                for item in _all_violations
+                if isinstance(item, dict) and item.get('violation_id') == violation_id
+            ),
+            None,
+        )
+        if violation is None:
+            self._send_json_response({'success': False, 'message': '未找到对应问题'})
+            return
+        rule = violation.get('rule_id')
 
         # 重置超时
         _timeout_reset_time = time.time()
@@ -345,15 +338,6 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
         task_id = str(uuid.uuid4())[:8]
         _fix_tasks[task_id] = {'status': 'running', 'message': '正在修复...'}
         click_occurred_at = datetime.now().astimezone().isoformat()
-
-        # 构建单个违规
-        violation = {
-            'file': file_path,
-            'line': line,
-            'rule': rule,
-            'message': message,
-            'severity': 'warning'
-        }
 
         def do_fix():
             global _fix_tasks
@@ -367,7 +351,7 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
                         flow="html",
                     )
                     if success:
-                        _fix_tasks[task_id] = {'status': 'completed', 'message': '修复完成'}
+                        _fix_tasks[task_id] = {'status': 'completed', 'message': result_msg}
                     else:
                         _fix_tasks[task_id] = {'status': 'failed', 'message': result_msg}
                 else:
@@ -439,7 +423,7 @@ class ActionRequestHandler(BaseHTTPRequestHandler):
                     if success:
                         _fix_tasks[task_id] = {
                             'status': 'completed',
-                            'message': f'已修复 {total_count} 个问题',
+                            'message': result_msg,
                             'total': total_count,
                             'completed': total_count
                         }

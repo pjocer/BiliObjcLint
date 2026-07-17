@@ -1,5 +1,5 @@
 """
-Claude Fixer - 工具函数模块
+Auto Fix - 工具函数模块
 
 包含代码高亮、HTML转义、代码上下文读取等工具函数
 """
@@ -16,7 +16,7 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 from core.lint.logger import get_logger
 
-logger = get_logger("claude_fix")
+logger = get_logger("auto_fix")
 
 
 def escape_html(text: str) -> str:

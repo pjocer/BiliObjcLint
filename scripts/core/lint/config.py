@@ -19,27 +19,6 @@ class RuleConfig:
 
 
 @dataclass
-class ClaudeAutofixConfig:
-    """Claude 自动修复配置"""
-    # 触发模式: any | error | disable
-    trigger: str = "any"
-    # 执行模式: silent | terminal | vscode
-    mode: str = "silent"
-    # 超时时间（秒）
-    timeout: int = 120
-    # API 基础地址（内部网关地址，留空则使用官方 API）
-    api_base_url: str = ""
-    # API 认证令牌（用于内部网关，对应 ANTHROPIC_AUTH_TOKEN）
-    api_token: str = ""
-    # API 密钥（用于官方 API，对应 ANTHROPIC_API_KEY）
-    api_key: str = ""
-    # Claude 模型名称
-    model: str = ""
-    # 是否禁用非必要的网络请求
-    disable_nonessential_traffic: bool = True
-
-
-@dataclass
 class LocalPodsConfig:
     """本地 Pod 检测配置"""
     # 是否启用本地 Pod 检测
@@ -98,9 +77,6 @@ class LintConfig:
 
     # 自定义规则路径
     custom_rules_python_path: str = "./custom_rules/python/"
-
-    # Claude 自动修复配置
-    claude_autofix: ClaudeAutofixConfig = field(default_factory=ClaudeAutofixConfig)
 
     # 统计上报配置
     metrics: MetricsConfig = field(default_factory=MetricsConfig)
@@ -164,11 +140,6 @@ class ConfigLoader:
                 "enabled": True,
                 "path": "./custom_rules/python/"
             }
-        },
-        "claude_autofix": {
-            "trigger": "any",
-            "mode": "silent",
-            "timeout": 120
         },
         "metrics": {
             "enabled": False,
@@ -241,18 +212,6 @@ class ConfigLoader:
 
         custom_rules = self._config.get("custom_rules", {})
 
-        claude_autofix_cfg = self._config.get("claude_autofix", {})
-        claude_autofix = ClaudeAutofixConfig(
-            trigger=claude_autofix_cfg.get("trigger", "any"),
-            mode=claude_autofix_cfg.get("mode", "silent"),
-            timeout=claude_autofix_cfg.get("timeout", 120),
-            api_base_url=claude_autofix_cfg.get("api_base_url", ""),
-            api_token=claude_autofix_cfg.get("api_token", ""),
-            api_key=claude_autofix_cfg.get("api_key", ""),
-            model=claude_autofix_cfg.get("model", ""),
-            disable_nonessential_traffic=claude_autofix_cfg.get("disable_nonessential_traffic", True)
-        )
-
         metrics_cfg = self._config.get("metrics", {})
         metrics = MetricsConfig(
             enabled=metrics_cfg.get("enabled", False),
@@ -290,7 +249,6 @@ class ConfigLoader:
             excluded=self._config.get("excluded", []),
             python_rules=python_rules,
             custom_rules_python_path=custom_rules.get("python", {}).get("path", "./custom_rules/python/"),
-            claude_autofix=claude_autofix,
             metrics=metrics,
             local_pods=local_pods,
             performance=performance

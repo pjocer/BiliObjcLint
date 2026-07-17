@@ -8,7 +8,7 @@ Bilibili Objective-C 代码规范检查工具的核心脚本包。
 - wrapper/lint: lint 命令行入口
 - wrapper/xcode: Xcode 集成
 - wrapper/update: 版本更新模块
-- claude: Claude AI 自动修复模块
+- auto_fix: Codex 优先、Claude 回退的 AI 自动修复模块
 """
 from .wrapper.lint import BiliObjCLint
 from .wrapper.xcode import XcodeIntegrator, SCRIPT_VERSION
